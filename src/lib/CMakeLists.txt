@@ -1,7 +1,21 @@
 set(NAME ${PROJECT_NAME})
 
-add_library(${NAME} SHARED
-    window.cpp
+if(APPLE)
+    set(SOURCE_FILES
+        mnm.mm
+    )
+else()
+    set(SOURCE_FILES
+        mnm.cpp
+    )
+endif()
+
+# list(APPEND SOURCE_FILES
+#     ...
+# )
+
+add_library(${NAME} STATIC
+    ${SOURCE_FILES}
 )
 
 target_include_directories(${NAME}

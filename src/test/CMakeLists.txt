@@ -1,7 +1,7 @@
-set(NAME ${PROJECT_NAME}_app)
+set(NAME test)
 
 add_executable(${NAME}
-    app.cpp
+    test.cpp
 )
 
 target_include_directories(${NAME} PRIVATE

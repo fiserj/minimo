@@ -24,6 +24,8 @@ float aspect(void);
 
 float dpi(void);
 
+void quit(void);
+
 #ifdef __cplusplus
 }
 #endif
