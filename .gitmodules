@@ -10,3 +10,6 @@
 [submodule "third_party/bx"]
 	path = third_party/bx
 	url = https://github.com/bkaradzic/bx
+[submodule "third_party/bgfx"]
+	path = third_party/bgfx
+	url = https://github.com/bkaradzic/bgfx
