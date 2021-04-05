@@ -1,3 +1,0 @@
-#include <mnm/window.h>
-
-// ...
