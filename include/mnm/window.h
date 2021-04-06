@@ -14,6 +14,8 @@ enum
 
 void size(int width, int height, int flags);
 
+void vsync(int vsync);
+
 void title(const char* title);
 
 int width(void);

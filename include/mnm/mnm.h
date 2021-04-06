@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-void mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
+int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 
 #ifdef __cplusplus
 }
