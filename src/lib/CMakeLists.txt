@@ -30,12 +30,18 @@ target_link_libraries(${NAME} PRIVATE
     bx
     gleq
     glfw
+    HandmadeMath
 )
 
 set_target_properties(${NAME} PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 17 # Needed for `__has_include`.
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
+
+include(cmake/add_shader_dependency.cmake)
+
+add_shader_dependency(${NAME} "shaders/poscolor.vs")
+add_shader_dependency(${NAME} "shaders/poscolor.fs")
