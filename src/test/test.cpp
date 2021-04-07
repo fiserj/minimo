@@ -10,18 +10,18 @@ static void setup(void)
 
 static void draw(void)
 {
-    // begin();
-    // {
-    //     color(0xff0000ff);
-    //     vertex(-0.6f, -0.4f, 0.0f);
+    begin();
+    {
+        color(0xff0000ff);
+        vertex(-0.6f, -0.4f, 0.0f);
 
-    //     color(0x00ff00ff);
-    //     vertex(0.6f, -0.4f, 0.0f);
+        color(0x00ff00ff);
+        vertex(0.6f, -0.4f, 0.0f);
 
-    //     color(0x0000ffff);
-    //     vertex(0.0f, 0.6f, 0.0f);
-    // }
-    // end();
+        color(0x0000ffff);
+        vertex(0.0f, 0.6f, 0.0f);
+    }
+    end();
 }
 
 int main(int, char**)

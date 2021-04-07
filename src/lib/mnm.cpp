@@ -1,8 +1,14 @@
 #include <assert.h>                    // assert
+#include <stdint.h>                    // uint32_t
+#include <string.h>                    // memcpy
+
+#include <vector>                      // vector
 
 #include <bgfx/bgfx.h>                 // bgfx::*
+#include <bgfx/embedded_shader.h>      // BGFX_EMBEDDED_SHADER*
 
 #include <bx/bx.h>                     // BX_COUNTOF
+#include <bx/endian.h>                 // endianSwap
 #include <bx/platform.h>               // BX_PLATFORM_*
 
 #define GLFW_INCLUDE_NONE
@@ -25,7 +31,14 @@
 #   import <QuartzCore/CAMetalLayer.h> // CAMetalLayer
 #endif
 
+#define HANDMADE_MATH_IMPLEMENTATION
+#include <HandmadeMath.h>
+
+#include <shaders/poscolor_fs.h>       // poscolor_fs
+#include <shaders/poscolor_vs.h>       // poscolor_vs
+
 #include <mnm/mnm.h>
+#include <mnm/geometry.h>
 #include <mnm/window.h>
 
 // Creates BGFX-specific platform data.
@@ -76,14 +89,41 @@ static bgfx::PlatformData create_platform_data
     return data;
 }
 
+struct Vertex
+{
+    hmm_vec3 position;
+    uint32_t color;
+};
+
+template <typename T>
+struct Stack
+{
+    T              top;
+    std::vector<T> data;
+
+    void push()
+    {
+        data.push_back(top);
+    }
+
+    void pop()
+    {
+        top = data.back();
+        data.pop_back();
+    }
+};
+
 struct Context
 {
-    GLFWwindow* window = nullptr;
+    Vertex              state;
+    std::vector<Vertex> vertices;
+    Stack<hmm_mat4>     matrices = { HMM_Mat4d(1.0f) };
+    GLFWwindow*         window   = nullptr;
 };
 
 static Context& get_context()
 {
-    static Context s_ctx;
+    static thread_local Context s_ctx;
     return s_ctx;
 }
 
@@ -168,6 +208,31 @@ void title(const char* title)
     glfwSetWindowTitle(window, title);
 }
 
+static void submit_immediate_geometry
+(
+    bgfx::ViewId               view,
+    bgfx::ProgramHandle        program,
+    const bgfx::VertexLayout&  layout,
+    const std::vector<Vertex>& vertices
+)
+{
+    const uint32_t num_vertices = static_cast<uint32_t>(vertices.size());
+
+    if (num_vertices > bgfx::getAvailTransientVertexBuffer(num_vertices, layout))
+    {
+        assert(false);
+        return;
+    }
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, num_vertices, layout);
+    memcpy(tvb.data, vertices.data(), num_vertices * sizeof(Vertex));
+
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::setState(BGFX_STATE_DEFAULT);
+    bgfx::submit(view, program);
+}
+
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
     if (glfwInit() != GLFW_TRUE)
@@ -209,6 +274,30 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     constexpr bgfx::ViewId DEFAULT_VIEW = 0;
 
+    const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
+    static const bgfx::EmbeddedShader s_shaders[] =
+    {
+        BGFX_EMBEDDED_SHADER(poscolor_fs),
+        BGFX_EMBEDDED_SHADER(poscolor_vs),
+
+        BGFX_EMBEDDED_SHADER_END()
+    };
+
+    bgfx::ProgramHandle program = bgfx::createProgram
+    (
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
+        true
+    );
+    assert(bgfx::isValid(program));
+
+    bgfx::VertexLayout layout;
+    layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Color0  , 4, bgfx::AttribType::Uint8, true)
+        .end();
+
     while (!glfwWindowShouldClose(ctx.window) && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS)
     {
         glfwPollEvents();
@@ -234,6 +323,17 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
         bgfx::touch(DEFAULT_VIEW);
 
+        // TODO : This needs to be done for all contexts across all threads.
+        get_context().vertices.clear();
+
+        if (draw)
+        {
+            (*draw)();
+        }
+
+        // TODO : This needs to be done for all contexts across all threads.
+        submit_immediate_geometry(DEFAULT_VIEW, program, layout, get_context().vertices);
+
         bgfx::frame();
     }
 
@@ -250,3 +350,25 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     return 0;
 }
 
+void begin(void)
+{
+    assert(get_context().vertices.size() % 3 == 0);
+}
+
+void end()
+{
+    begin();
+}
+
+void vertex(float x, float y, float z)
+{
+    Context& ctx = get_context();
+
+    ctx.state.position = (ctx.matrices.top * HMM_Vec4(x, y, z, 1.0f)).XYZ;
+    ctx.vertices.push_back(ctx.state);
+}
+
+void color(unsigned int rgba)
+{
+    get_context().state.color = bx::endianSwap(rgba);
+}
