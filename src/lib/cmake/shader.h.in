@@ -1,0 +1,51 @@
+#pragma once
+
+#ifndef BGFX_EMBEDDED_SHADER_H_HEADER_GUARD
+#   error Please include '<bgfx/embedded_shader.h>' before including the shader '${SHADER_NAME}'.
+#endif
+
+#include <stdint.h> // uint*_t
+
+// Taken from <bgfx/embedded_shader.h>.
+#define EMPTY_SHADER { 'V', 'S', 'H', 5, 0, 0, 0, 0, 0, 0 }
+
+// DX9.
+#if __has_include("dx9/${SHADER_NAME}_dx9.h")
+#   include "dx9/${SHADER_NAME}_dx9.h"
+#else
+static const uint8_t ${SHADER_NAME}_dx9[10] = EMPTY_SHADER;
+#endif
+
+// DX11.
+#if __has_include("dx11/${SHADER_NAME}_dx11.h")
+#   include "dx11/${SHADER_NAME}_dx11.h"
+#else
+static const uint8_t ${SHADER_NAME}_dx11[10] = EMPTY_SHADER;
+#endif
+
+// GLSL.
+#if __has_include("glsl/${SHADER_NAME}_glsl.h")
+#   include "glsl/${SHADER_NAME}_glsl.h"
+#else
+static const uint8_t ${SHADER_NAME}_glsl[10] = EMPTY_SHADER;
+#endif
+
+// Metal.
+#if __has_include("mtl/${SHADER_NAME}_mtl.h")
+#   include "mtl/${SHADER_NAME}_mtl.h"
+#else
+static const uint8_t ${SHADER_NAME}_mtl[10] = EMPTY_SHADER;
+#endif
+
+// PSSL.
+extern const uint8_t  * ${SHADER_NAME}_pssl;
+extern const uint32_t   ${SHADER_NAME}_pssl_size;
+
+// SPIR-V.
+#if __has_include("spv/${SHADER_NAME}_spv.h")
+#   include "spv/${SHADER_NAME}_spv.h"
+#else
+static const uint8_t ${SHADER_NAME}_spv[10] = EMPTY_SHADER;
+#endif
+
+#undef EMPTY_SHADER
