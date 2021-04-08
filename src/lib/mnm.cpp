@@ -89,10 +89,15 @@ static bgfx::PlatformData create_platform_data
     return data;
 }
 
+struct Attribs
+{
+    uint32_t color;
+};
+
 struct Vertex
 {
     hmm_vec3 position;
-    uint32_t color;
+    Attribs  attribs;
 };
 
 template <typename T>
@@ -113,12 +118,23 @@ struct Stack
     }
 };
 
+struct MatrixStack : Stack<hmm_mat4>
+{
+    void mul(const hmm_mat4& matrix)
+    {
+        top = matrix * top;
+    }
+};
+
 struct Context
 {
-    Vertex              state;
-    std::vector<Vertex> vertices;
-    Stack<hmm_mat4>     matrices = { HMM_Mat4d(1.0f) };
-    GLFWwindow*         window   = nullptr;
+    std::vector<Vertex>  vertices;
+    Stack<Attribs>       attribs  = { 0xffffff };
+    MatrixStack          models   = { HMM_Mat4d(1.0f) };
+    MatrixStack          views    = { HMM_Mat4d(1.0f) };
+    MatrixStack          projs    = { HMM_Mat4d(1.0f) };
+    MatrixStack*         matrices = &models;
+    GLFWwindow*          window   = nullptr;
 };
 
 static Context& get_context()
@@ -364,11 +380,71 @@ void vertex(float x, float y, float z)
 {
     Context& ctx = get_context();
 
-    ctx.state.position = (ctx.matrices.top * HMM_Vec4(x, y, z, 1.0f)).XYZ;
-    ctx.vertices.push_back(ctx.state);
+    ctx.vertices.push_back({ (ctx.models.top * HMM_Vec4(x, y, z, 1.0f)).XYZ, ctx.attribs.top });
 }
 
 void color(unsigned int rgba)
 {
-    get_context().state.color = bx::endianSwap(rgba);
+    get_context().attribs.top.color = bx::endianSwap(rgba);
+}
+
+void model(void)
+{
+    // ...
+}
+
+void view(void)
+{
+    // ...
+}
+
+void projection(void)
+{
+    // ...
+}
+
+void push(void)
+{
+    Context& ctx = get_context();
+
+    ctx.attribs . push();
+    ctx.matrices->push();
+}
+
+void pop(void)
+{
+    Context& ctx = get_context();
+
+    ctx.attribs . pop();
+    ctx.matrices->pop();
+}
+
+void identity(void)
+{
+    get_context().matrices->top = HMM_Mat4d(1.0f);
+}
+
+void ortho(float left, float right, float bottom, float top, float near, float far)
+{
+    get_context().matrices->mul(HMM_Orthographic(left, right, bottom, top, near, far));
+}
+
+void perspective(float fovy, float aspect, float near, float far)
+{
+    get_context().matrices->mul(HMM_Perspective(fovy, aspect, near, far));
+}
+
+void rotate(float angle, float x, float y, float z)
+{
+    get_context().matrices->mul(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
+}
+
+void scale(float x, float y, float z)
+{
+    get_context().matrices->mul(HMM_Scale(HMM_Vec3(x, y, x)));
+}
+
+void translate(float x, float y, float z)
+{
+    get_context().matrices->mul(HMM_Translate(HMM_Vec3(x, y, x)));
 }

@@ -10,6 +10,10 @@ static void setup(void)
 
 static void draw(void)
 {
+    model();
+    identity();
+    translate(0.5f, 0.0f, 0.0f);
+
     begin();
     {
         color(0xff0000ff);
