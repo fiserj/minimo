@@ -218,10 +218,31 @@ void size(int width, int height, int flags)
 
 void title(const char* title)
 {
-    GLFWwindow* window = get_context().window;
-    assert(window);
+    glfwSetWindowTitle(get_context().window, title);
+}
 
-    glfwSetWindowTitle(window, title);
+int width(void)
+{
+    int width;
+    glfwGetWindowSize(get_context().window, &width, nullptr);
+
+    return width;
+}
+
+int height(void)
+{
+    int height;
+    glfwGetWindowSize(get_context().window, nullptr, &height);
+
+    return height;
+}
+
+float aspect(void)
+{
+    int width, height;
+    glfwGetWindowSize(get_context().window, &width, &height);
+
+    return static_cast<float>(width) / static_cast<float>(height);
 }
 
 static void submit_immediate_geometry
@@ -347,6 +368,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             (*draw)();
         }
 
+        bgfx::setViewTransform(DEFAULT_VIEW, &get_context().views.top, &get_context().projs.top);
+
         // TODO : This needs to be done for all contexts across all threads.
         submit_immediate_geometry(DEFAULT_VIEW, program, layout, get_context().vertices);
 
@@ -390,17 +413,20 @@ void color(unsigned int rgba)
 
 void model(void)
 {
-    // ...
+    Context& ctx = get_context();
+    ctx.matrices = &ctx.models;
 }
 
 void view(void)
 {
-    // ...
+    Context& ctx = get_context();
+    ctx.matrices = &ctx.views;
 }
 
 void projection(void)
 {
-    // ...
+    Context& ctx = get_context();
+    ctx.matrices = &ctx.projs;
 }
 
 void push(void)
@@ -432,6 +458,11 @@ void ortho(float left, float right, float bottom, float top, float near, float f
 void perspective(float fovy, float aspect, float near, float far)
 {
     get_context().matrices->mul(HMM_Perspective(fovy, aspect, near, far));
+}
+
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
+{
+    get_context().matrices->mul(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
 }
 
 void rotate(float angle, float x, float y, float z)
