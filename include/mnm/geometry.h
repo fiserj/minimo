@@ -30,6 +30,8 @@ void ortho(float left, float right, float bottom, float top, float near, float f
 
 void perspective(float fovy, float aspect, float near, float far);
 
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z);
+
 void rotate(float angle, float x, float y, float z);
 
 void scale(float x, float y, float z);
