@@ -245,6 +245,22 @@ float aspect(void)
     return static_cast<float>(width) / static_cast<float>(height);
 }
 
+float dpi(void)
+{
+    int fb_width;
+    glfwGetFramebufferSize(get_context().window, &fb_width, nullptr);
+
+    int width;
+    glfwGetWindowSize(get_context().window, &width, nullptr);
+
+    return static_cast<float>(fb_width) / static_cast<float>(width);
+}
+
+void quit(void)
+{
+    glfwSetWindowShouldClose(get_context().window, GLFW_TRUE);
+}
+
 static void submit_immediate_geometry
 (
     bgfx::ViewId               view,
