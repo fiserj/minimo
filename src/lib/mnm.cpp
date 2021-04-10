@@ -26,6 +26,10 @@
 #endif
 #include <GLFW/glfw3native.h>          // glfwGetX11Display, glfwGet*Window
 
+#define GLEQ_IMPLEMENTATION
+#define GLEQ_STATIC
+#include <gleq.h>
+
 #if BX_PLATFORM_OSX
 #   import <Cocoa/Cocoa.h>             // NSWindow
 #   import <QuartzCore/CAMetalLayer.h> // CAMetalLayer
@@ -38,6 +42,7 @@
 #include <shaders/poscolor_vs.h>       // poscolor_vs
 
 #include <mnm/mnm.h>
+#include <mnm/io.h>
 #include <mnm/geometry.h>
 #include <mnm/window.h>
 
@@ -126,6 +131,88 @@ struct MatrixStack : Stack<hmm_mat4>
     }
 };
 
+struct Keyboard
+{
+    enum : uint8_t
+    {
+        DOWN = 0x01,
+        UP   = 0x02,
+        HELD = 0x04,
+    };
+
+    static constexpr int INVALID_KEY      = -1;
+
+    static constexpr int MAX_KEYS         = GLFW_KEY_LAST;
+
+    uint8_t              states[MAX_KEYS] = { 0 };
+
+    inline int translate_app_key_to_glfw_key(int app_key) const
+    {
+        static const int special_app_keys[] =
+        {
+            0,                  // KEY_ANY
+            GLFW_KEY_BACKSPACE, // KEY_BACKSPACE
+            GLFW_KEY_DELETE,    // KEY_DELETE
+            GLFW_KEY_DOWN,      // KEY_DOWN
+            GLFW_KEY_ENTER,     // KEY_ENTER
+            GLFW_KEY_ESCAPE,    // KEY_ESCAPE
+            GLFW_KEY_LEFT,      // KEY_LEFT
+            GLFW_KEY_RIGHT,     // KEY_RIGHT
+            GLFW_KEY_TAB,       // KEY_TAB
+            GLFW_KEY_UP,        // KEY_UP
+        };
+
+        int glfw_key = INVALID_KEY;
+
+        if (app_key >= 0 && app_key < BX_COUNTOF(special_app_keys))
+        {
+            glfw_key = special_app_keys[app_key];
+        }
+        else if (app_key >= 'A' && app_key <= 'Z')
+        {
+            glfw_key = app_key + (GLFW_KEY_A - 'A');
+        }
+        else if (app_key >= 'a' && app_key <= 'z')
+        {
+            glfw_key = app_key + (GLFW_KEY_A - 'a');
+        }
+
+        return glfw_key;
+    }
+
+    inline bool is(int app_key, int flag) const
+    {
+        const int glfw_key = translate_app_key_to_glfw_key(app_key);
+
+        return (glfw_key >= 0 && glfw_key < MAX_KEYS)
+            ? states[glfw_key] & flag
+            : false;
+    }
+
+    void update_key_state(int glfw_key, bool down)
+    {
+        if (glfw_key >= 0 && glfw_key < MAX_KEYS)
+        {
+            states[glfw_key] |= down ? DOWN : UP;
+        }
+    }
+
+    inline void update_state_flags()
+    {
+        for (int i = 0; i < MAX_KEYS; i++)
+        {
+            if (states[i] & UP)
+            {
+                states[i] = 0;
+            }
+            else if (states[i] & DOWN)
+            {
+                states[i] = HELD;
+            }
+        }
+    }
+};
+
 struct Context
 {
     std::vector<Vertex>  vertices;
@@ -141,6 +228,12 @@ static Context& get_context()
 {
     static thread_local Context s_ctx;
     return s_ctx;
+}
+
+static Keyboard& get_keyboard()
+{
+    static Keyboard s_keyboard;
+    return s_keyboard;
 }
 
 void size(int width, int height, int flags)
@@ -293,10 +386,13 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         return 1;
     }
 
+    gleqInit();
+
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    Context& ctx = get_context();
+    Context&  ctx      = get_context ();
+    Keyboard& keyboard = get_keyboard();
 
     ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
     if (!ctx.window)
@@ -304,6 +400,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         glfwTerminate();
         return 2;
     }
+
+    gleqTrackWindow(ctx.window);
 
     bgfx::Init init;
     init.platformData = create_platform_data(ctx.window, init.type);
@@ -351,9 +449,29 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         .add(bgfx::Attrib::Color0  , 4, bgfx::AttribType::Uint8, true)
         .end();
 
-    while (!glfwWindowShouldClose(ctx.window) && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS)
+    while (!glfwWindowShouldClose(ctx.window)/* && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS*/)
     {
         glfwPollEvents();
+        get_keyboard().update_state_flags();
+
+        GLEQevent event;
+        while (gleqNextEvent(&event))
+        {
+            switch (event.type)
+            {
+            case GLEQ_KEY_PRESSED:
+                keyboard.update_key_state(event.keyboard.key, true);
+                break;
+            
+            case GLEQ_KEY_RELEASED:
+                keyboard.update_key_state(event.keyboard.key, false);
+                break;
+
+            default:;
+            }
+
+            gleqFreeEvent(&event);
+        }
 
         int curr_fb_width  = 0;
         int curr_fb_height = 0;
@@ -377,17 +495,17 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         bgfx::touch(DEFAULT_VIEW);
 
         // TODO : This needs to be done for all contexts across all threads.
-        get_context().vertices.clear();
+        ctx.vertices.clear();
 
         if (draw)
         {
             (*draw)();
         }
 
-        bgfx::setViewTransform(DEFAULT_VIEW, &get_context().views.top, &get_context().projs.top);
+        bgfx::setViewTransform(DEFAULT_VIEW, &ctx.views.top, &ctx.projs.top);
 
         // TODO : This needs to be done for all contexts across all threads.
-        submit_immediate_geometry(DEFAULT_VIEW, program, layout, get_context().vertices);
+        submit_immediate_geometry(DEFAULT_VIEW, program, layout, ctx.vertices);
 
         bgfx::frame();
     }
@@ -494,4 +612,19 @@ void scale(float x, float y, float z)
 void translate(float x, float y, float z)
 {
     get_context().matrices->mul(HMM_Translate(HMM_Vec3(x, y, x)));
+}
+
+int key_down(int key)
+{
+    return get_keyboard().is(key, Keyboard::DOWN);
+}
+
+int key_held(int key)
+{
+    return get_keyboard().is(key, Keyboard::HELD);
+}
+
+int key_up(int key)
+{
+    return get_keyboard().is(key, Keyboard::UP);
 }

@@ -15,6 +15,8 @@ enum
 {
     KEY_ANY,
 
+    KEY_BACKSPACE,
+    KEY_DELETE,
     KEY_DOWN,
     KEY_ENTER,
     KEY_ESCAPE,
