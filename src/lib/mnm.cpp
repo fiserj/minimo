@@ -131,7 +131,54 @@ struct MatrixStack : Stack<hmm_mat4>
     }
 };
 
-struct Mouse
+template <int MAX_INPUTS, typename T>
+struct InputState
+{
+    enum : uint8_t
+    {
+        DOWN = 0x01,
+        UP   = 0x02,
+        HELD = 0x04,
+    };
+
+    static constexpr int INVALID_INPUT =  -1;
+
+    uint8_t states[MAX_INPUTS] = { 0 };
+
+    inline bool is(int app_input, int flag) const
+    {
+        const int input = T::translate_app_input(app_input);
+
+        return (input > INVALID_INPUT && input < MAX_INPUTS)
+            ? states[input] & flag
+            : false;
+    }
+
+    void update_input_state(int input, bool down)
+    {
+        if (input > INVALID_INPUT && input < MAX_INPUTS)
+        {
+            states[input] |= down ? DOWN : UP;
+        }
+    }
+
+    void update_state_flags()
+    {
+        for (int i = 0; i < MAX_INPUTS; i++)
+        {
+            if (states[i] & UP)
+            {
+                states[i] = 0;
+            }
+            else if (states[i] & DOWN)
+            {
+                states[i] = HELD;
+            }
+        }
+    }
+};
+
+struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
     int curr [2] = { 0 };
     int prev [2] = { 0 };
@@ -151,24 +198,26 @@ struct Mouse
         prev[0] = curr[0];
         prev[1] = curr[1];
     }
+
+    static int translate_app_input(int app_button)
+    {
+        switch (app_button)
+        {
+        case MOUSE_LEFT:
+            return GLFW_MOUSE_BUTTON_LEFT;
+        case MOUSE_RIGHT:
+            return GLFW_MOUSE_BUTTON_RIGHT;
+        case MOUSE_MIDDLE:
+            return GLFW_MOUSE_BUTTON_MIDDLE;
+        default:
+            return INVALID_INPUT;
+        }
+    }
 };
 
-struct Keyboard
+struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
 {
-    enum : uint8_t
-    {
-        DOWN = 0x01,
-        UP   = 0x02,
-        HELD = 0x04,
-    };
-
-    static constexpr int INVALID_KEY      = -1;
-
-    static constexpr int MAX_KEYS         = GLFW_KEY_LAST;
-
-    uint8_t              states[MAX_KEYS] = { 0 };
-
-    inline int translate_app_key_to_glfw_key(int app_key) const
+    static int translate_app_input(int app_key)
     {
         static const int special_app_keys[] =
         {
@@ -184,7 +233,7 @@ struct Keyboard
             GLFW_KEY_UP,        // KEY_UP
         };
 
-        int glfw_key = INVALID_KEY;
+        int glfw_key = INVALID_INPUT;
 
         if (app_key >= 0 && app_key < BX_COUNTOF(special_app_keys))
         {
@@ -200,38 +249,6 @@ struct Keyboard
         }
 
         return glfw_key;
-    }
-
-    inline bool is(int app_key, int flag) const
-    {
-        const int glfw_key = translate_app_key_to_glfw_key(app_key);
-
-        return (glfw_key >= 0 && glfw_key < MAX_KEYS)
-            ? states[glfw_key] & flag
-            : false;
-    }
-
-    void update_key_state(int glfw_key, bool down)
-    {
-        if (glfw_key >= 0 && glfw_key < MAX_KEYS)
-        {
-            states[glfw_key] |= down ? DOWN : UP;
-        }
-    }
-
-    inline void update_state_flags()
-    {
-        for (int i = 0; i < MAX_KEYS; i++)
-        {
-            if (states[i] & UP)
-            {
-                states[i] = 0;
-            }
-            else if (states[i] & DOWN)
-            {
-                states[i] = HELD;
-            }
-        }
     }
 };
 
@@ -488,8 +505,10 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     while (!glfwWindowShouldClose(ctx.window)/* && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS*/)
     {
+        keyboard.update_state_flags();
+        mouse   .update_state_flags();
+
         glfwPollEvents();
-        get_keyboard().update_state_flags();
 
         GLEQevent event;
         while (gleqNextEvent(&event))
@@ -497,11 +516,19 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                keyboard.update_key_state(event.keyboard.key, true);
+                keyboard.update_input_state(event.keyboard.key, true);
                 break;
             
             case GLEQ_KEY_RELEASED:
-                keyboard.update_key_state(event.keyboard.key, false);
+                keyboard.update_input_state(event.keyboard.key, false);
+                break;
+
+            case GLEQ_BUTTON_PRESSED:
+                mouse.update_input_state(event.mouse.button, true);
+                break;
+
+            case GLEQ_BUTTON_RELEASED:
+                mouse.update_input_state(event.mouse.button, false);
                 break;
 
             case GLEQ_CURSOR_MOVED:
@@ -692,4 +719,19 @@ int mouse_dx(void)
 int mouse_dy(void)
 {
     return get_mouse().delta[1];
+}
+
+int mouse_down(int button)
+{
+    return get_mouse().is(button, Mouse::DOWN);
+}
+
+int mouse_held(int button)
+{
+    return get_mouse().is(button, Mouse::HELD);
+}
+
+int mouse_up(int button)
+{
+    return get_mouse().is(button, Mouse::UP);
 }
