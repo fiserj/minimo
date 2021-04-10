@@ -131,6 +131,28 @@ struct MatrixStack : Stack<hmm_mat4>
     }
 };
 
+struct Mouse
+{
+    int curr [2] = { 0 };
+    int prev [2] = { 0 };
+    int delta[2] = { 0 };
+
+    void update_position(int x, int y)
+    {
+        curr[0] = x;
+        curr[1] = y;
+    }
+
+    void update_position_delta()
+    {
+        delta[0] = curr[0] - prev[0];
+        delta[1] = curr[1] - prev[1];
+
+        prev[0] = curr[0];
+        prev[1] = curr[1];
+    }
+};
+
 struct Keyboard
 {
     enum : uint8_t
@@ -234,6 +256,12 @@ static Keyboard& get_keyboard()
 {
     static Keyboard s_keyboard;
     return s_keyboard;
+}
+
+static Mouse& get_mouse()
+{
+    static Mouse s_mouse;
+    return s_mouse;
 }
 
 void size(int width, int height, int flags)
@@ -393,6 +421,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     Context&  ctx      = get_context ();
     Keyboard& keyboard = get_keyboard();
+    Mouse&    mouse    = get_mouse   ();
 
     ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
     if (!ctx.window)
@@ -449,6 +478,14 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         .add(bgfx::Attrib::Color0  , 4, bgfx::AttribType::Uint8, true)
         .end();
 
+    {
+        double x, y;
+        glfwGetCursorPos(ctx.window, &x, &y);
+
+        mouse.curr[0] = mouse.prev[0] = static_cast<int>(x);
+        mouse.curr[1] = mouse.prev[1] = static_cast<int>(y);
+    }
+
     while (!glfwWindowShouldClose(ctx.window)/* && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS*/)
     {
         glfwPollEvents();
@@ -467,11 +504,19 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 keyboard.update_key_state(event.keyboard.key, false);
                 break;
 
+            case GLEQ_CURSOR_MOVED:
+                mouse.update_position(event.pos.x, event.pos.y);
+                break;
+
             default:;
             }
 
             gleqFreeEvent(&event);
         }
+
+        // We have to wait with the mouse delta computation after all events
+        // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
+        mouse.update_position_delta();
 
         int curr_fb_width  = 0;
         int curr_fb_height = 0;
@@ -627,4 +672,24 @@ int key_held(int key)
 int key_up(int key)
 {
     return get_keyboard().is(key, Keyboard::UP);
+}
+
+int mouse_x(void)
+{
+    return get_mouse().curr[0];
+}
+
+int mouse_y(void)
+{
+    return get_mouse().curr[1];
+}
+
+int mouse_dx(void)
+{
+    return get_mouse().delta[0];
+}
+
+int mouse_dy(void)
+{
+    return get_mouse().delta[1];
 }
