@@ -1,5 +1,6 @@
 #include <mnm/mnm.h>
 #include <mnm/geometry.h>
+#include <mnm/io.h>
 #include <mnm/window.h>
 
 static void setup(void)
@@ -10,6 +11,12 @@ static void setup(void)
 
 static void draw(void)
 {
+    if (key_down(KEY_ESCAPE))
+    {
+        quit();
+        return;
+    }
+
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 10.0f);
@@ -19,9 +26,14 @@ static void draw(void)
     identity();
     look_at(1.0f, 1.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
+    static float x = 0.0f;
+    if (key_down(KEY_LEFT )) { x -= 0.25f; }
+    if (key_down(KEY_RIGHT)) { x += 0.25f; }
+    if (key_up  ('X'      )) { x  = 0.00f; }
+
     model();
     identity();
-    // translate(0.5f, 0.0f, 0.0f);
+    translate(x, 0.0f, 0.0f);
 
     begin();
     {

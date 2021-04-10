@@ -26,7 +26,7 @@ float aspect(void);
 
 float dpi(void);
 
-void quit(void);
+void quit(void); // It's more like `signal_quit` or `request`quit`, but I don't like the sound of it.
 
 #ifdef __cplusplus
 }
