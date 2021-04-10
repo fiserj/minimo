@@ -38,7 +38,7 @@ int mouse_down(int button);
 
 int mouse_held(int button);
 
-int mouse_up(int _button);
+int mouse_up(int button);
 
 int key_down(int key);
 
