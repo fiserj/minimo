@@ -33,7 +33,7 @@ static void quad(const Vertex* vertices, int i0, int i1, int i2, int i3)
     vertex(v3->x, v3->y, v3->z);
 }
 
-static void cube()
+static void cube(void)
 {
     static const Vertex vertices[] =
     {
@@ -55,6 +55,23 @@ static void cube()
     quad(vertices, 0, 3, 4, 7);
 }
 
+static void scene(void)
+{
+    for (float y = 0.0f; y < 11.0f; y += 1.0f)
+    for (float x = 0.0f; x < 11.0f; x += 1.0f)
+    {
+        push();
+
+        rotate_x (((float)elapsed() + x * 0.21f) * 57.2958f);
+        rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
+        translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
+
+        cube();
+
+        pop();
+    }
+}
+
 static void setup(void)
 {
     size(800, 600, WINDOW_DEFAULT);
@@ -71,34 +88,34 @@ static void draw(void)
 
     projection();
     identity();
-    perspective(60.0f, aspect(), 0.1f, 10.0f);
+    perspective(60.0f, aspect(), 0.1f, 100.0f);
 
-    static float y = 2.0f;
-    if (key_down(KEY_UP  )) { y += 0.5f; }
-    if (key_down(KEY_DOWN)) { y -= 0.5f; }
-    if (key_up  ('X'     )) { y  = 0.0f; }
+    // static float y = 2.0f;
+    // if (key_down(KEY_UP  )) { y += 0.5f; }
+    // if (key_down(KEY_DOWN)) { y -= 0.5f; }
+    // if (key_up  ('X'     )) { y  = 0.0f; }
 
     view();
     identity();
-    look_at(2.0f, y, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    look_at(
+        0.0f, 0.0f, -17.5f,
+        0.0f, 0.0f,   0.0f,
+        0.0f, 1.0f,   0.0f
+    );
 
     model();
     identity();
 
-    static float angle = 0.0f;
-    angle += 0.5f;
-    rotate_y(angle);
-
     begin();
     {
-        cube();
+        scene();
     }
     end();
 }
 
 int main(int, char**)
 {
-    mnm_run(setup, draw, nullptr);
+    mnm_run(setup, draw, 0);
 
     return 0;
 }
