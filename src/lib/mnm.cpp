@@ -698,7 +698,7 @@ void scale(float scale)
 
 void translate(float x, float y, float z)
 {
-    get_context().matrices->mul(HMM_Translate(HMM_Vec3(x, y, x)));
+    get_context().matrices->mul(HMM_Translate(HMM_Vec3(x, y, z)));
 }
 
 int key_down(int key)
