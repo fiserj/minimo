@@ -10,6 +10,7 @@
 #include <bx/bx.h>                     // BX_COUNTOF
 #include <bx/endian.h>                 // endianSwap
 #include <bx/platform.h>               // BX_PLATFORM_*
+#include <bx/timer.h>                  // getHPCounter, getHPFrequency
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>                // glfw*
@@ -249,6 +250,35 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
     }
 };
 
+struct Timer 
+{
+    static const double frequency;
+
+    int64_t counter = 0;
+    double  elapsed = 0.0;
+
+    void tic()
+    {
+        counter = bx::getHPCounter();
+    }
+
+    double toc(bool restart = false)
+    {
+        const int64_t now = bx::getHPCounter();
+
+        elapsed = (now - counter) / frequency;
+
+        if (restart)
+        {
+            counter = now;
+        }
+
+        return elapsed;
+    }
+};
+
+const double Timer::frequency = static_cast<double>(bx::getHPFrequency());
+
 struct Context
 {
     std::vector<Vertex>  vertices;
@@ -257,7 +287,12 @@ struct Context
     MatrixStack          views    = { HMM_Mat4d(1.0f) };
     MatrixStack          projs    = { HMM_Mat4d(1.0f) };
     MatrixStack*         matrices = &models;
+
+    // TODO : Window and the timers don't need to be in the thread-local
+    //        contexts, only the geometry builders do.
     GLFWwindow*          window   = nullptr;
+    Timer                total;
+    Timer                frame;
 };
 
 static Context& get_context()
@@ -500,10 +535,16 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         mouse.curr[1] = mouse.prev[1] = static_cast<int>(y);
     }
 
+    ctx.total.tic();
+    ctx.frame.tic();
+
     while (!glfwWindowShouldClose(ctx.window)/* && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS*/)
     {
         keyboard.update_state_flags();
         mouse   .update_state_flags();
+
+        ctx.total.toc();
+        ctx.frame.toc(true);
 
         glfwPollEvents();
 
@@ -749,4 +790,14 @@ int mouse_held(int button)
 int mouse_up(int button)
 {
     return get_mouse().is(button, Mouse::UP);
+}
+
+double elapsed(void)
+{
+    return get_context().total.elapsed;
+}
+
+double dt(void)
+{
+    return get_context().frame.elapsed;
 }

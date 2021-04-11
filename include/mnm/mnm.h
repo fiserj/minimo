@@ -181,6 +181,24 @@ int key_up(int key);
 
 
 // -----------------------------------------------------------------------------
+// TIME
+// -----------------------------------------------------------------------------
+
+/// Returns time elapsed since the start of the application, in seconds. The
+/// timer is reset before the first `draw` call.
+///
+/// @returns Time in seconds.
+///
+double elapsed(void);
+
+/// Returns time elapsed since last frame, in seconds.
+///
+/// @returns Time in seconds.
+///
+double dt(void);
+
+
+// -----------------------------------------------------------------------------
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
