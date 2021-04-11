@@ -42,9 +42,6 @@
 #include <shaders/poscolor_vs.h>       // poscolor_vs
 
 #include <mnm/mnm.h>
-#include <mnm/io.h>
-#include <mnm/geometry.h>
-#include <mnm/window.h>
 
 // Creates BGFX-specific platform data.
 static bgfx::PlatformData create_platform_data
@@ -676,9 +673,27 @@ void rotate(float angle, float x, float y, float z)
     get_context().matrices->mul(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
 }
 
-void scale(float x, float y, float z)
+void rotate_x(float angle)
 {
-    get_context().matrices->mul(HMM_Scale(HMM_Vec3(x, y, x)));
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 1.0f, 0.0f, 0.0f);
+}
+
+void rotate_y(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 1.0f, 0.0f);
+}
+
+void rotate_z(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 0.0f, 1.0f);
+}
+
+void scale(float scale)
+{
+    get_context().matrices->mul(HMM_Scale(HMM_Vec3(scale, scale, scale)));
 }
 
 void translate(float x, float y, float z)
