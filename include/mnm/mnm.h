@@ -4,7 +4,329 @@
 extern "C" {
 #endif
 
+// -----------------------------------------------------------------------------
+// MAIN ENTRY
+// -----------------------------------------------------------------------------
+
+/// Entry point when running as a library. The 
+///
+/// @param [in] setup Function that runs once after the window was created.
+/// @param [in] draw Function that runs on every frame.
+/// @param [in] cleanup Function that runs once just before the window is destroyed.
+///
+/// @returns Zero if no error occurred.
+///
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
+
+
+// -----------------------------------------------------------------------------
+// WINDOW
+// -----------------------------------------------------------------------------
+
+/// Window creation flags.
+///
+enum
+{
+    WINDOW_DEFAULT      = 0,
+    WINDOW_FIXED_SIZE   = 1,
+    WINDOW_FIXED_ASPECT = 2,
+    WINDOW_FULL_SCREEN  = 4,
+};
+
+/// Changes window's size and attributes. The size is specified in "screen
+/// coordinates", which may not correspond directly to pixels (typically on
+/// high-DPI displays).
+///
+/// @param[in] width Width in screen coordinates.
+/// @param[in] height Height in screen coordinates.
+/// @param[in] flags Window attributes.
+///
+void size(int width, int height, int flags);
+
+/// Sets window title.
+///
+/// @param[in] title Window title string.
+///
+void title(const char* title);
+
+/// Sets VSync on or off. Starts on by default.
+///
+/// @param[in] vsync If non-zero, VSync is turned on.
+///
+void vsync(int vsync);
+
+/// Signals that the window should be closed after the current frame.
+///
+void quit(void);
+
+/// Returns window width in screen coordinates.
+///
+/// @returns Window width in screen coordinates.
+///
+int width(void);
+
+/// Returns window height in screen coordinates.
+///
+/// @returns Window height in screen coordinates.
+///
+int height(void);
+
+/// Returns window aspect ratio, i.e, its width divided by its height.
+///
+/// @returns Window aspect ratio.
+///
+float aspect(void);
+
+/// Returns window DPI, or, more precisely, the ratio between screen and
+/// framebuffer coordinates.
+///
+/// @returns Window DPI.
+///
+float dpi(void);
+
+
+// -----------------------------------------------------------------------------
+// INPUT
+// -----------------------------------------------------------------------------
+
+/// Special keys enum (alphabetical keys can be passed as characters).
+///
+enum
+{
+    KEY_ANY,
+
+    KEY_BACKSPACE,
+    KEY_DELETE,
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_ESCAPE,
+    KEY_LEFT,
+    KEY_RIGHT,
+    KEY_TAB,
+    KEY_UP,
+};
+
+/// Mouse button enum.
+///
+enum
+{
+    MOUSE_LEFT,
+    MOUSE_MIDDLE,
+    MOUSE_RIGHT,
+};
+
+/// Returns mouse X position in screen coordinates.
+///
+/// @returns Mouse X position in screen coordinates.
+///
+int mouse_x(void);
+
+/// Returns mouse Y position in screen coordinates.
+///
+/// @returns Mouse Y position in screen coordinates.
+///
+int mouse_y(void);
+
+/// Returns mouse delta in X position between current and previous frames in
+/// screen coordinates.
+///
+/// @returns Mouse delta in X position in screen coordinates.
+///
+int mouse_dx(void);
+
+/// Returns mouse delta in Y position between current and previous frames in
+/// screen coordinates.
+///
+/// @returns Mouse delta in Y position in screen coordinates.
+///
+int mouse_dy(void);
+
+/// Checks whether a particular mouse button went down in the current frame.
+///
+/// @returns Non-zero if button went down.
+///
+int mouse_down(int button);
+
+/// Checks whether a particular mouse button was held down at least in current
+/// and previous frame.
+///
+/// @returns Non-zero if button was held down.
+///
+int mouse_held(int button);
+
+/// Checks whether a particular mouse button went up in the current frame.
+///
+/// @returns Non-zero if button went up.
+///
+int mouse_up(int button);
+
+/// Checks whether a particular key went down in the current frame.
+///
+/// @returns Non-zero if key went down.
+///
+int key_down(int key);
+
+/// Checks whether a particular key was held down at least in current
+/// and previous frame.
+///
+/// @returns Non-zero if key was held down.
+///
+int key_held(int key);
+
+/// Checks whether a particular key went up in the current frame.
+///
+/// @returns Non-zero if key went up.
+///
+int key_up(int key);
+
+
+// -----------------------------------------------------------------------------
+// GEOMETRY
+// -----------------------------------------------------------------------------
+
+/// Starts immediate geometry building mode. Only supported primitive is
+/// triangles.
+///
+void begin(void);
+
+/// Emits a vertex with given coordinates and current state (color, etc.). The
+/// vertex position is multiplied by the current model matrix.
+///
+/// @param[in] x X coordinate of the vertex.
+/// @param[in] y Y coordinate of the vertex.
+/// @param[in] z Z coordinate of the vertex.
+///
+void vertex(float x, float y, float z);
+
+/// Sets current color.
+///
+/// @param[in] rgba Color value in hexadecimal format (e.g., `0x00ff00ff` for
+///   opaque green).
+///
+void color(unsigned int rgba);
+
+/// Sets current texture coordinate.
+///
+/// @param[in] u U texture coordinate.
+/// @param[in] v V texture coordinate.
+///
+void uv(float u, float v);
+
+/// Ends the current geometry. Note that the data isn't immediately copied over
+/// to the GPU, but it's retained on the CPU and submitted together after the
+/// `draw` function returns.
+///
+void end(void);
+
+/// Sets model matrix stack as the active one.
+///
+void model(void);
+
+/// Sets view matrix stack as the active one.
+///
+void view(void);
+
+/// Sets projection matrix stack as the active one.
+///
+void projection(void);
+
+/// Pushes the top of the active matrix and state (color, etc.) stacks.
+///
+void push(void);
+
+/// Pops the top of the active matrix and state (color, etc.) stacks.
+///
+void pop(void);
+
+/// Replaces the top of the active matrix stack with the identity matrix.
+///
+void identity(void);
+
+/// Multiplies the top of the active matrix stack with an orthographic matrix.
+///
+/// @param[in] left Left vertical clipping plane position.
+/// @param[in] right Right vertical clipping plane position.
+/// @param[in] bottom Bottom horizontal clipping plane position.
+/// @param[in] top Top horizontal clipping plane position.
+/// @param[in] near Distance to the near depth clipping plane.
+/// @param[in] far Distance to the far depth clipping plane.
+///
+void ortho(float left, float right, float bottom, float top, float near, float far);
+
+/// Multiplies the top of the active matrix stack with a perspective projection
+/// matrix.
+///
+/// @param[in] fovy Field of view angle in degrees in the Y direction.
+/// @param[in] aspect Aspect ratio determining the field of view in the X
+///   direction. Typically, just call the `aspect` function.
+/// @param[in] near 
+/// @param[in] near Distance to the near depth clipping plane.
+/// @param[in] far Distance to the far depth clipping plane.
+///
+void perspective(float fovy, float aspect, float near, float far);
+
+/// Multiplies the top of the active matrix stack with a "camera" matrix,
+/// looking from an eye point at a center point, with a prescribed up vector.
+///
+/// @param[in] eye_x X coordinate of the eye point.
+/// @param[in] eye_y Y coordinate of the eye point.
+/// @param[in] eye_z Z coordinate of the eye point.
+/// @param[in] at_x X coordinate of the center point.
+/// @param[in] at_y Y coordinate of the center point.
+/// @param[in] at_z Z coordinate of the center point.
+/// @param[in] up_x X direction of the up vector.
+/// @param[in] up_y Y direction of the up vector.
+/// @param[in] up_z Z direction of the up vector.
+///
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z);
+
+/// Multiplies the top of the active matrix stack with a rotation matrix.
+///
+/// @param[in] angle Angle of rotation in degrees.
+/// @param[in] x X direction of the rotation axis vector.
+/// @param[in] y Y direction of the rotation axis vector.
+/// @param[in] z Z direction of the rotation axis vector.
+///
+void rotate(float angle, float x, float y, float z);
+
+/// Multiplies the top of the active matrix stack with a rotation-around-X-axis
+/// matrix.
+///
+/// @param[in] angle Angle of rotation in degrees.
+///
+void rotate_x(float angle);
+
+/// Multiplies the top of the active matrix stack with a rotation-around-Y-axis
+/// matrix.
+///
+/// @param[in] angle Angle of rotation in degrees.
+///
+void rotate_y(float angle);
+
+/// Multiplies the top of the active matrix stack with a rotation-around-Z-axis
+/// matrix.
+///
+/// @param[in] angle Angle of rotation in degrees.
+///
+void rotate_z(float angle);
+
+/// Multiplies the top of the active matrix stack with a scale matrix. Only
+/// uniform scaling is supported.
+///
+/// @param[in] scale Scale factor.
+///
+void scale(float scale);
+
+/// Multiplies the top of the active matrix stack with a translation matrix.
+///
+/// @param[in] x X coordinate of the translation vector.
+/// @param[in] y Y coordinate of the translation vector.
+/// @param[in] z Z coordinate of the translation vector.
+///
+void translate(float x, float y, float z);
+
+
+// -----------------------------------------------------------------------------
 
 #ifdef __cplusplus
 }

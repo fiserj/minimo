@@ -1,7 +1,4 @@
 #include <mnm/mnm.h>
-#include <mnm/geometry.h>
-#include <mnm/io.h>
-#include <mnm/window.h>
 
 static void setup(void)
 {
