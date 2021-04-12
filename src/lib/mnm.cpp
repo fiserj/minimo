@@ -593,7 +593,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             const uint16_t width  = static_cast<uint16_t>(curr_fb_width );
             const uint16_t height = static_cast<uint16_t>(curr_fb_height);
 
-            bgfx::reset(width, height, BGFX_RESET_VSYNC);
+            bgfx::reset(width, height, BGFX_RESET_NONE);
 
             bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
             bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);

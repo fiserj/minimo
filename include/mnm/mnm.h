@@ -49,7 +49,7 @@ void size(int width, int height, int flags);
 ///
 void title(const char* title);
 
-/// Sets VSync on or off. Starts on by default.
+/// Sets VSync on or off. Starts off by default.
 ///
 /// @param[in] vsync If non-zero, VSync is turned on.
 ///
