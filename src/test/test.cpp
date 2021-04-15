@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include <mnm/mnm.h>
 
 typedef struct
@@ -6,6 +8,13 @@ typedef struct
     unsigned int color;
 
 } Vertex;
+
+static void task_func(void* data)
+{
+    (void)data;
+
+    printf("TEST from another thread!\n");
+}
 
 static void quad(const Vertex* vertices, int i0, int i1, int i2, int i3)
 {
@@ -89,6 +98,13 @@ static void draw(void)
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
+
+    // Spawn a thread!
+    static int threads_to_spawn = 1;
+    if (threads_to_spawn-- > 0)
+    {
+        task(task_func, 0);
+    }
 
     // static float y = 2.0f;
     // if (key_down(KEY_UP  )) { y += 0.5f; }
