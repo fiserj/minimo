@@ -491,6 +491,16 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         return 3;
     }
 
+    // Post a GLEQ_FRAMEBUFFER_RESIZED event, in case the user doesn't change
+    // the window size.
+    {
+        int width  = 0;
+        int height = 0;
+        glfwGetFramebufferSize(ctx.window, &width, &height);
+
+        gleq_framebuffer_size_callback(ctx.window, width, height);
+    }
+
     if (setup)
     {
         (*setup)();
@@ -502,6 +512,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     int last_fb_height = 0;
 
     constexpr bgfx::ViewId DEFAULT_VIEW = 0;
+    bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
@@ -538,7 +549,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     ctx.total.tic();
     ctx.frame.tic();
 
-    while (!glfwWindowShouldClose(ctx.window)/* && glfwGetKey(ctx.window, GLFW_KEY_ESCAPE) != GLFW_PRESS*/)
+    while (!glfwWindowShouldClose(ctx.window))
     {
         keyboard.update_state_flags();
         mouse   .update_state_flags();
@@ -573,6 +584,16 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 mouse.update_position(event.pos.x, event.pos.y);
                 break;
 
+            case GLEQ_FRAMEBUFFER_RESIZED:
+                {
+                    const uint16_t width  = static_cast<uint16_t>(event.size.width );
+                    const uint16_t height = static_cast<uint16_t>(event.size.height);
+
+                    bgfx::reset(width, height, BGFX_RESET_NONE);
+                    bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
+                }
+                break;
+
             default:;
             }
 
@@ -582,25 +603,6 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         // We have to wait with the mouse delta computation after all events
         // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
         mouse.update_position_delta();
-
-        int curr_fb_width  = 0;
-        int curr_fb_height = 0;
-        glfwGetFramebufferSize(ctx.window, &curr_fb_width, &curr_fb_height);
-
-        if (curr_fb_width  != last_fb_width ||
-            curr_fb_height != last_fb_height)
-        {
-            const uint16_t width  = static_cast<uint16_t>(curr_fb_width );
-            const uint16_t height = static_cast<uint16_t>(curr_fb_height);
-
-            bgfx::reset(width, height, BGFX_RESET_NONE);
-
-            bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
-            bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
-
-            last_fb_width  = curr_fb_width;
-            last_fb_height = curr_fb_height;
-        }
 
         bgfx::touch(DEFAULT_VIEW);
 
