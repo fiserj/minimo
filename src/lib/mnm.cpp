@@ -39,6 +39,8 @@
 #define HANDMADE_MATH_IMPLEMENTATION
 #include <HandmadeMath.h>
 
+#include <TaskScheduler.h>             // ... 
+
 #include <shaders/poscolor_fs.h>       // poscolor_fs
 #include <shaders/poscolor_vs.h>       // poscolor_vs
 
@@ -313,6 +315,12 @@ static Mouse& get_mouse()
     return s_mouse;
 }
 
+static enki::TaskScheduler& get_scheduler()
+{
+    static enki::TaskScheduler s_scheduler;
+    return s_scheduler;
+}
+
 void size(int width, int height, int flags)
 {
     assert(flags >= 0);
@@ -468,9 +476,10 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    Context&  ctx      = get_context ();
-    Keyboard& keyboard = get_keyboard();
-    Mouse&    mouse    = get_mouse   ();
+    Context&             ctx       = get_context  ();
+    Keyboard&            keyboard  = get_keyboard ();
+    Mouse&               mouse     = get_mouse    ();
+    enki::TaskScheduler& scheduler = get_scheduler();
 
     ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
     if (!ctx.window)
@@ -500,6 +509,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
         gleq_framebuffer_size_callback(ctx.window, width, height);
     }
+
+    scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
     if (setup)
     {
