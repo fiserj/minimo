@@ -638,6 +638,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         (*cleanup)();
     }
 
+    scheduler.WaitforAllAndShutdown();
+
     bgfx::shutdown();
 
     glfwDestroyWindow(ctx.window);
@@ -813,4 +815,15 @@ double elapsed(void)
 double dt(void)
 {
     return get_context().frame.elapsed;
+}
+
+void task(void (* func)(void* data), void* data)
+{
+    // TODO : Obviously, this way we leak, so this is just for a demonstration.
+    enki::TaskSet* task = new enki::TaskSet(1, [=](enki::TaskSetPartition, uint32_t)
+    {
+        (*func)(data);
+    });
+
+    get_scheduler().AddTaskSetToPipe(task);
 }
