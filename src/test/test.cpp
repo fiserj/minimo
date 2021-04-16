@@ -11,9 +11,13 @@ typedef struct
 
 static void task_func(void* data)
 {
-    (void)data;
+    const int i = *((int*)data);
 
-    printf("TEST from another thread!\n");
+    printf("[%i] Start\n", i);
+
+    sleep_for(i);
+
+    printf("[%i] End\n", i);
 }
 
 static void quad(const Vertex* vertices, int i0, int i1, int i2, int i3)
@@ -99,17 +103,13 @@ static void draw(void)
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
 
-    // Spawn a thread!
-    static int threads_to_spawn = 1;
-    if (threads_to_spawn-- > 0)
+    if (key_down(KEY_SPACE))
     {
-        task(task_func, 0);
+        static int tids[] = { 1, 2, 3 };
+        task(task_func, tids + 0);
+        task(task_func, tids + 1);
+        task(task_func, tids + 2);
     }
-
-    // static float y = 2.0f;
-    // if (key_down(KEY_UP  )) { y += 0.5f; }
-    // if (key_down(KEY_DOWN)) { y -= 0.5f; }
-    // if (key_up  ('X'     )) { y  = 0.0f; }
 
     view();
     identity();
