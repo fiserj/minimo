@@ -2,6 +2,7 @@
 #include <stdint.h>                    // uint32_t
 #include <string.h>                    // memcpy
 
+#include <mutex>                       // lock_guard, mutex
 #include <vector>                      // vector
 
 #include <bgfx/bgfx.h>                 // bgfx::*
@@ -817,13 +818,95 @@ double dt(void)
     return get_context().frame.elapsed;
 }
 
-void task(void (* func)(void* data), void* data)
-{
-    // TODO : Obviously, this way we leak, so this is just for a demonstration.
-    enki::TaskSet* task = new enki::TaskSet(1, [=](enki::TaskSetPartition, uint32_t)
-    {
-        (*func)(data);
-    });
+struct TaskPool;
 
-    get_scheduler().AddTaskSetToPipe(task);
+struct Task : enki::ITaskSet
+{
+    void    (*func)(void*) = nullptr;
+    void*     data         = nullptr;
+    TaskPool* pool         = nullptr;
+
+    void ExecuteRange(enki::TaskSetPartition, uint32_t) override;
+};
+
+struct TaskPool
+{
+    static constexpr int MAX_TASKS = 64;
+
+    std::mutex mutex;
+    Task       tasks[MAX_TASKS];
+    int        nexts[MAX_TASKS];
+    size_t     head = 0;
+
+    TaskPool()
+    {
+        for (int i = 0; i < MAX_TASKS; i++)
+        {
+            tasks[i].pool = this;
+            nexts[i]      = i + 1;
+        }
+    }
+
+    Task* get_free_task()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+
+        Task* task = nullptr;
+
+        if (head < MAX_TASKS)
+        {
+            const int i = head;
+
+            task     = &tasks[i];
+            head     =  nexts[i];
+            nexts[i] = MAX_TASKS;
+        }
+
+        return task;
+    }
+
+    void release_task(const Task* task)
+    {
+        assert(task);
+        assert(task >= &tasks[0] && task <= &tasks[MAX_TASKS - 1]);
+
+        std::lock_guard<std::mutex> lock(mutex);
+
+        const int i = static_cast<int>(task - &tasks[0]);
+
+        tasks[i].func = nullptr;
+        tasks[i].data = nullptr;
+        nexts[i]      = head;
+        head          = i;
+    }
+};
+
+void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
+{
+    assert(func);
+    (*func)(data);
+
+    assert(pool);
+    pool->release_task(this);
+}
+
+static TaskPool& get_task_pool()
+{
+    static TaskPool s_task_pool;
+    return s_task_pool;
+};
+
+int task(void (* func)(void* data), void* data)
+{
+    Task* task = get_task_pool().get_free_task();
+
+    if (task)
+    {
+        task->func = func;
+        task->data = data;
+
+        get_scheduler().AddTaskSetToPipe(task);
+    }
+
+    return task != nullptr;
 }
