@@ -2,7 +2,9 @@
 #include <stdint.h>                    // uint32_t
 #include <string.h>                    // memcpy
 
+#include <chrono>                      // duration
 #include <mutex>                       // lock_guard, mutex
+#include <thread>                      // this_thread
 #include <vector>                      // vector
 
 #include <bgfx/bgfx.h>                 // bgfx::*
@@ -230,6 +232,7 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
             GLFW_KEY_ESCAPE,    // KEY_ESCAPE
             GLFW_KEY_LEFT,      // KEY_LEFT
             GLFW_KEY_RIGHT,     // KEY_RIGHT
+            GLFW_KEY_SPACE,     // KEY_SPACE
             GLFW_KEY_TAB,       // KEY_TAB
             GLFW_KEY_UP,        // KEY_UP
         };

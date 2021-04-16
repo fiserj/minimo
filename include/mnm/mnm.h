@@ -102,6 +102,7 @@ enum
     KEY_ESCAPE,
     KEY_LEFT,
     KEY_RIGHT,
+    KEY_SPACE,
     KEY_TAB,
     KEY_UP,
 };
@@ -355,13 +356,16 @@ void translate(float x, float y, float z);
 // MULTITHREADING
 // -----------------------------------------------------------------------------
 
-/// Adds an asynchronous task to the queue. Tasks can be created even from
-/// inside other tasks.
+/// Adds an asynchronous task to the queue. Tasks can be created also from
+/// within other tasks.
 ///
 /// @param[in] func Pointer to the function to be executed.
 /// @param[in] data Payload for the function.
 ///
-/// @returns Non-zero if task was added to the queue
+/// @returns Non-zero if task was added to the queue.
+///
+/// @attention Tasks may not be run immediately if all the queue threads are
+///   currently loaded.
 ///
 int task(void (* func)(void* data), void* data);
 
