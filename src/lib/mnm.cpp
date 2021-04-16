@@ -818,6 +818,12 @@ double dt(void)
     return get_context().frame.elapsed;
 }
 
+void sleep_for(double seconds)
+{
+    // TODO : Assert that we're not in the main thread.
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+}
+
 struct TaskPool;
 
 struct Task : enki::ITaskSet
