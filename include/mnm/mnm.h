@@ -197,6 +197,13 @@ double elapsed(void);
 ///
 double dt(void);
 
+/// Sleeps for at least the given amount of seconds. It should never be called
+/// from the main thread, as it will stall the rendering.
+///
+/// @param[in] seconds Time in seconds.
+///
+void sleep_for(double seconds);
+
 
 // -----------------------------------------------------------------------------
 // GEOMETRY
