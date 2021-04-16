@@ -348,7 +348,8 @@ void translate(float x, float y, float z);
 // MULTITHREADING
 // -----------------------------------------------------------------------------
 
-/// Adds an asynchronous task to the queue.
+/// Adds an asynchronous task to the queue. Tasks can be created even from
+/// inside other tasks.
 ///
 /// @param[in] func Pointer to the function to be executed.
 /// @param[in] data Payload for the function.
