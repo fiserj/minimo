@@ -285,6 +285,106 @@ struct Timer
 
 const double Timer::frequency = static_cast<double>(bx::getHPFrequency());
 
+struct GeometryBuilder;
+
+struct VertexVariantInfo
+{
+    enum
+    {
+        POSITION,
+        COLOR,
+        NORMAL,
+        TEXCOORD,
+    };
+
+    typedef void (*AttribPushFunc)(GeometryBuilder&);
+
+    static constexpr int MAX_VERTEX_ATTRS = 3;
+    static constexpr int MAX_VERTEX_TYPES = 1 + (VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_NORMAL);
+
+    AttribPushFunc     funcs  [MAX_VERTEX_TYPES] = { nullptr };
+    bgfx::VertexLayout layouts[MAX_VERTEX_ATTRS];
+
+    VertexVariantInfo()
+    {
+        #define ADD_VERTEX_TYPE(flags) funcs[flags] = attrib_push_func<flags>
+
+        ADD_VERTEX_TYPE(0                                              );
+        ADD_VERTEX_TYPE(VERTEX_COLOR                                   );
+        ADD_VERTEX_TYPE(VERTEX_NORMAL                                  );
+        ADD_VERTEX_TYPE(VERTEX_TEXCOORD                                );
+        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_TEXCOORD                );
+        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_NORMAL                  );
+        ADD_VERTEX_TYPE(VERTEX_NORMAL | VERTEX_TEXCOORD                );
+        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD);
+
+        #undef ADD_VERTEX_TYPE
+
+        layouts[POSITION].begin().add(bgfx::Attrib::Position , 3, bgfx::AttribType::Float      ).end();
+        layouts[COLOR   ].begin().add(bgfx::Attrib::Color0   , 4, bgfx::AttribType::Uint8, true).end();
+        layouts[NORMAL  ].begin().add(bgfx::Attrib::Normal   , 3, bgfx::AttribType::Float      ).end();
+        layouts[TEXCOORD].begin().add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float      ).end();
+    }
+
+private:
+    template <int ATTRIBUTES>
+    static void attrib_push_func(GeometryBuilder& builder);
+};
+
+struct GeometryBuilder
+{
+    static const VertexVariantInfo s_variants;
+
+    std::vector<hmm_vec3> positions;
+    Stack<hmm_vec3>       normals;
+    Stack<hmm_vec2>       texcoords;
+    Stack<uint32_t>       colors;
+    MatrixStack           transforms;
+    int                   mode;
+    int                   prev_mode; // Used for concatenation.
+
+    inline void vertex(float x, float y, float z)
+    {
+        positions.push_back((transforms.top * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+
+        s_variants.funcs[mode](*this);
+    }
+
+    inline void color(unsigned int abgr)
+    {
+        colors.top = abgr;
+    }
+
+    inline void normal(float nx, float ny, float nz)
+    {
+        normals.top = (transforms.top * HMM_Vec4(nx, ny, nz, 0.0f)).XYZ;
+    }
+
+    inline void texcoord(float u, float v)
+    {
+        texcoords.top = HMM_Vec2(u, v);
+    }
+};
+
+template <int ATTRIBUTES>
+void VertexVariantInfo::attrib_push_func(GeometryBuilder& builder)
+{
+    if (ATTRIBUTES & VERTEX_COLOR)
+    {
+        builder.colors.push();
+    }
+
+    if (ATTRIBUTES & VERTEX_NORMAL)
+    {
+        builder.normals.push();
+    }
+
+    if (ATTRIBUTES & VERTEX_TEXCOORD)
+    {
+        builder.texcoords.push();
+    }
+}
+
 struct Context
 {
     std::vector<Vertex>  vertices;
