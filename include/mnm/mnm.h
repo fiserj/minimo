@@ -210,10 +210,23 @@ void sleep_for(double seconds);
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
+/// Vertex attribute flags.
+///
+enum
+{
+    VERTEX_COLOR    = 1,
+    VERTEX_NORMAL   = 2,
+    VERTEX_TEXCOORD = 4,
+};
+
 /// Starts immediate geometry building mode. Only supported primitive is
 /// triangles.
 ///
 void begin(void);
+
+/// ...
+///
+void begin_cached(void);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.
@@ -231,12 +244,16 @@ void vertex(float x, float y, float z);
 ///
 void color(unsigned int rgba);
 
+/// ...
+///
+// void normal(float nx, float ny, float nz);
+
 /// Sets current texture coordinate.
 ///
 /// @param[in] u U texture coordinate.
 /// @param[in] v V texture coordinate.
 ///
-void uv(float u, float v);
+void texcoord(float u, float v);
 
 /// Ends the current geometry. Note that the data isn't immediately copied over
 /// to the GPU, but it's retained on the CPU and submitted together after the
@@ -256,11 +273,11 @@ void view(void);
 ///
 void projection(void);
 
-/// Pushes the top of the active matrix and state (color, etc.) stacks.
+/// Pushes the top of the active matrix stack.
 ///
 void push(void);
 
-/// Pops the top of the active matrix and state (color, etc.) stacks.
+/// Pops the top of the active matrix stack.
 ///
 void pop(void);
 
