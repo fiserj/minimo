@@ -299,7 +299,7 @@ struct VertexVariantInfo
 
     typedef void (*AttribPushFunc)(GeometryBuilder&);
 
-    static constexpr int MAX_VERTEX_ATTRS = 3;
+    static constexpr int MAX_VERTEX_ATTRS = 4;
     static constexpr int MAX_VERTEX_TYPES = 1 + (VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_NORMAL);
 
     AttribPushFunc     funcs  [MAX_VERTEX_TYPES] = { nullptr };
@@ -331,20 +331,96 @@ private:
     static void attrib_push_func(GeometryBuilder& builder);
 };
 
+template <typename T>
+static bool  update_transient_buffer
+(
+    const std::vector<T>&        src,
+    const bgfx::VertexLayout&    layout,
+    bgfx::TransientVertexBuffer& dst
+)
+{
+    const uint32_t size = static_cast<uint32_t>(src.size());
+
+    if (size == 0)
+    {
+        dst = { nullptr, 0, 0, 0, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
+        return true;
+    }
+
+    if (size > bgfx::getAvailTransientVertexBuffer(size, layout))
+    {
+        assert(false);
+        return false;
+    }
+
+    bgfx::allocTransientVertexBuffer(&dst, size, layout);
+    memcpy(dst.data, src.data(), size * sizeof(T));
+
+    return true;
+}
+
 struct GeometryBuilder
 {
+    // TODO : Will need texture recording as well.
+    struct Primitive
+    {
+        int      attributes = 0;
+        uint32_t count      = 0;
+        uint32_t positions  = 0; // -+-- Offsets in respective arrays.
+        uint32_t colors     = 0; //  |
+        uint32_t normals    = 0; //  |
+        uint32_t texcoords  = 0; // -+
+    };
+
     static const VertexVariantInfo s_variants;
 
-    std::vector<hmm_vec3> positions;
-    Stack<hmm_vec3>       normals;
-    Stack<hmm_vec2>       texcoords;
-    Stack<uint32_t>       colors;
-    MatrixStack           transforms;
-    int                   mode;
-    int                   prev_mode; // Used for concatenation.
+    bgfx::TransientVertexBuffer buffers[VertexVariantInfo::MAX_VERTEX_ATTRS];
+    std::vector<Primitive>      primitives;
+    std::vector<hmm_vec3>       positions;
+    Stack<uint32_t>             colors;
+    Stack<hmm_vec3>             normals;
+    Stack<hmm_vec2>             texcoords;
+    MatrixStack                 transforms = { HMM_Mat4d(1.0f) };
+    int                         mode       = -1;
+
+    inline void clear()
+    {
+        primitives    .clear();
+        positions     .clear();
+        colors   .data.clear();
+        normals  .data.clear();
+        texcoords.data.clear();
+    }
+
+    void begin(int attributes)
+    {
+        assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+        mode = attributes;
+
+        if (primitives.empty() || primitives.back().attributes != attributes)
+        {
+            primitives.push_back(
+            {
+                attributes,
+                static_cast<uint32_t>(positions     .size()),
+                static_cast<uint32_t>(colors   .data.size()),
+                static_cast<uint32_t>(normals  .data.size()),
+                static_cast<uint32_t>(texcoords.data.size()),
+            });
+        }
+    }
+
+    void end()
+    {
+        assert(!primitives.empty() && primitives.back().count % 3 == 0);
+
+        primitives.back().count = static_cast<uint32_t>(positions.size() - primitives.back().positions);
+    }
 
     inline void vertex(float x, float y, float z)
     {
+        assert(mode >= 0 && mode < VertexVariantInfo::MAX_VERTEX_TYPES);
+
         positions.push_back((transforms.top * HMM_Vec4(x, y, z, 1.0f)).XYZ);
 
         s_variants.funcs[mode](*this);
@@ -364,7 +440,31 @@ struct GeometryBuilder
     {
         texcoords.top = HMM_Vec2(u, v);
     }
+
+    // TODO : Separate program for every vertex type.
+    bool submit(bgfx::ViewId view, bgfx::ProgramHandle program)
+    {
+        if (!update_transient_buffer(positions     , s_variants.layouts[VertexVariantInfo::POSITION], buffers[VertexVariantInfo::POSITION]) ||
+            !update_transient_buffer(colors   .data, s_variants.layouts[VertexVariantInfo::COLOR   ], buffers[VertexVariantInfo::COLOR   ]) ||
+            !update_transient_buffer(normals  .data, s_variants.layouts[VertexVariantInfo::NORMAL  ], buffers[VertexVariantInfo::NORMAL  ]) ||
+            !update_transient_buffer(texcoords.data, s_variants.layouts[VertexVariantInfo::TEXCOORD], buffers[VertexVariantInfo::TEXCOORD]))
+        {
+            return false;
+        }
+
+        // TODO : Submit each primitive separately, with correct offsets.
+        // TODO : This has to use the encoder, since it could be called from any thread.
+        bgfx::setVertexBuffer(0, &buffers[VertexVariantInfo::POSITION]);
+        bgfx::setVertexBuffer(1, &buffers[VertexVariantInfo::COLOR   ]);
+        bgfx::setState(BGFX_STATE_DEFAULT);
+
+        bgfx::submit(view, program);
+
+        return true;
+    }
 };
+
+const VertexVariantInfo GeometryBuilder::s_variants;
 
 template <int ATTRIBUTES>
 void VertexVariantInfo::attrib_push_func(GeometryBuilder& builder)
@@ -387,12 +487,13 @@ void VertexVariantInfo::attrib_push_func(GeometryBuilder& builder)
 
 struct Context
 {
-    std::vector<Vertex>  vertices;
-    Stack<Attribs>       attribs  = { 0xffffff };
-    MatrixStack          models   = { HMM_Mat4d(1.0f) };
+    GeometryBuilder     geometry;
+    // std::vector<Vertex>  vertices;
+    // Stack<Attribs>       attribs  = { 0xffffff };
+    // MatrixStack          models   = { HMM_Mat4d(1.0f) };
     MatrixStack          views    = { HMM_Mat4d(1.0f) };
     MatrixStack          projs    = { HMM_Mat4d(1.0f) };
-    MatrixStack*         matrices = &models;
+    MatrixStack*         matrices = &geometry.transforms;
 
     // TODO : Window and the timers don't need to be in the thread-local
     //        contexts, only the geometry builders do.
@@ -543,30 +644,35 @@ void quit(void)
     glfwSetWindowShouldClose(get_context().window, GLFW_TRUE);
 }
 
-static void submit_immediate_geometry
-(
-    bgfx::ViewId               view,
-    bgfx::ProgramHandle        program,
-    const bgfx::VertexLayout&  layout,
-    const std::vector<Vertex>& vertices
-)
-{
-    const uint32_t num_vertices = static_cast<uint32_t>(vertices.size());
+// static void submit_immediate_geometry
+// (
+//     bgfx::ViewId           view,
+//     bgfx::ProgramHandle    program,
+//     const GeometryBuilder& geometry
+//     // const bgfx::VertexLayout&  layout,
+//     // const std::vector<Vertex>& vertices
+// )
+// {
+//     // TODO : This has to submit each sepearate vertex type.
 
-    if (num_vertices > bgfx::getAvailTransientVertexBuffer(num_vertices, layout))
-    {
-        assert(false);
-        return;
-    }
+//     assert(geometry.positions.size() % 3 == 0);
 
-    bgfx::TransientVertexBuffer tvb;
-    bgfx::allocTransientVertexBuffer(&tvb, num_vertices, layout);
-    memcpy(tvb.data, vertices.data(), num_vertices * sizeof(Vertex));
+//     const uint32_t num_vertices = static_cast<uint32_t>(geometry.positions.size());
 
-    bgfx::setVertexBuffer(0, &tvb);
-    bgfx::setState(BGFX_STATE_DEFAULT);
-    bgfx::submit(view, program);
-}
+//     if (num_vertices > bgfx::getAvailTransientVertexBuffer(num_vertices, geometry.s_variants[]))
+//     {
+//         assert(false);
+//         return;
+//     }
+
+//     bgfx::TransientVertexBuffer tvb;
+//     bgfx::allocTransientVertexBuffer(&tvb, num_vertices, layout);
+//     memcpy(tvb.data, vertices.data(), num_vertices * sizeof(Vertex));
+
+//     bgfx::setVertexBuffer(0, &tvb);
+//     bgfx::setState(BGFX_STATE_DEFAULT);
+//     bgfx::submit(view, program);
+// }
 
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
@@ -646,13 +752,6 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     );
     assert(bgfx::isValid(program));
 
-    bgfx::VertexLayout layout;
-    layout
-        .begin()
-        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-        .add(bgfx::Attrib::Color0  , 4, bgfx::AttribType::Uint8, true)
-        .end();
-
     {
         double x, y;
         glfwGetCursorPos(ctx.window, &x, &y);
@@ -722,7 +821,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         bgfx::touch(DEFAULT_VIEW);
 
         // TODO : This needs to be done for all contexts across all threads.
-        ctx.vertices.clear();
+        ctx.geometry.clear();
 
         if (draw)
         {
@@ -732,7 +831,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         bgfx::setViewTransform(DEFAULT_VIEW, &ctx.views.top, &ctx.projs.top);
 
         // TODO : This needs to be done for all contexts across all threads.
-        submit_immediate_geometry(DEFAULT_VIEW, program, layout, ctx.vertices);
+        ctx.geometry.submit(DEFAULT_VIEW, program);
+        // submit_immediate_geometry(DEFAULT_VIEW, program, ctx.geometry);
 
         bgfx::frame();
     }
@@ -754,30 +854,39 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
 void begin(void)
 {
-    assert(get_context().vertices.size() % 3 == 0);
+    get_context().geometry.begin(VERTEX_COLOR);
 }
 
-void end()
+void end(void)
 {
-    begin();
+    get_context().geometry.end();
 }
 
 void vertex(float x, float y, float z)
 {
-    Context& ctx = get_context();
-
-    ctx.vertices.push_back({ (ctx.models.top * HMM_Vec4(x, y, z, 1.0f)).XYZ, ctx.attribs.top });
+    get_context().geometry.vertex(x, y, z);
 }
 
 void color(unsigned int rgba)
 {
-    get_context().attribs.top.color = bx::endianSwap(rgba);
+    get_context().geometry.color(bx::endianSwap(rgba));
+}
+
+// TODO : Move these into a separate compilation unit, so that.
+// void normal(float nx, float ny, float nz)
+// {
+//     get_context().geometry.normal(nx, ny, nz);
+// }
+
+void texcoord(float u, float v)
+{
+    get_context().geometry.texcoord(u, v);
 }
 
 void model(void)
 {
     Context& ctx = get_context();
-    ctx.matrices = &ctx.models;
+    ctx.matrices = &ctx.geometry.transforms;
 }
 
 void view(void)
@@ -794,18 +903,14 @@ void projection(void)
 
 void push(void)
 {
-    Context& ctx = get_context();
-
-    ctx.attribs . push();
-    ctx.matrices->push();
+    // TODO : Push vertex attribs (if that's something desirable).
+    get_context().geometry.transforms.push();
 }
 
 void pop(void)
 {
-    Context& ctx = get_context();
-
-    ctx.attribs . pop();
-    ctx.matrices->pop();
+    // TODO : Pop vertex attribs (if that's something desirable).
+    get_context().geometry.transforms.pop();
 }
 
 void identity(void)
