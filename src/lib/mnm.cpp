@@ -1,7 +1,10 @@
+#include <mnm/mnm.h>
+
 #include <assert.h>                    // assert
 #include <stdint.h>                    // uint32_t
 #include <string.h>                    // memcpy
 
+#include <algorithm>                   // max
 #include <chrono>                      // duration
 #include <mutex>                       // lock_guard, mutex
 #include <thread>                      // this_thread
@@ -32,7 +35,7 @@
 
 #define GLEQ_IMPLEMENTATION
 #define GLEQ_STATIC
-#include <gleq.h>
+#include <gleq.h>                      // gleq*
 
 #if BX_PLATFORM_OSX
 #   import <Cocoa/Cocoa.h>             // NSWindow
@@ -40,14 +43,17 @@
 #endif
 
 #define HANDMADE_MATH_IMPLEMENTATION
-#include <HandmadeMath.h>
+#include <HandmadeMath.h>              // HMM_*, hmm_*
 
-#include <TaskScheduler.h>             // ... 
+#include <TaskScheduler.h>             // ITaskSet, TaskScheduler, TaskSetPartition
 
 #include <shaders/poscolor_fs.h>       // poscolor_fs
 #include <shaders/poscolor_vs.h>       // poscolor_vs
 
-#include <mnm/mnm.h>
+
+// -----------------------------------------------------------------------------
+// PLATFORM HELPERS
+// -----------------------------------------------------------------------------
 
 // Creates BGFX-specific platform data.
 static bgfx::PlatformData create_platform_data
@@ -97,16 +103,10 @@ static bgfx::PlatformData create_platform_data
     return data;
 }
 
-struct Attribs
-{
-    uint32_t color;
-};
 
-struct Vertex
-{
-    hmm_vec3 position;
-    Attribs  attribs;
-};
+// -----------------------------------------------------------------------------
+// STACK
+// -----------------------------------------------------------------------------
 
 template <typename T>
 struct Stack
@@ -114,12 +114,12 @@ struct Stack
     T              top;
     std::vector<T> data;
 
-    void push()
+    inline void push()
     {
         data.push_back(top);
     }
 
-    void pop()
+    inline void pop()
     {
         top = data.back();
         data.pop_back();
@@ -128,11 +128,273 @@ struct Stack
 
 struct MatrixStack : Stack<hmm_mat4>
 {
-    void mul(const hmm_mat4& matrix)
+    MatrixStack()
+    {
+        top = HMM_Mat4d(1.0f);
+    }
+
+    void multiply_top(const hmm_mat4& matrix)
     {
         top = matrix * top;
     }
 };
+
+
+// -----------------------------------------------------------------------------
+// GEOMETRY RECORDING
+// -----------------------------------------------------------------------------
+
+struct GeometryRecord
+{
+    uint16_t attributes      = 0;
+
+    uint16_t index_count     = 0;
+    uint16_t index_offset    = 0;
+
+    uint16_t vertex_count    = 0;
+    uint16_t position_offset = 0;
+    uint16_t color_offset    = 0;
+    uint16_t normal_offset   = 0;
+    uint16_t texcoord_offset = 0;
+};
+
+struct GeometryRecorder
+{
+    typedef void (*PushFunc)(GeometryRecorder&);
+
+    static const PushFunc s_push_active_attributes[8];
+
+    std::vector<GeometryRecord> records;
+    std::vector<hmm_vec3>       positions;
+    Stack<uint32_t>             colors    { 0xffffff };
+    Stack<hmm_vec3>             normals   { HMM_Vec3(0.0f, 0.0f, 1.0f) };
+    Stack<hmm_vec2>             texcoords { HMM_Vec2(0.0f, 0.0f) };
+
+    void clear()
+    {
+        positions     .clear();
+        colors   .data.clear();
+        normals  .data.clear();
+        texcoords.data.clear();
+    }
+
+    void begin(uint16_t attributes)
+    {
+        assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+
+        if (records.empty() || records.back().attributes != attributes)
+        {
+            GeometryRecord record;
+
+            record.attributes      = attributes;
+            record.position_offset = static_cast<uint16_t>(positions     .size());
+            record.color_offset    = static_cast<uint16_t>(colors   .data.size());
+            record.normal_offset   = static_cast<uint16_t>(normals  .data.size());
+            record.texcoord_offset = static_cast<uint16_t>(texcoords.data.size());
+
+            records.push_back(record);
+        }
+    }
+
+    inline void end()
+    {
+        assert(!records.empty());
+
+        records.back().vertex_count = static_cast<uint16_t>(positions.size() - records.back().position_offset);
+    }
+
+    template <int ATTRIBUTES>
+    static void push_active_attributes(GeometryRecorder& recorder)
+    {
+        static_assert(
+            ATTRIBUTES >= 0 && ATTRIBUTES <= (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD),
+            "Invalid vertex attributes."
+        );
+
+        if (ATTRIBUTES & VERTEX_COLOR)
+        {
+            recorder.colors.push();
+        }
+
+        if (ATTRIBUTES & VERTEX_NORMAL)
+        {
+            recorder.normals.push();
+        }
+
+        if (ATTRIBUTES & VERTEX_TEXCOORD)
+        {
+            recorder.texcoords.push();
+        }
+    }
+
+    inline void vertex(float x, float y, float z)
+    {
+        assert(!records.empty());
+
+        positions.push_back(HMM_Vec3(x, y, z));
+
+        // TODO : Check if having the attributes flags cached locally makes any performance difference.
+        s_push_active_attributes[records.back().attributes](*this);
+    }
+
+    inline void color(unsigned int abgr)
+    {
+        colors.top = abgr;
+    }
+
+    inline void normal(float nx, float ny, float nz)
+    {
+        normals.top = HMM_Vec3(nx, ny, nz);
+    }
+
+    inline void texcoord(float u, float v)
+    {
+        texcoords.top = HMM_Vec2(u, v);
+    }
+};
+
+const GeometryRecorder::PushFunc GeometryRecorder::s_push_active_attributes[8] =
+{
+    GeometryRecorder::push_active_attributes<0                                              >,
+    GeometryRecorder::push_active_attributes<VERTEX_COLOR                                   >,
+    GeometryRecorder::push_active_attributes<VERTEX_NORMAL                                  >,
+    GeometryRecorder::push_active_attributes<VERTEX_TEXCOORD                                >,
+    GeometryRecorder::push_active_attributes<VERTEX_COLOR  | VERTEX_TEXCOORD                >,
+    GeometryRecorder::push_active_attributes<VERTEX_COLOR  | VERTEX_NORMAL                  >,
+    GeometryRecorder::push_active_attributes<VERTEX_NORMAL | VERTEX_TEXCOORD                >,
+    GeometryRecorder::push_active_attributes<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
+};
+
+
+// -----------------------------------------------------------------------------
+// GPU BUFFER UPDATE
+// -----------------------------------------------------------------------------
+
+static constexpr bgfx::TransientVertexBuffer EMPTY_TRANSIENT_BUFFER = { nullptr, 0, 0, 0, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
+
+struct TransientBuffers
+{
+    bgfx::TransientVertexBuffer positions = EMPTY_TRANSIENT_BUFFER;
+    bgfx::TransientVertexBuffer colors    = EMPTY_TRANSIENT_BUFFER;
+    bgfx::TransientVertexBuffer normals   = EMPTY_TRANSIENT_BUFFER;
+    bgfx::TransientVertexBuffer texcoords = EMPTY_TRANSIENT_BUFFER;
+};
+
+struct VertexLayouts
+{
+    bgfx::VertexLayout positions;
+    bgfx::VertexLayout colors;
+    bgfx::VertexLayout normals;
+    bgfx::VertexLayout texcoords;
+
+    VertexLayouts()
+    {
+        positions.begin().add(bgfx::Attrib::Position , 3, bgfx::AttribType::Float      ).end();
+        colors   .begin().add(bgfx::Attrib::Color0   , 4, bgfx::AttribType::Uint8, true).end();
+        normals  .begin().add(bgfx::Attrib::Normal   , 3, bgfx::AttribType::Float      ).end();
+        texcoords.begin().add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float      ).end();
+    }
+};
+
+template <typename T>
+static bool update_transient_buffer(const std::vector<T>& data, const bgfx::VertexLayout& layout, bgfx::TransientVertexBuffer& buffer)
+{
+    const uint32_t size = static_cast<uint32_t>(data.size());
+
+    if (size == 0)
+    {
+        buffer = EMPTY_TRANSIENT_BUFFER;
+        return true;
+    }
+
+    if (size > bgfx::getAvailTransientVertexBuffer(size, layout))
+    {
+        assert(false && "Not enough memory for the transient geometry.");
+        return false;
+    }
+
+    bgfx::allocTransientVertexBuffer(&buffer, size, layout);
+    memcpy(buffer.data, data.data(), size * sizeof(T));
+
+    return true;
+}
+
+static inline bool update_transient_buffers
+(
+    const GeometryRecorder& recorder,
+    const VertexLayouts&    layouts,
+    TransientBuffers&       out_buffers
+)
+{
+    return
+        update_transient_buffer(recorder.positions     , layouts.positions, out_buffers.positions) &&
+        update_transient_buffer(recorder.colors   .data, layouts.colors   , out_buffers.colors   ) &&
+        update_transient_buffer(recorder.normals  .data, layouts.normals  , out_buffers.normals  ) &&
+        update_transient_buffer(recorder.texcoords.data, layouts.texcoords, out_buffers.texcoords);
+}
+
+static void submit_transient_geometry
+(
+    const GeometryRecorder& recorder,
+    const TransientBuffers& buffers,
+    bgfx::ViewId            view,
+    bgfx::ProgramHandle     program
+)
+{
+    // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
+
+    for (const GeometryRecord& record : recorder.records)
+    {
+        // TODO : Make function variants like in case of `GeometryRecorder::PushFunc`.
+                                                   bgfx::setVertexBuffer(0, &buffers.positions);
+        if (record.attributes & VERTEX_COLOR   ) { bgfx::setVertexBuffer(1, &buffers.colors   ); }
+        if (record.attributes & VERTEX_NORMAL  ) { bgfx::setVertexBuffer(2, &buffers.normals  ); }
+        if (record.attributes & VERTEX_TEXCOORD) { bgfx::setVertexBuffer(3, &buffers.texcoords); }
+
+        bgfx::setState(BGFX_STATE_DEFAULT);
+
+        bgfx::submit(view, program);
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// TIME MEASUREMENT
+// -----------------------------------------------------------------------------
+
+struct Timer 
+{
+    static const double s_frequency;
+
+    int64_t counter = 0;
+    double  elapsed = 0.0;
+
+    void tic()
+    {
+        counter = bx::getHPCounter();
+    }
+
+    double toc(bool restart = false)
+    {
+        const int64_t now = bx::getHPCounter();
+
+        elapsed = (now - counter) / s_frequency;
+
+        if (restart)
+        {
+            counter = now;
+        }
+
+        return elapsed;
+    }
+};
+
+const double Timer::s_frequency = static_cast<double>(bx::getHPFrequency());
+
+
+// -----------------------------------------------------------------------------
+// INPUT
+// -----------------------------------------------------------------------------
 
 template <int MAX_INPUTS, typename T>
 struct InputState
@@ -256,781 +518,10 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
     }
 };
 
-struct Timer 
-{
-    static const double frequency;
 
-    int64_t counter = 0;
-    double  elapsed = 0.0;
-
-    void tic()
-    {
-        counter = bx::getHPCounter();
-    }
-
-    double toc(bool restart = false)
-    {
-        const int64_t now = bx::getHPCounter();
-
-        elapsed = (now - counter) / frequency;
-
-        if (restart)
-        {
-            counter = now;
-        }
-
-        return elapsed;
-    }
-};
-
-const double Timer::frequency = static_cast<double>(bx::getHPFrequency());
-
-struct GeometryBuilder;
-
-struct VertexVariantInfo
-{
-    enum
-    {
-        POSITION,
-        COLOR,
-        NORMAL,
-        TEXCOORD,
-    };
-
-    typedef void (*AttribPushFunc)(GeometryBuilder&);
-
-    static constexpr int MAX_VERTEX_ATTRS = 4;
-    static constexpr int MAX_VERTEX_TYPES = 1 + (VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_NORMAL);
-
-    AttribPushFunc     funcs  [MAX_VERTEX_TYPES] = { nullptr };
-    bgfx::VertexLayout layouts[MAX_VERTEX_ATTRS];
-
-    VertexVariantInfo()
-    {
-        #define ADD_VERTEX_TYPE(flags) funcs[flags] = attrib_push_func<flags>
-
-        ADD_VERTEX_TYPE(0                                              );
-        ADD_VERTEX_TYPE(VERTEX_COLOR                                   );
-        ADD_VERTEX_TYPE(VERTEX_NORMAL                                  );
-        ADD_VERTEX_TYPE(VERTEX_TEXCOORD                                );
-        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_TEXCOORD                );
-        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_NORMAL                  );
-        ADD_VERTEX_TYPE(VERTEX_NORMAL | VERTEX_TEXCOORD                );
-        ADD_VERTEX_TYPE(VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD);
-
-        #undef ADD_VERTEX_TYPE
-
-        layouts[POSITION].begin().add(bgfx::Attrib::Position , 3, bgfx::AttribType::Float      ).end();
-        layouts[COLOR   ].begin().add(bgfx::Attrib::Color0   , 4, bgfx::AttribType::Uint8, true).end();
-        layouts[NORMAL  ].begin().add(bgfx::Attrib::Normal   , 3, bgfx::AttribType::Float      ).end();
-        layouts[TEXCOORD].begin().add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float      ).end();
-    }
-
-private:
-    template <int ATTRIBUTES>
-    static void attrib_push_func(GeometryBuilder& builder);
-};
-
-template <typename T>
-static bool  update_transient_buffer
-(
-    const std::vector<T>&        src,
-    const bgfx::VertexLayout&    layout,
-    bgfx::TransientVertexBuffer& dst
-)
-{
-    const uint32_t size = static_cast<uint32_t>(src.size());
-
-    if (size == 0)
-    {
-        dst = { nullptr, 0, 0, 0, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
-        return true;
-    }
-
-    if (size > bgfx::getAvailTransientVertexBuffer(size, layout))
-    {
-        assert(false);
-        return false;
-    }
-
-    bgfx::allocTransientVertexBuffer(&dst, size, layout);
-    memcpy(dst.data, src.data(), size * sizeof(T));
-
-    return true;
-}
-
-struct GeometryBuilder
-{
-    // TODO : Will need texture recording as well.
-    struct Primitive
-    {
-        int      attributes = 0;
-        uint32_t count      = 0;
-        uint32_t positions  = 0; // -+-- Offsets in respective arrays.
-        uint32_t colors     = 0; //  |
-        uint32_t normals    = 0; //  |
-        uint32_t texcoords  = 0; // -+
-    };
-
-    static const VertexVariantInfo s_variants;
-
-    bgfx::TransientVertexBuffer buffers[VertexVariantInfo::MAX_VERTEX_ATTRS];
-    std::vector<Primitive>      primitives;
-    std::vector<hmm_vec3>       positions;
-    Stack<uint32_t>             colors;
-    Stack<hmm_vec3>             normals;
-    Stack<hmm_vec2>             texcoords;
-    MatrixStack                 transforms = { HMM_Mat4d(1.0f) };
-    int                         mode       = -1;
-
-    inline void clear()
-    {
-        primitives    .clear();
-        positions     .clear();
-        colors   .data.clear();
-        normals  .data.clear();
-        texcoords.data.clear();
-    }
-
-    void begin(int attributes)
-    {
-        assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
-        mode = attributes;
-
-        if (primitives.empty() || primitives.back().attributes != attributes)
-        {
-            primitives.push_back(
-            {
-                attributes,
-                static_cast<uint32_t>(positions     .size()),
-                static_cast<uint32_t>(colors   .data.size()),
-                static_cast<uint32_t>(normals  .data.size()),
-                static_cast<uint32_t>(texcoords.data.size()),
-            });
-        }
-    }
-
-    void end()
-    {
-        assert(!primitives.empty() && primitives.back().count % 3 == 0);
-
-        primitives.back().count = static_cast<uint32_t>(positions.size() - primitives.back().positions);
-    }
-
-    inline void vertex(float x, float y, float z)
-    {
-        assert(mode >= 0 && mode < VertexVariantInfo::MAX_VERTEX_TYPES);
-
-        positions.push_back((transforms.top * HMM_Vec4(x, y, z, 1.0f)).XYZ);
-
-        s_variants.funcs[mode](*this);
-    }
-
-    inline void color(unsigned int abgr)
-    {
-        colors.top = abgr;
-    }
-
-    inline void normal(float nx, float ny, float nz)
-    {
-        normals.top = (transforms.top * HMM_Vec4(nx, ny, nz, 0.0f)).XYZ;
-    }
-
-    inline void texcoord(float u, float v)
-    {
-        texcoords.top = HMM_Vec2(u, v);
-    }
-
-    // TODO : Separate program for every vertex type.
-    bool submit(bgfx::ViewId view, bgfx::ProgramHandle program)
-    {
-        if (!update_transient_buffer(positions     , s_variants.layouts[VertexVariantInfo::POSITION], buffers[VertexVariantInfo::POSITION]) ||
-            !update_transient_buffer(colors   .data, s_variants.layouts[VertexVariantInfo::COLOR   ], buffers[VertexVariantInfo::COLOR   ]) ||
-            !update_transient_buffer(normals  .data, s_variants.layouts[VertexVariantInfo::NORMAL  ], buffers[VertexVariantInfo::NORMAL  ]) ||
-            !update_transient_buffer(texcoords.data, s_variants.layouts[VertexVariantInfo::TEXCOORD], buffers[VertexVariantInfo::TEXCOORD]))
-        {
-            return false;
-        }
-
-        // TODO : Submit each primitive separately, with correct offsets.
-        // TODO : This has to use the encoder, since it could be called from any thread.
-        bgfx::setVertexBuffer(0, &buffers[VertexVariantInfo::POSITION]);
-        bgfx::setVertexBuffer(1, &buffers[VertexVariantInfo::COLOR   ]);
-        bgfx::setState(BGFX_STATE_DEFAULT);
-
-        bgfx::submit(view, program);
-
-        return true;
-    }
-};
-
-const VertexVariantInfo GeometryBuilder::s_variants;
-
-template <int ATTRIBUTES>
-void VertexVariantInfo::attrib_push_func(GeometryBuilder& builder)
-{
-    if (ATTRIBUTES & VERTEX_COLOR)
-    {
-        builder.colors.push();
-    }
-
-    if (ATTRIBUTES & VERTEX_NORMAL)
-    {
-        builder.normals.push();
-    }
-
-    if (ATTRIBUTES & VERTEX_TEXCOORD)
-    {
-        builder.texcoords.push();
-    }
-}
-
-struct Context
-{
-    GeometryBuilder     geometry;
-    // std::vector<Vertex>  vertices;
-    // Stack<Attribs>       attribs  = { 0xffffff };
-    // MatrixStack          models   = { HMM_Mat4d(1.0f) };
-    MatrixStack          views    = { HMM_Mat4d(1.0f) };
-    MatrixStack          projs    = { HMM_Mat4d(1.0f) };
-    MatrixStack*         matrices = &geometry.transforms;
-
-    // TODO : Window and the timers don't need to be in the thread-local
-    //        contexts, only the geometry builders do.
-    GLFWwindow*          window   = nullptr;
-    Timer                total;
-    Timer                frame;
-};
-
-static Context& get_context()
-{
-    static thread_local Context s_ctx;
-    return s_ctx;
-}
-
-static Keyboard& get_keyboard()
-{
-    static Keyboard s_keyboard;
-    return s_keyboard;
-}
-
-static Mouse& get_mouse()
-{
-    static Mouse s_mouse;
-    return s_mouse;
-}
-
-static enki::TaskScheduler& get_scheduler()
-{
-    static enki::TaskScheduler s_scheduler;
-    return s_scheduler;
-}
-
-void size(int width, int height, int flags)
-{
-    assert(flags >= 0);
-
-    GLFWwindow* window = get_context().window;
-    assert(window);
-
-    constexpr int MIN_SIZE      = 240;
-    constexpr int DEFAULT_WIDTH = 640;
-    constexpr int DEFAULT_HEIGHT= 480;
-
-    // Current monitor.
-    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
-
-    // Activate full screen mode, or adjust its resolution.
-    if (flags & WINDOW_FULL_SCREEN)
-    {
-        if (!monitor)
-        {
-            monitor = glfwGetPrimaryMonitor();
-        }
-
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-
-        if (width  <= 0) { width  = mode->width ; }
-        if (height <= 0) { height = mode->height; }
-
-        glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
-    }
-
-    // If in full screen mode, jump out of it.
-    else if (monitor)
-    {
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-
-        if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-        if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
-
-        const int x = (mode->width  - width ) / 2;
-        const int y = (mode->height - height) / 2;
-
-        monitor = nullptr;
-
-        glfwSetWindowMonitor(window, nullptr, x, y, width, height, GLFW_DONT_CARE);
-    }
-
-    // Other window aspects are ignored, if the window is currently in full screen mode.
-    if (monitor)
-    {
-        return;
-    }
-
-    // Size.
-    if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-    if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
-
-    glfwSetWindowSize(window, width, height);
-
-    // Fixed aspect ratio.
-    if (flags & WINDOW_FIXED_ASPECT)
-    {
-        glfwSetWindowAspectRatio(window, width, height);
-    }
-    else
-    {
-        glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
-    }
-
-    // Resize-ability (we might want to first check the current value).
-    const int resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
-    glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
-}
-
-void title(const char* title)
-{
-    glfwSetWindowTitle(get_context().window, title);
-}
-
-int width(void)
-{
-    int width;
-    glfwGetWindowSize(get_context().window, &width, nullptr);
-
-    return width;
-}
-
-int height(void)
-{
-    int height;
-    glfwGetWindowSize(get_context().window, nullptr, &height);
-
-    return height;
-}
-
-float aspect(void)
-{
-    int width, height;
-    glfwGetWindowSize(get_context().window, &width, &height);
-
-    return static_cast<float>(width) / static_cast<float>(height);
-}
-
-float dpi(void)
-{
-    int fb_width;
-    glfwGetFramebufferSize(get_context().window, &fb_width, nullptr);
-
-    int width;
-    glfwGetWindowSize(get_context().window, &width, nullptr);
-
-    return static_cast<float>(fb_width) / static_cast<float>(width);
-}
-
-void quit(void)
-{
-    glfwSetWindowShouldClose(get_context().window, GLFW_TRUE);
-}
-
-// static void submit_immediate_geometry
-// (
-//     bgfx::ViewId           view,
-//     bgfx::ProgramHandle    program,
-//     const GeometryBuilder& geometry
-//     // const bgfx::VertexLayout&  layout,
-//     // const std::vector<Vertex>& vertices
-// )
-// {
-//     // TODO : This has to submit each sepearate vertex type.
-
-//     assert(geometry.positions.size() % 3 == 0);
-
-//     const uint32_t num_vertices = static_cast<uint32_t>(geometry.positions.size());
-
-//     if (num_vertices > bgfx::getAvailTransientVertexBuffer(num_vertices, geometry.s_variants[]))
-//     {
-//         assert(false);
-//         return;
-//     }
-
-//     bgfx::TransientVertexBuffer tvb;
-//     bgfx::allocTransientVertexBuffer(&tvb, num_vertices, layout);
-//     memcpy(tvb.data, vertices.data(), num_vertices * sizeof(Vertex));
-
-//     bgfx::setVertexBuffer(0, &tvb);
-//     bgfx::setState(BGFX_STATE_DEFAULT);
-//     bgfx::submit(view, program);
-// }
-
-int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
-{
-    if (glfwInit() != GLFW_TRUE)
-    {
-        return 1;
-    }
-
-    gleqInit();
-
-    glfwDefaultWindowHints();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-    Context&             ctx       = get_context  ();
-    Keyboard&            keyboard  = get_keyboard ();
-    Mouse&               mouse     = get_mouse    ();
-    enki::TaskScheduler& scheduler = get_scheduler();
-
-    ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
-    if (!ctx.window)
-    {
-        glfwTerminate();
-        return 2;
-    }
-
-    gleqTrackWindow(ctx.window);
-
-    bgfx::Init init;
-    init.platformData = create_platform_data(ctx.window, init.type);
-
-    if (!bgfx::init(init))
-    {
-        glfwDestroyWindow(ctx.window);
-        glfwTerminate();
-        return 3;
-    }
-
-    // Post a GLEQ_FRAMEBUFFER_RESIZED event, in case the user doesn't change
-    // the window size.
-    {
-        int width  = 0;
-        int height = 0;
-        glfwGetFramebufferSize(ctx.window, &width, &height);
-
-        gleq_framebuffer_size_callback(ctx.window, width, height);
-    }
-
-    scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
-
-    if (setup)
-    {
-        (*setup)();
-    }
-
-    bgfx::setDebug(BGFX_DEBUG_STATS);
-
-    int last_fb_width  = 0;
-    int last_fb_height = 0;
-
-    constexpr bgfx::ViewId DEFAULT_VIEW = 0;
-    bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
-
-    const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
-    static const bgfx::EmbeddedShader s_shaders[] =
-    {
-        BGFX_EMBEDDED_SHADER(poscolor_fs),
-        BGFX_EMBEDDED_SHADER(poscolor_vs),
-
-        BGFX_EMBEDDED_SHADER_END()
-    };
-
-    bgfx::ProgramHandle program = bgfx::createProgram
-    (
-        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
-        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
-        true
-    );
-    assert(bgfx::isValid(program));
-
-    {
-        double x, y;
-        glfwGetCursorPos(ctx.window, &x, &y);
-
-        mouse.curr[0] = mouse.prev[0] = static_cast<int>(x);
-        mouse.curr[1] = mouse.prev[1] = static_cast<int>(y);
-    }
-
-    ctx.total.tic();
-    ctx.frame.tic();
-
-    while (!glfwWindowShouldClose(ctx.window))
-    {
-        keyboard.update_state_flags();
-        mouse   .update_state_flags();
-
-        ctx.total.toc();
-        ctx.frame.toc(true);
-
-        glfwPollEvents();
-
-        GLEQevent event;
-        while (gleqNextEvent(&event))
-        {
-            switch (event.type)
-            {
-            case GLEQ_KEY_PRESSED:
-                keyboard.update_input_state(event.keyboard.key, true);
-                break;
-            
-            case GLEQ_KEY_RELEASED:
-                keyboard.update_input_state(event.keyboard.key, false);
-                break;
-
-            case GLEQ_BUTTON_PRESSED:
-                mouse.update_input_state(event.mouse.button, true);
-                break;
-
-            case GLEQ_BUTTON_RELEASED:
-                mouse.update_input_state(event.mouse.button, false);
-                break;
-
-            case GLEQ_CURSOR_MOVED:
-                mouse.update_position(event.pos.x, event.pos.y);
-                break;
-
-            case GLEQ_FRAMEBUFFER_RESIZED:
-                {
-                    const uint16_t width  = static_cast<uint16_t>(event.size.width );
-                    const uint16_t height = static_cast<uint16_t>(event.size.height);
-
-                    bgfx::reset(width, height, BGFX_RESET_NONE);
-                    bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
-                }
-                break;
-
-            default:;
-            }
-
-            gleqFreeEvent(&event);
-        }
-
-        // We have to wait with the mouse delta computation after all events
-        // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
-        mouse.update_position_delta();
-
-        bgfx::touch(DEFAULT_VIEW);
-
-        // TODO : This needs to be done for all contexts across all threads.
-        ctx.geometry.clear();
-
-        if (draw)
-        {
-            (*draw)();
-        }
-
-        bgfx::setViewTransform(DEFAULT_VIEW, &ctx.views.top, &ctx.projs.top);
-
-        // TODO : This needs to be done for all contexts across all threads.
-        ctx.geometry.submit(DEFAULT_VIEW, program);
-        // submit_immediate_geometry(DEFAULT_VIEW, program, ctx.geometry);
-
-        bgfx::frame();
-    }
-
-    if (cleanup)
-    {
-        (*cleanup)();
-    }
-
-    scheduler.WaitforAllAndShutdown();
-
-    bgfx::shutdown();
-
-    glfwDestroyWindow(ctx.window);
-    glfwTerminate();
-
-    return 0;
-}
-
-void begin(void)
-{
-    get_context().geometry.begin(VERTEX_COLOR);
-}
-
-void end(void)
-{
-    get_context().geometry.end();
-}
-
-void vertex(float x, float y, float z)
-{
-    get_context().geometry.vertex(x, y, z);
-}
-
-void color(unsigned int rgba)
-{
-    get_context().geometry.color(bx::endianSwap(rgba));
-}
-
-// TODO : Move these into a separate compilation unit, so that.
-// void normal(float nx, float ny, float nz)
-// {
-//     get_context().geometry.normal(nx, ny, nz);
-// }
-
-void texcoord(float u, float v)
-{
-    get_context().geometry.texcoord(u, v);
-}
-
-void model(void)
-{
-    Context& ctx = get_context();
-    ctx.matrices = &ctx.geometry.transforms;
-}
-
-void view(void)
-{
-    Context& ctx = get_context();
-    ctx.matrices = &ctx.views;
-}
-
-void projection(void)
-{
-    Context& ctx = get_context();
-    ctx.matrices = &ctx.projs;
-}
-
-void push(void)
-{
-    // TODO : Push vertex attribs (if that's something desirable).
-    get_context().geometry.transforms.push();
-}
-
-void pop(void)
-{
-    // TODO : Pop vertex attribs (if that's something desirable).
-    get_context().geometry.transforms.pop();
-}
-
-void identity(void)
-{
-    get_context().matrices->top = HMM_Mat4d(1.0f);
-}
-
-void ortho(float left, float right, float bottom, float top, float near_, float far_)
-{
-    get_context().matrices->mul(HMM_Orthographic(left, right, bottom, top, near_, far_));
-}
-
-void perspective(float fovy, float aspect, float near_, float far_)
-{
-    get_context().matrices->mul(HMM_Perspective(fovy, aspect, near_, far_));
-}
-
-void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
-{
-    get_context().matrices->mul(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
-}
-
-void rotate(float angle, float x, float y, float z)
-{
-    get_context().matrices->mul(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
-}
-
-void rotate_x(float angle)
-{
-    // TODO : General rotation matrix is wasteful here.
-    rotate(angle, 1.0f, 0.0f, 0.0f);
-}
-
-void rotate_y(float angle)
-{
-    // TODO : General rotation matrix is wasteful here.
-    rotate(angle, 0.0f, 1.0f, 0.0f);
-}
-
-void rotate_z(float angle)
-{
-    // TODO : General rotation matrix is wasteful here.
-    rotate(angle, 0.0f, 0.0f, 1.0f);
-}
-
-void scale(float scale)
-{
-    get_context().matrices->mul(HMM_Scale(HMM_Vec3(scale, scale, scale)));
-}
-
-void translate(float x, float y, float z)
-{
-    get_context().matrices->mul(HMM_Translate(HMM_Vec3(x, y, z)));
-}
-
-int key_down(int key)
-{
-    return get_keyboard().is(key, Keyboard::DOWN);
-}
-
-int key_held(int key)
-{
-    return get_keyboard().is(key, Keyboard::HELD);
-}
-
-int key_up(int key)
-{
-    return get_keyboard().is(key, Keyboard::UP);
-}
-
-int mouse_x(void)
-{
-    return get_mouse().curr[0];
-}
-
-int mouse_y(void)
-{
-    return get_mouse().curr[1];
-}
-
-int mouse_dx(void)
-{
-    return get_mouse().delta[0];
-}
-
-int mouse_dy(void)
-{
-    return get_mouse().delta[1];
-}
-
-int mouse_down(int button)
-{
-    return get_mouse().is(button, Mouse::DOWN);
-}
-
-int mouse_held(int button)
-{
-    return get_mouse().is(button, Mouse::HELD);
-}
-
-int mouse_up(int button)
-{
-    return get_mouse().is(button, Mouse::UP);
-}
-
-double elapsed(void)
-{
-    return get_context().total.elapsed;
-}
-
-double dt(void)
-{
-    return get_context().frame.elapsed;
-}
-
-void sleep_for(double seconds)
-{
-    // TODO : Assert that we're not in the main thread.
-    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
-}
+// -----------------------------------------------------------------------------
+// TASK POOL
+// -----------------------------------------------------------------------------
 
 struct TaskPool;
 
@@ -1104,22 +595,595 @@ void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
     pool->release_task(this);
 }
 
-static TaskPool& get_task_pool()
+
+// -----------------------------------------------------------------------------
+// CONTEXTS
+// -----------------------------------------------------------------------------
+
+struct GlobalContext
 {
-    static TaskPool s_task_pool;
-    return s_task_pool;
+    Keyboard            keyboard;
+    Mouse               mouse;
+
+    enki::TaskScheduler scheduler;
+    TaskPool            task_pool;
+
+    VertexLayouts       layouts;
+
+    Timer               total_time;
+    Timer               frame_time;
+
+    GLFWwindow*         window = nullptr;
 };
+
+struct ThreadContext
+{
+    GeometryRecorder  transient_recorder;
+    GeometryRecorder  cached_recorder;
+
+    MatrixStack       view_matrices;
+    MatrixStack       proj_matrices;
+    MatrixStack       model_matrices;
+
+    TransientBuffers  transient_buffers;
+
+    Timer             stop_watch;
+    Timer             frame_time;
+
+    GeometryRecorder* recorder       = &transient_recorder;
+    MatrixStack*      matrices       = &model_matrices;
+
+    bool              is_main_thread = false;
+};
+
+static GlobalContext g_ctx;
+
+static ThreadContext t_ctx;
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY
+// -----------------------------------------------------------------------------
+
+int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+{
+    if (glfwInit() != GLFW_TRUE)
+    {
+        return 1;
+    }
+
+    gleqInit();
+
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+    // Context&             ctx       = get_context  ();
+    // Keyboard&            keyboard  = get_keyboard ();
+    // Mouse&               mouse     = get_mouse    ();
+    // enki::TaskScheduler& scheduler = get_scheduler();
+
+    g_ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
+    if (!g_ctx.window)
+    {
+        glfwTerminate();
+        return 2;
+    }
+
+    gleqTrackWindow(g_ctx.window);
+
+    bgfx::Init init;
+    init.platformData = create_platform_data(g_ctx.window, init.type);
+
+    if (!bgfx::init(init))
+    {
+        glfwDestroyWindow(g_ctx.window);
+        glfwTerminate();
+        return 3;
+    }
+
+    // Post a GLEQ_FRAMEBUFFER_RESIZED event, in case the user doesn't change
+    // the window size.
+    {
+        int width  = 0;
+        int height = 0;
+        glfwGetFramebufferSize(g_ctx.window, &width, &height);
+
+        gleq_framebuffer_size_callback(g_ctx.window, width, height);
+    }
+
+    g_ctx.scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
+
+    if (setup)
+    {
+        (*setup)();
+    }
+
+    bgfx::setDebug(BGFX_DEBUG_STATS);
+
+    int last_fb_width  = 0;
+    int last_fb_height = 0;
+
+    constexpr bgfx::ViewId DEFAULT_VIEW = 0;
+    bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
+
+    const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
+    static const bgfx::EmbeddedShader s_shaders[] =
+    {
+        BGFX_EMBEDDED_SHADER(poscolor_fs),
+        BGFX_EMBEDDED_SHADER(poscolor_vs),
+
+        BGFX_EMBEDDED_SHADER_END()
+    };
+
+    bgfx::ProgramHandle program = bgfx::createProgram
+    (
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
+        true
+    );
+    assert(bgfx::isValid(program));
+
+    {
+        double x, y;
+        glfwGetCursorPos(g_ctx.window, &x, &y);
+
+        g_ctx.mouse.curr[0] = g_ctx.mouse.prev[0] = static_cast<int>(x);
+        g_ctx.mouse.curr[1] = g_ctx.mouse.prev[1] = static_cast<int>(y);
+    }
+
+    g_ctx.total_time.tic();
+    g_ctx.frame_time.tic();
+
+    while (!glfwWindowShouldClose(g_ctx.window))
+    {
+        g_ctx.keyboard.update_state_flags();
+        g_ctx.mouse   .update_state_flags();
+
+        g_ctx.total_time.toc();
+        g_ctx.frame_time.toc(true);
+
+        glfwPollEvents();
+
+        GLEQevent event;
+        while (gleqNextEvent(&event))
+        {
+            switch (event.type)
+            {
+            case GLEQ_KEY_PRESSED:
+                g_ctx.keyboard.update_input_state(event.keyboard.key, true);
+                break;
+            
+            case GLEQ_KEY_RELEASED:
+                g_ctx.keyboard.update_input_state(event.keyboard.key, false);
+                break;
+
+            case GLEQ_BUTTON_PRESSED:
+                g_ctx.mouse.update_input_state(event.mouse.button, true);
+                break;
+
+            case GLEQ_BUTTON_RELEASED:
+                g_ctx.mouse.update_input_state(event.mouse.button, false);
+                break;
+
+            case GLEQ_CURSOR_MOVED:
+                g_ctx.mouse.update_position(event.pos.x, event.pos.y);
+                break;
+
+            case GLEQ_FRAMEBUFFER_RESIZED:
+                {
+                    const uint16_t width  = static_cast<uint16_t>(event.size.width );
+                    const uint16_t height = static_cast<uint16_t>(event.size.height);
+
+                    bgfx::reset(width, height, BGFX_RESET_NONE);
+                    bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
+                }
+                break;
+
+            default:;
+            }
+
+            gleqFreeEvent(&event);
+        }
+
+        // We have to wait with the mouse delta computation after all events
+        // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
+        g_ctx.mouse.update_position_delta();
+
+        bgfx::touch(DEFAULT_VIEW);
+
+        // TODO : This needs to be done for all contexts across all threads.
+        t_ctx.recorder->clear();
+
+        if (draw)
+        {
+            (*draw)();
+        }
+
+        bgfx::setViewTransform(DEFAULT_VIEW, &t_ctx.view_matrices.top, &t_ctx.proj_matrices.top);
+
+        // TODO : This needs to be done for all contexts across all threads.
+        {
+            if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
+            {
+                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, DEFAULT_VIEW, program);
+            }
+        }
+
+        bgfx::frame();
+    }
+
+    if (cleanup)
+    {
+        (*cleanup)();
+    }
+
+    g_ctx.scheduler.WaitforAllAndShutdown();
+
+    bgfx::shutdown();
+
+    glfwDestroyWindow(g_ctx.window);
+    glfwTerminate();
+
+    return 0;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - WINDOW
+// -----------------------------------------------------------------------------
+
+void size(int width, int height, int flags)
+{
+    assert(flags >= 0);
+
+    GLFWwindow* window = g_ctx.window;
+    assert(window);
+
+    constexpr int MIN_SIZE      = 240;
+    constexpr int DEFAULT_WIDTH = 640;
+    constexpr int DEFAULT_HEIGHT= 480;
+
+    // Current monitor.
+    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
+
+    // Activate full screen mode, or adjust its resolution.
+    if (flags & WINDOW_FULL_SCREEN)
+    {
+        if (!monitor)
+        {
+            monitor = glfwGetPrimaryMonitor();
+        }
+
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= 0) { width  = mode->width ; }
+        if (height <= 0) { height = mode->height; }
+
+        glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
+    }
+
+    // If in full screen mode, jump out of it.
+    else if (monitor)
+    {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
+        if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+
+        const int x = (mode->width  - width ) / 2;
+        const int y = (mode->height - height) / 2;
+
+        monitor = nullptr;
+
+        glfwSetWindowMonitor(window, nullptr, x, y, width, height, GLFW_DONT_CARE);
+    }
+
+    // Other window aspects are ignored, if the window is currently in full screen mode.
+    if (monitor)
+    {
+        return;
+    }
+
+    // Size.
+    if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
+    if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+
+    glfwSetWindowSize(window, width, height);
+
+    // Fixed aspect ratio.
+    if (flags & WINDOW_FIXED_ASPECT)
+    {
+        glfwSetWindowAspectRatio(window, width, height);
+    }
+    else
+    {
+        glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    }
+
+    // Resize-ability (we might want to first check the current value).
+    const int resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
+    glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
+}
+
+void title(const char* title)
+{
+    glfwSetWindowTitle(g_ctx.window, title);
+}
+
+void vsync(int vsync)
+{
+    assert(false && "Not yet implemented.");
+}
+
+void quit(void)
+{
+    glfwSetWindowShouldClose(g_ctx.window, GLFW_TRUE);
+}
+
+int width(void)
+{
+    int width;
+    glfwGetWindowSize(g_ctx.window, &width, nullptr);
+
+    return width;
+}
+
+int height(void)
+{
+    int height;
+    glfwGetWindowSize(g_ctx.window, nullptr, &height);
+
+    return height;
+}
+
+float aspect(void)
+{
+    int width, height;
+    glfwGetWindowSize(g_ctx.window, &width, &height);
+
+    return static_cast<float>(width) / static_cast<float>(height);
+}
+
+float dpi(void)
+{
+    int fb_width;
+    glfwGetFramebufferSize(g_ctx.window, &fb_width, nullptr);
+
+    int width;
+    glfwGetWindowSize(g_ctx.window, &width, nullptr);
+
+    return static_cast<float>(fb_width) / static_cast<float>(width);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INPUT
+// -----------------------------------------------------------------------------
+
+int mouse_x(void)
+{
+    return g_ctx.mouse.curr[0];
+}
+
+int mouse_y(void)
+{
+    return g_ctx.mouse.curr[1];
+}
+
+int mouse_dx(void)
+{
+    return g_ctx.mouse.delta[0];
+}
+
+int mouse_dy(void)
+{
+    return g_ctx.mouse.delta[1];
+}
+
+int mouse_down(int button)
+{
+    return g_ctx.mouse.is(button, Mouse::DOWN);
+}
+
+int mouse_held(int button)
+{
+    return g_ctx.mouse.is(button, Mouse::HELD);
+}
+
+int mouse_up(int button)
+{
+    return g_ctx.mouse.is(button, Mouse::UP);
+}
+
+int key_down(int key)
+{
+    return g_ctx.keyboard.is(key, Keyboard::DOWN);
+}
+
+int key_held(int key)
+{
+    return g_ctx.keyboard.is(key, Keyboard::HELD);
+}
+
+int key_up(int key)
+{
+    return g_ctx.keyboard.is(key, Keyboard::UP);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TIME
+// -----------------------------------------------------------------------------
+
+double elapsed(void)
+{
+    return g_ctx.total_time.elapsed;
+}
+
+double dt(void)
+{
+    return g_ctx.frame_time.elapsed;
+}
+
+void sleep_for(double seconds)
+{
+    assert(!t_ctx.is_main_thread);
+
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+}
+
+void tic(void)
+{
+    t_ctx.stop_watch.tic();
+}
+
+double toc(void)
+{
+    return t_ctx.stop_watch.toc();
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - GEOMETRY
+// -----------------------------------------------------------------------------
+
+void begin_cached(void)
+{
+    assert(false && "Not yet implemented.");
+}
+
+void begin(void)
+{
+    // TODO : Check recording is not already in progress.
+
+    t_ctx.recorder = &t_ctx.transient_recorder;
+
+    t_ctx.recorder->begin(VERTEX_COLOR); // TODO : Current attributes.
+}
+
+void vertex(float x, float y, float z)
+{
+    const hmm_vec4 position = t_ctx.matrices->top * HMM_Vec4(x, y, z, 1.0f);
+
+    t_ctx.recorder->vertex(position.X, position.Y, position.Z);
+}
+
+void color(unsigned int rgba)
+{
+    t_ctx.recorder->color(bx::endianSwap(rgba));
+}
+
+// TODO : Move these into a separate compilation unit, so that.
+// void normal(float nx, float ny, float nz)
+// {
+//     t_ctx.recorder->normal(nx, ny, nz);
+// }
+
+void texcoord(float u, float v)
+{
+    t_ctx.recorder->texcoord(u, v);
+}
+
+void end(void)
+{
+    t_ctx.recorder->end();
+}
+
+void model(void)
+{
+    t_ctx.matrices = &t_ctx.model_matrices;
+}
+
+void view(void)
+{
+    t_ctx.matrices = &t_ctx.view_matrices;
+}
+
+void projection(void)
+{
+    t_ctx.matrices = &t_ctx.proj_matrices;
+}
+
+void push(void)
+{
+    // TODO : Push vertex attribs (if that's something desirable).
+    t_ctx.matrices->push();
+}
+
+void pop(void)
+{
+    // TODO : Pop vertex attribs (if that's something desirable).
+    t_ctx.matrices->pop();
+}
+
+void identity(void)
+{
+    t_ctx.matrices->top = HMM_Mat4d(1.0f);
+}
+
+void ortho(float left, float right, float bottom, float top, float near_, float far_)
+{
+    t_ctx.matrices->multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
+}
+
+void perspective(float fovy, float aspect, float near_, float far_)
+{
+    t_ctx.matrices->multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
+}
+
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
+{
+    t_ctx.matrices->multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
+}
+
+void rotate(float angle, float x, float y, float z)
+{
+    t_ctx.matrices->multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
+}
+
+void rotate_x(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 1.0f, 0.0f, 0.0f);
+}
+
+void rotate_y(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 1.0f, 0.0f);
+}
+
+void rotate_z(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 0.0f, 1.0f);
+}
+
+void scale(float scale)
+{
+    t_ctx.matrices->multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
+}
+
+void translate(float x, float y, float z)
+{
+    t_ctx.matrices->multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MULTITHREADING
+// -----------------------------------------------------------------------------
 
 int task(void (* func)(void* data), void* data)
 {
-    Task* task = get_task_pool().get_free_task();
+    Task* task = g_ctx.task_pool.get_free_task();
 
     if (task)
     {
         task->func = func;
         task->data = data;
 
-        get_scheduler().AddTaskSetToPipe(task);
+        g_ctx.scheduler.AddTaskSetToPipe(task);
     }
 
     return task != nullptr;
