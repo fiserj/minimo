@@ -205,6 +205,16 @@ double dt(void);
 ///
 void sleep_for(double seconds);
 
+/// Starts a thread-local stopwatch.
+///
+void tic(void);
+
+/// Returns time elapsed sine the last thread-local call to `tic`, in seconds.
+///
+/// @returns Time in seconds.
+///
+double toc(void);
+
 
 // -----------------------------------------------------------------------------
 // GEOMETRY
