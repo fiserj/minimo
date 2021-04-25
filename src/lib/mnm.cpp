@@ -626,7 +626,7 @@ struct TaskPool
     std::mutex mutex;
     Task       tasks[MAX_TASKS];
     int        nexts[MAX_TASKS];
-    size_t     head = 0;
+    int        head = 0;
 
     TaskPool()
     {
