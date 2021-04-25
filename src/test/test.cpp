@@ -99,6 +99,14 @@ static void draw(void)
         return;
     }
 
+    if (key_down('V'))
+    {
+        static bool vsync_on = false;
+        vsync_on = !vsync_on;
+
+        vsync(vsync_on);
+    }
+
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);

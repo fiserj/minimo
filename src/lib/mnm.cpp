@@ -105,6 +105,91 @@ static bgfx::PlatformData create_platform_data
 
 
 // -----------------------------------------------------------------------------
+// WINDOW
+// -----------------------------------------------------------------------------
+
+struct Window
+{
+    GLFWwindow* handle    = nullptr;
+    int         width     = 0;
+    int         height    = 0;
+    int         fb_width  = 0;
+    int         fb_height = 0;
+};
+
+static void resize_window(GLFWwindow* window, int width, int height, int flags)
+{
+    assert(window);
+    assert(flags >= 0);
+
+    constexpr int MIN_SIZE      = 240;
+    constexpr int DEFAULT_WIDTH = 640;
+    constexpr int DEFAULT_HEIGHT= 480;
+
+    // Current monitor.
+    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
+
+    // Activate full screen mode, or adjust its resolution.
+    if (flags & WINDOW_FULL_SCREEN)
+    {
+        if (!monitor)
+        {
+            monitor = glfwGetPrimaryMonitor();
+        }
+
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= 0) { width  = mode->width ; }
+        if (height <= 0) { height = mode->height; }
+
+        glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
+    }
+
+    // If in full screen mode, jump out of it.
+    else if (monitor)
+    {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
+        if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+
+        const int x = (mode->width  - width ) / 2;
+        const int y = (mode->height - height) / 2;
+
+        monitor = nullptr;
+
+        glfwSetWindowMonitor(window, nullptr, x, y, width, height, GLFW_DONT_CARE);
+    }
+
+    // Other window aspects are ignored, if the window is currently in full screen mode.
+    if (monitor)
+    {
+        return;
+    }
+
+    // Size.
+    if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
+    if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+
+    glfwSetWindowSize(window, width, height);
+
+    // Fixed aspect ratio.
+    if (flags & WINDOW_FIXED_ASPECT)
+    {
+        glfwSetWindowAspectRatio(window, width, height);
+    }
+    else
+    {
+        glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    }
+
+    // Resize-ability (we might want to first check the current value).
+    const int resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
+    glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
+}
+
+
+// -----------------------------------------------------------------------------
 // STACK
 // -----------------------------------------------------------------------------
 
@@ -613,7 +698,10 @@ struct GlobalContext
     Timer               total_time;
     Timer               frame_time;
 
-    GLFWwindow*         window = nullptr;
+    Window              window;
+
+    bool                vsync_on          = false;
+    bool                reset_back_buffer = true;
 };
 
 struct ThreadContext
@@ -659,38 +747,35 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     glfwDefaultWindowHints();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-    // Context&             ctx       = get_context  ();
-    // Keyboard&            keyboard  = get_keyboard ();
-    // Mouse&               mouse     = get_mouse    ();
-    // enki::TaskScheduler& scheduler = get_scheduler();
-
-    g_ctx.window = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
-    if (!g_ctx.window)
+    g_ctx.window.handle = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
+    if (!g_ctx.window.handle)
     {
         glfwTerminate();
         return 2;
     }
 
-    gleqTrackWindow(g_ctx.window);
+    gleqTrackWindow(g_ctx.window.handle);
 
     bgfx::Init init;
-    init.platformData = create_platform_data(g_ctx.window, init.type);
+    init.platformData = create_platform_data(g_ctx.window.handle, init.type);
 
     if (!bgfx::init(init))
     {
-        glfwDestroyWindow(g_ctx.window);
+        glfwDestroyWindow(g_ctx.window.handle);
         glfwTerminate();
         return 3;
     }
 
-    // Post a GLEQ_FRAMEBUFFER_RESIZED event, in case the user doesn't change
-    // the window size.
+    // Post size-related events, in case the user doesn't change the window size in the `setup` function.
     {
         int width  = 0;
         int height = 0;
-        glfwGetFramebufferSize(g_ctx.window, &width, &height);
 
-        gleq_framebuffer_size_callback(g_ctx.window, width, height);
+        glfwGetWindowSize             (g_ctx.window.handle, &width, &height);
+        gleq_window_size_callback     (g_ctx.window.handle,  width,  height);
+
+        glfwGetFramebufferSize        (g_ctx.window.handle, &width, &height);
+        gleq_framebuffer_size_callback(g_ctx.window.handle,  width,  height);
     }
 
     g_ctx.scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
@@ -727,7 +812,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     {
         double x, y;
-        glfwGetCursorPos(g_ctx.window, &x, &y);
+        glfwGetCursorPos(g_ctx.window.handle, &x, &y);
 
         g_ctx.mouse.curr[0] = g_ctx.mouse.prev[0] = static_cast<int>(x);
         g_ctx.mouse.curr[1] = g_ctx.mouse.prev[1] = static_cast<int>(y);
@@ -736,7 +821,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     g_ctx.total_time.tic();
     g_ctx.frame_time.tic();
 
-    while (!glfwWindowShouldClose(g_ctx.window))
+    while (!glfwWindowShouldClose(g_ctx.window.handle))
     {
         g_ctx.keyboard.update_state_flags();
         g_ctx.mouse   .update_state_flags();
@@ -772,13 +857,14 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
-                {
-                    const uint16_t width  = static_cast<uint16_t>(event.size.width );
-                    const uint16_t height = static_cast<uint16_t>(event.size.height);
+                g_ctx.window.fb_width   = event.size.width;
+                g_ctx.window.fb_height  = event.size.height;
+                g_ctx.reset_back_buffer = true;
+                break;
 
-                    bgfx::reset(width, height, BGFX_RESET_NONE);
-                    bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
-                }
+            case GLEQ_WINDOW_RESIZED:
+                g_ctx.window.width  = event.size.width;
+                g_ctx.window.height = event.size.height;
                 break;
 
             default:;
@@ -790,6 +876,19 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         // We have to wait with the mouse delta computation after all events
         // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
         g_ctx.mouse.update_position_delta();
+
+        if (g_ctx.reset_back_buffer)
+        {
+            g_ctx.reset_back_buffer = false;
+
+            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.fb_width );
+            const uint16_t height = static_cast<uint16_t>(g_ctx.window.fb_height);
+
+            const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
+
+            bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
+            bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
+        }
 
         bgfx::touch(DEFAULT_VIEW);
 
@@ -823,7 +922,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     bgfx::shutdown();
 
-    glfwDestroyWindow(g_ctx.window);
+    glfwDestroyWindow(g_ctx.window.handle);
     glfwTerminate();
 
     return 0;
@@ -838,139 +937,49 @@ void size(int width, int height, int flags)
 {
     assert(t_ctx.is_main_thread);
 
-    assert(flags >= 0);
-
-    GLFWwindow* window = g_ctx.window;
-    assert(window);
-
-    constexpr int MIN_SIZE      = 240;
-    constexpr int DEFAULT_WIDTH = 640;
-    constexpr int DEFAULT_HEIGHT= 480;
-
-    // Current monitor.
-    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
-
-    // Activate full screen mode, or adjust its resolution.
-    if (flags & WINDOW_FULL_SCREEN)
-    {
-        if (!monitor)
-        {
-            monitor = glfwGetPrimaryMonitor();
-        }
-
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-
-        if (width  <= 0) { width  = mode->width ; }
-        if (height <= 0) { height = mode->height; }
-
-        glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
-    }
-
-    // If in full screen mode, jump out of it.
-    else if (monitor)
-    {
-        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-
-        if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-        if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
-
-        const int x = (mode->width  - width ) / 2;
-        const int y = (mode->height - height) / 2;
-
-        monitor = nullptr;
-
-        glfwSetWindowMonitor(window, nullptr, x, y, width, height, GLFW_DONT_CARE);
-    }
-
-    // Other window aspects are ignored, if the window is currently in full screen mode.
-    if (monitor)
-    {
-        return;
-    }
-
-    // Size.
-    if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-    if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
-
-    glfwSetWindowSize(window, width, height);
-
-    // Fixed aspect ratio.
-    if (flags & WINDOW_FIXED_ASPECT)
-    {
-        glfwSetWindowAspectRatio(window, width, height);
-    }
-    else
-    {
-        glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
-    }
-
-    // Resize-ability (we might want to first check the current value).
-    const int resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
-    glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
+    resize_window(g_ctx.window.handle, width, height, flags);
 }
 
 void title(const char* title)
 {
     assert(t_ctx.is_main_thread);
 
-    glfwSetWindowTitle(g_ctx.window, title);
+    glfwSetWindowTitle(g_ctx.window.handle, title);
 }
 
 void vsync(int vsync)
 {
     assert(t_ctx.is_main_thread);
 
-    assert(false && "Not yet implemented.");
+    g_ctx.vsync_on          = static_cast<bool>(vsync);
+    g_ctx.reset_back_buffer = true;
 }
 
 void quit(void)
 {
     assert(t_ctx.is_main_thread);
 
-    glfwSetWindowShouldClose(g_ctx.window, GLFW_TRUE);
+    glfwSetWindowShouldClose(g_ctx.window.handle, GLFW_TRUE);
 }
 
 int width(void)
 {
-    // TODO : Cache window size info to be able to run this from any thread.
-
-    int width;
-    glfwGetWindowSize(g_ctx.window, &width, nullptr);
-
-    return width;
+    return g_ctx.window.width;
 }
 
 int height(void)
 {
-    // TODO : Cache window size info to be able to run this from any thread.
-
-    int height;
-    glfwGetWindowSize(g_ctx.window, nullptr, &height);
-
-    return height;
+    return g_ctx.window.height;
 }
 
 float aspect(void)
 {
-    // TODO : Cache window size info to be able to run this from any thread.
-
-    int width, height;
-    glfwGetWindowSize(g_ctx.window, &width, &height);
-
-    return static_cast<float>(width) / static_cast<float>(height);
+    return static_cast<float>(g_ctx.window.width) / static_cast<float>(g_ctx.window.height);
 }
 
 float dpi(void)
 {
-    // TODO : Cache window size info to be able to run this from any thread.
-
-    int fb_width;
-    glfwGetFramebufferSize(g_ctx.window, &fb_width, nullptr);
-
-    int width;
-    glfwGetWindowSize(g_ctx.window, &width, nullptr);
-
-    return static_cast<float>(fb_width) / static_cast<float>(width);
+    return static_cast<float>(g_ctx.window.fb_width) / static_cast<float>(g_ctx.window.width);
 }
 
 
