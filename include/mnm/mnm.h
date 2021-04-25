@@ -16,6 +16,9 @@ extern "C" {
 ///
 /// @returns Zero if no error occurred.
 ///
+/// @warning This function must be called from the main thread only (the thread
+///   that calls `main`).
+///
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 
 
@@ -41,11 +44,15 @@ enum
 /// @param[in] height Height in screen coordinates.
 /// @param[in] flags Window attributes.
 ///
+/// @warning This function must be called from the main thread only.
+///
 void size(int width, int height, int flags);
 
 /// Sets window title.
 ///
 /// @param[in] title Window title string.
+///
+/// @warning This function must be called from the main thread only.
 ///
 void title(const char* title);
 
@@ -53,9 +60,13 @@ void title(const char* title);
 ///
 /// @param[in] vsync If non-zero, VSync is turned on.
 ///
+/// @warning This function must be called from the main thread only.
+///
 void vsync(int vsync);
 
 /// Signals that the window should be closed after the current frame.
+///
+/// @warning This function must be called from the main thread only.
 ///
 void quit(void);
 

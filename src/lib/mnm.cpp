@@ -647,6 +647,8 @@ static ThreadContext t_ctx;
 
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
+    t_ctx.is_main_thread = true;
+
     if (glfwInit() != GLFW_TRUE)
     {
         return 1;
@@ -834,6 +836,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
 void size(int width, int height, int flags)
 {
+    assert(t_ctx.is_main_thread);
+
     assert(flags >= 0);
 
     GLFWwindow* window = g_ctx.window;
@@ -907,21 +911,29 @@ void size(int width, int height, int flags)
 
 void title(const char* title)
 {
+    assert(t_ctx.is_main_thread);
+
     glfwSetWindowTitle(g_ctx.window, title);
 }
 
 void vsync(int vsync)
 {
+    assert(t_ctx.is_main_thread);
+
     assert(false && "Not yet implemented.");
 }
 
 void quit(void)
 {
+    assert(t_ctx.is_main_thread);
+
     glfwSetWindowShouldClose(g_ctx.window, GLFW_TRUE);
 }
 
 int width(void)
 {
+    // TODO : Cache window size info to be able to run this from any thread.
+
     int width;
     glfwGetWindowSize(g_ctx.window, &width, nullptr);
 
@@ -930,6 +942,8 @@ int width(void)
 
 int height(void)
 {
+    // TODO : Cache window size info to be able to run this from any thread.
+
     int height;
     glfwGetWindowSize(g_ctx.window, nullptr, &height);
 
@@ -938,6 +952,8 @@ int height(void)
 
 float aspect(void)
 {
+    // TODO : Cache window size info to be able to run this from any thread.
+
     int width, height;
     glfwGetWindowSize(g_ctx.window, &width, &height);
 
@@ -946,6 +962,8 @@ float aspect(void)
 
 float dpi(void)
 {
+    // TODO : Cache window size info to be able to run this from any thread.
+
     int fb_width;
     glfwGetFramebufferSize(g_ctx.window, &fb_width, nullptr);
 
