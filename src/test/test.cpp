@@ -85,10 +85,18 @@ static void scene(void)
     }
 }
 
+static const int CUBE_ID = 1;
+
 static void setup(void)
 {
     size(800, 600, WINDOW_DEFAULT);
     title("MiNiMo Test");
+
+    begin_cached(CUBE_ID);
+    {
+        cube();
+    }
+    end();
 }
 
 static void draw(void)

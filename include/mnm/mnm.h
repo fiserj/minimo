@@ -247,7 +247,7 @@ void begin(void);
 
 /// ...
 ///
-void begin_cached(void);
+void begin_cached(int id);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.
