@@ -380,7 +380,15 @@ struct CachedBuffers
     bgfx::VertexBufferHandle texcoords = BGFX_INVALID_HANDLE;
 };
 
+struct CachedSubmission
+{
+    int      id;
+    hmm_mat4 transform;
+};
+
 typedef std::unordered_map<int, CachedBuffers> CachedBufferMap;
+
+typedef std::vector<CachedSubmission> CachedSubmissionList;
 
 struct VertexLayouts
 {
@@ -432,6 +440,7 @@ static bool update_cached_geometry
 
         CachedBuffers& buffers = out_buffer_map[record.id];
 
+        // TODO : We need selectively upload only the buffers specified in the attributes.
         if (!(
             update_cached_buffer(recorder.positions     .data(), record.position_offset, record.vertex_count, layouts.positions, buffers.positions) &&
             update_cached_buffer(recorder.colors   .data.data(), record.color_offset   , record.vertex_count, layouts.colors   , buffers.colors   ) &&
@@ -449,6 +458,41 @@ static bool update_cached_geometry
     // function to delete cached geometry.
 
     return true;
+}
+
+static void submit_cached_geometry
+(
+    const CachedSubmissionList& cached_submissions,
+    const CachedBufferMap&      buffer_map,
+    bgfx::ViewId                view,
+    bgfx::ProgramHandle         program
+)
+{
+    // TODO : Use BGFX encoder.
+    // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
+
+    for (const CachedSubmission& submission : cached_submissions)
+    {
+        const auto it = buffer_map.find(submission.id);
+        assert(it != buffer_map.end());
+
+        if (it != buffer_map.end())
+        {
+            const CachedBuffers& buffers = it->second;
+
+            // TODO : Use record's attributes and make function variants like in case of `GeometryRecorder::PushFunc`.
+                                                    bgfx::setVertexBuffer(0, buffers.positions);
+            if (bgfx::isValid(buffers.colors   )) { bgfx::setVertexBuffer(1, buffers.colors   ); }
+            if (bgfx::isValid(buffers.normals  )) { bgfx::setVertexBuffer(2, buffers.normals  ); }
+            if (bgfx::isValid(buffers.texcoords)) { bgfx::setVertexBuffer(3, buffers.texcoords); }
+
+            bgfx::setTransform(submission.transform.Elements);
+
+            bgfx::setState(BGFX_STATE_DEFAULT);
+
+            bgfx::submit(view, program);
+        }
+    }
 }
 
 template <typename T>
@@ -496,6 +540,7 @@ static void submit_transient_geometry
     bgfx::ProgramHandle     program
 )
 {
+    // TODO : Use BGFX encoder.
     // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
 
     for (const GeometryRecord& record : recorder.records)
@@ -778,21 +823,23 @@ struct GlobalContext
 
 struct ThreadContext
 {
-    GeometryRecorder  transient_recorder;
-    GeometryRecorder  cached_recorder;
+    GeometryRecorder     transient_recorder;
+    GeometryRecorder     cached_recorder;
 
-    MatrixStack       view_matrices;
-    MatrixStack       proj_matrices;
-    MatrixStack       model_matrices;
+    MatrixStack          view_matrices;
+    MatrixStack          proj_matrices;
+    MatrixStack          model_matrices;
 
-    TransientBuffers  transient_buffers;
-    CachedBufferMap   cached_buffers;
+    TransientBuffers     transient_buffers;
+    CachedBufferMap      cached_buffers;
 
-    Timer             stop_watch;
-    Timer             frame_time;
+    CachedSubmissionList cached_submissions;
 
-    GeometryRecorder* recorder       = &transient_recorder;
-    MatrixStack*      matrices       = &model_matrices;
+    Timer                stop_watch;
+    Timer                frame_time;
+
+    GeometryRecorder*    recorder       = &transient_recorder;
+    MatrixStack*         matrices       = &model_matrices;
 
     bool              is_main_thread = false;
 };
@@ -970,6 +1017,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         // TODO : This needs to be done for all contexts across all threads.
         t_ctx.transient_recorder.clear();
         t_ctx.cached_recorder   .clear();
+        t_ctx.cached_submissions.clear();
 
         if (draw)
         {
@@ -987,7 +1035,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
             if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
             {
-                // submit_cached_geometry(...);
+                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, DEFAULT_VIEW, program);
             }
         }
 
@@ -1178,7 +1226,7 @@ void begin_cached(int id)
 
 void vertex(float x, float y, float z)
 {
-    const hmm_vec4 position = t_ctx.matrices->top * HMM_Vec4(x, y, z, 1.0f);
+    const hmm_vec4 position = t_ctx.model_matrices.top * HMM_Vec4(x, y, z, 1.0f);
 
     t_ctx.recorder->vertex(position.X, position.Y, position.Z);
 }
@@ -1202,6 +1250,13 @@ void texcoord(float u, float v)
 void end(void)
 {
     t_ctx.recorder->end();
+}
+
+void cache(int id)
+{
+    assert(id != 0);
+
+    t_ctx.cached_submissions.push_back({ id, t_ctx.model_matrices.top });
 }
 
 void model(void)

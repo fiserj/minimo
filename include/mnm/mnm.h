@@ -245,7 +245,12 @@ enum
 ///
 void begin(void);
 
-/// ...
+/// Starts cached geometry building mode. Only supported primitive is
+/// triangles. The user-defined identifier can be used repeatedly to overwrite
+/// existing content, but only the last content is retained. Use the `cache`
+/// function to submit a cached geometry using the current model matrix.
+///
+/// @param[in] id Cached geometry identifier. Must be non-zero.
 ///
 void begin_cached(int id);
 
@@ -265,7 +270,11 @@ void vertex(float x, float y, float z);
 ///
 void color(unsigned int rgba);
 
-/// ...
+/// Sets current normal vector.
+///
+/// @param[in] nx X component of the normal vector.
+/// @param[in] ny Y component of the normal vector.
+/// @param[in] nz Z component of the normal vector.
 ///
 // void normal(float nx, float ny, float nz);
 
@@ -281,6 +290,13 @@ void texcoord(float u, float v);
 /// `draw` function returns.
 ///
 void end(void);
+
+/// Submits a cached geometry created previously with `begin_cached` with the
+/// same identifier.
+///
+/// @param[in] id Cached geometry identifier. Must be non-zero.
+///
+void cache(int id);
 
 /// Sets model matrix stack as the active one.
 ///
