@@ -8,6 +8,7 @@
 #include <chrono>                      // duration
 #include <mutex>                       // lock_guard, mutex
 #include <thread>                      // this_thread
+#include <unordered_map>               // unordered_map
 #include <vector>                      // vector
 
 #include <bgfx/bgfx.h>                 // bgfx::*
@@ -231,6 +232,7 @@ struct MatrixStack : Stack<hmm_mat4>
 
 struct GeometryRecord
 {
+    int      id              = 0;
     uint16_t attributes      = 0;
 
     uint16_t index_count     = 0;
@@ -257,20 +259,22 @@ struct GeometryRecorder
 
     void clear()
     {
+        records       .clear();
         positions     .clear();
         colors   .data.clear();
         normals  .data.clear();
         texcoords.data.clear();
     }
 
-    void begin(uint16_t attributes)
+    int begin(uint16_t attributes, int id = 0)
     {
         assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
-        if (records.empty() || records.back().attributes != attributes)
+        if (id || records.empty() || records.back().attributes != attributes)
         {
             GeometryRecord record;
 
+            record.id              = id;
             record.attributes      = attributes;
             record.position_offset = static_cast<uint16_t>(positions     .size());
             record.color_offset    = static_cast<uint16_t>(colors   .data.size());
@@ -279,11 +283,14 @@ struct GeometryRecorder
 
             records.push_back(record);
         }
+
+        return id;
     }
 
     inline void end()
     {
         assert(!records.empty());
+        assert( records.back().vertex_count % 3 == 0);
 
         records.back().vertex_count = static_cast<uint16_t>(positions.size() - records.back().position_offset);
     }
@@ -365,6 +372,16 @@ struct TransientBuffers
     bgfx::TransientVertexBuffer texcoords = EMPTY_TRANSIENT_BUFFER;
 };
 
+struct CachedBuffers
+{
+    bgfx::VertexBufferHandle positions = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle colors    = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle normals   = BGFX_INVALID_HANDLE;
+    bgfx::VertexBufferHandle texcoords = BGFX_INVALID_HANDLE;
+};
+
+typedef std::unordered_map<int, CachedBuffers> CachedBufferMap;
+
 struct VertexLayouts
 {
     bgfx::VertexLayout positions;
@@ -380,6 +397,59 @@ struct VertexLayouts
         texcoords.begin().add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float      ).end();
     }
 };
+
+template <typename T>
+static bool update_cached_buffer(const T* data, uint32_t offset, uint32_t size, const bgfx::VertexLayout& layout, bgfx::VertexBufferHandle& buffer)
+{
+    if (bgfx::isValid(buffer))
+    {
+        bgfx::destroy(buffer);
+        buffer = BGFX_INVALID_HANDLE;
+    }
+
+    if (!(data && size))
+    {
+        return true;
+    }
+
+    // TODO : Measure whether a custom allocator (or batch allocation) would be more suitable.
+    buffer = bgfx::createVertexBuffer(bgfx::copy(data + offset, size * sizeof(T)), layout);
+
+    return bgfx::isValid(buffer);
+}
+
+static bool update_cached_geometry
+(
+    const GeometryRecorder& recorder,
+    const VertexLayouts&    layouts,
+    CachedBufferMap&        out_buffer_map
+)
+{
+    for (const GeometryRecord& record : recorder.records)
+    {
+        assert(record.id           != 0);
+        assert(record.vertex_count >  0);
+
+        CachedBuffers& buffers = out_buffer_map[record.id];
+
+        if (!(
+            update_cached_buffer(recorder.positions     .data(), record.position_offset, record.vertex_count, layouts.positions, buffers.positions) &&
+            update_cached_buffer(recorder.colors   .data.data(), record.color_offset   , record.vertex_count, layouts.colors   , buffers.colors   ) &&
+            update_cached_buffer(recorder.normals  .data.data(), record.normal_offset  , record.vertex_count, layouts.normals  , buffers.normals  ) &&
+            update_cached_buffer(recorder.texcoords.data.data(), record.texcoord_offset, record.vertex_count, layouts.texcoords, buffers.texcoords)
+        ))
+        {
+            // TODO : We probably shouldn't dismiss all the buffers if a single one fails to upload.
+            return false;
+        }
+    }
+
+    // TODO : We could check if any of the buffer sets in `out_buffer_map` is empty and remove it, but
+    // users shouldn't submit empty begin/end pairs in the first place. There will also be a dedicated
+    // function to delete cached geometry.
+
+    return true;
+}
 
 template <typename T>
 static bool update_transient_buffer(const std::vector<T>& data, const bgfx::VertexLayout& layout, bgfx::TransientVertexBuffer& buffer)
@@ -430,6 +500,8 @@ static void submit_transient_geometry
 
     for (const GeometryRecord& record : recorder.records)
     {
+        assert(record.vertex_count > 0);
+
         // TODO : Make function variants like in case of `GeometryRecorder::PushFunc`.
                                                    bgfx::setVertexBuffer(0, &buffers.positions);
         if (record.attributes & VERTEX_COLOR   ) { bgfx::setVertexBuffer(1, &buffers.colors   ); }
@@ -714,6 +786,7 @@ struct ThreadContext
     MatrixStack       model_matrices;
 
     TransientBuffers  transient_buffers;
+    CachedBufferMap   cached_buffers;
 
     Timer             stop_watch;
     Timer             frame_time;
@@ -783,6 +856,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     if (setup)
     {
         (*setup)();
+
+        (void)update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers);
     }
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
@@ -893,7 +968,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         bgfx::touch(DEFAULT_VIEW);
 
         // TODO : This needs to be done for all contexts across all threads.
-        t_ctx.recorder->clear();
+        t_ctx.transient_recorder.clear();
+        t_ctx.cached_recorder   .clear();
 
         if (draw)
         {
@@ -907,6 +983,11 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
                 submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, DEFAULT_VIEW, program);
+            }
+
+            if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
+            {
+                // submit_cached_geometry(...);
             }
         }
 
@@ -1074,11 +1155,6 @@ double toc(void)
 // PUBLIC API IMPLEMENTATION - GEOMETRY
 // -----------------------------------------------------------------------------
 
-void begin_cached(void)
-{
-    assert(false && "Not yet implemented.");
-}
-
 void begin(void)
 {
     // TODO : Check recording is not already in progress.
@@ -1086,6 +1162,18 @@ void begin(void)
     t_ctx.recorder = &t_ctx.transient_recorder;
 
     t_ctx.recorder->begin(VERTEX_COLOR); // TODO : Current attributes.
+}
+
+void begin_cached(int id)
+{
+    // TODO : Check recording is not already in progress.
+    // TODO : Eventually, it'd be great to enable dynamic buffers (that change occasionally, but not every frame).
+
+    assert(id != 0);
+
+    t_ctx.recorder = &t_ctx.cached_recorder;
+
+    t_ctx.recorder->begin(VERTEX_COLOR, id); // TODO : Current attributes.
 }
 
 void vertex(float x, float y, float z)
