@@ -266,7 +266,7 @@ struct GeometryRecorder
         texcoords.data.clear();
     }
 
-    int begin(uint16_t attributes, int id = 0)
+    void begin(uint16_t attributes, int id = 0)
     {
         assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
@@ -283,8 +283,6 @@ struct GeometryRecorder
 
             records.push_back(record);
         }
-
-        return id;
     }
 
     inline void end()
