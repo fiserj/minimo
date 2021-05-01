@@ -6,6 +6,7 @@
 
 #include <algorithm>                   // max
 #include <chrono>                      // duration
+#include <functional>                  // hash
 #include <mutex>                       // lock_guard, mutex
 #include <thread>                      // this_thread
 #include <unordered_map>               // unordered_map
@@ -227,6 +228,34 @@ struct MatrixStack : Stack<hmm_mat4>
 
 
 // -----------------------------------------------------------------------------
+// GENERAL UTILITY FUNCTIONS
+// -----------------------------------------------------------------------------
+
+// https://stackoverflow.com/a/2595226
+template <typename T>
+inline void hash_combine(size_t& seed, const T& value)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template <>
+inline void hash_combine<hmm_vec2>(size_t& seed, const hmm_vec2& value)
+{
+    hash_combine(seed, value.X);
+    hash_combine(seed, value.Y);
+}
+
+template <>
+inline void hash_combine<hmm_vec3>(size_t& seed, const hmm_vec3& value)
+{
+    hash_combine(seed, value.X);
+    hash_combine(seed, value.Y);
+    hash_combine(seed, value.Z);
+}
+
+
+// -----------------------------------------------------------------------------
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
@@ -249,7 +278,11 @@ struct GeometryRecorder
 {
     typedef void (*PushFunc)(GeometryRecorder&);
 
+    typedef size_t (*VertexHashFunc)(const GeometryRecorder&, const GeometryRecord&, size_t);
+
     static const PushFunc s_push_active_attributes[8];
+
+    static const VertexHashFunc s_hash_vertex[8];
 
     std::vector<GeometryRecord> records;
     std::vector<hmm_vec3>       positions;
@@ -317,6 +350,40 @@ struct GeometryRecorder
         }
     }
 
+    template <int ATTRIBUTES>
+    static size_t hash_vertex
+    (
+        const GeometryRecorder& recorder,
+        const GeometryRecord&   record,
+        size_t                  i
+    )
+    {
+        static_assert(
+            ATTRIBUTES >= 0 && ATTRIBUTES <= (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD),
+            "Invalid vertex attributes."
+        );
+
+        size_t hash = 0;
+        hash_combine(hash, recorder.positions[record.position_offset + i]);
+
+        if (ATTRIBUTES & VERTEX_COLOR)
+        {
+            hash_combine(hash, recorder.colors.data[record.color_offset + i]);
+        }
+
+        if (ATTRIBUTES & VERTEX_NORMAL)
+        {
+            hash_combine(hash, recorder.normals.data[record.normal_offset + i]);
+        }
+
+        if (ATTRIBUTES & VERTEX_TEXCOORD)
+        {
+            hash_combine(hash, recorder.texcoords.data[record.texcoord_offset + i]);
+        }
+
+        return hash;
+    }
+
     inline void vertex(float x, float y, float z)
     {
         assert(!records.empty());
@@ -354,6 +421,54 @@ const GeometryRecorder::PushFunc GeometryRecorder::s_push_active_attributes[8] =
     GeometryRecorder::push_active_attributes<VERTEX_NORMAL | VERTEX_TEXCOORD                >,
     GeometryRecorder::push_active_attributes<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
 };
+
+const GeometryRecorder::VertexHashFunc GeometryRecorder::s_hash_vertex[8] =
+{
+    GeometryRecorder::hash_vertex<0                                              >,
+    GeometryRecorder::hash_vertex<VERTEX_COLOR                                   >,
+    GeometryRecorder::hash_vertex<VERTEX_NORMAL                                  >,
+    GeometryRecorder::hash_vertex<VERTEX_TEXCOORD                                >,
+    GeometryRecorder::hash_vertex<VERTEX_COLOR  | VERTEX_TEXCOORD                >,
+    GeometryRecorder::hash_vertex<VERTEX_COLOR  | VERTEX_NORMAL                  >,
+    GeometryRecorder::hash_vertex<VERTEX_NORMAL | VERTEX_TEXCOORD                >,
+    GeometryRecorder::hash_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
+};
+
+
+// -----------------------------------------------------------------------------
+// GEOMETRY INDEXING
+// -----------------------------------------------------------------------------
+
+static void index_geometry_record
+(
+    const GeometryRecord&   record,
+    const GeometryRecorder& recorder,
+    std::vector<uint16_t>&  out_indices
+)
+{
+    out_indices.clear();
+
+    std::unordered_map<size_t, uint16_t>   vertex_hashes;
+    const GeometryRecorder::VertexHashFunc hash_vertex = GeometryRecorder::s_hash_vertex[record.attributes];
+
+    for (size_t i = 0, n = record.vertex_count; i < n; i++)
+    {
+        const size_t vertex_hash = hash_vertex(recorder, record, i);
+        const auto it = vertex_hashes.find(vertex_hash);
+
+        if (it != vertex_hashes.end())
+        {
+            out_indices.push_back(it->second);
+        }
+        else
+        {
+            out_indices.push_back(static_cast<uint16_t>(i));
+            vertex_hashes.insert({ vertex_hash, out_indices.back() });
+        }
+    }
+}
+
+
 
 
 // -----------------------------------------------------------------------------
