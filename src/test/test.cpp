@@ -68,7 +68,7 @@ static void cube(void)
     quad(vertices, 0, 3, 4, 7);
 }
 
-static void scene(void)
+static void scene(int cube_cache_id = 0)
 {
     for (float y = 0.0f; y < 11.0f; y += 1.0f)
     for (float x = 0.0f; x < 11.0f; x += 1.0f)
@@ -79,7 +79,7 @@ static void scene(void)
         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        cube();
+        cube_cache_id ? cache(cube_cache_id) : cube();
 
         pop();
     }
@@ -89,7 +89,7 @@ static const int CUBE_ID = 1;
 
 static void setup(void)
 {
-    size(800, 600, WINDOW_DEFAULT);
+    size(2*800, 2*600, WINDOW_DEFAULT);
     title("MiNiMo Test");
 
     begin_cached(CUBE_ID);
@@ -101,6 +101,9 @@ static void setup(void)
 
 static void draw(void)
 {
+    static bool vsync_on   = false;
+    static bool caching_on = true;
+
     if (key_down(KEY_ESCAPE))
     {
         quit();
@@ -109,10 +112,13 @@ static void draw(void)
 
     if (key_down('V'))
     {
-        static bool vsync_on = false;
         vsync_on = !vsync_on;
-
         vsync(vsync_on);
+    }
+
+    if (key_down('C'))
+    {
+        caching_on = !caching_on;
     }
 
     projection();
@@ -138,11 +144,18 @@ static void draw(void)
     model();
     identity();
 
-    begin();
+    if (caching_on)
     {
-        scene();
+        scene(CUBE_ID);
     }
-    end();
+    else
+    {
+        begin();
+        {
+            scene();
+        }
+        end();
+    }
 }
 
 int main(int, char**)
