@@ -29,8 +29,21 @@ elseif(WIN32)
             ${BGFX_DIR}/3rdparty
             ${BGFX_DIR}/3rdparty/dxsdk/include
     )
+endif()
+
+if (MSVC)
     target_compile_definitions(bgfx PRIVATE
         _CRT_SECURE_NO_WARNINGS
+    )
+endif()
+
+target_compile_definitions(bgfx PRIVATE
+    "$<$<CONFIG:Debug>:BGFX_CONFIG_DEBUG=1>"
+)
+
+if(BGFX_CONFIG_DEBUG)
+    target_compile_definitions(bgfx PRIVATE
+        BGFX_CONFIG_DEBUG=1
     )
 endif()
 
