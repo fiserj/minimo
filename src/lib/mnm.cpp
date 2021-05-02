@@ -4,7 +4,7 @@
 #include <stdint.h>                    // uint32_t
 #include <string.h>                    // memcpy
 
-#include <algorithm>                   // max
+#include <algorithm>                   // max, transform
 #include <chrono>                      // duration
 #include <functional>                  // hash
 #include <mutex>                       // lock_guard, mutex
@@ -443,32 +443,38 @@ static void index_geometry_record
 (
     const GeometryRecord&   record,
     const GeometryRecorder& recorder,
-    std::vector<uint16_t>&  out_indices
+    std::vector<uint16_t>&  out_indices,
+    std::vector<uint16_t>&  out_vertex_map
 )
 {
-    out_indices.clear();
-
     std::unordered_map<size_t, uint16_t>   vertex_hashes;
     const GeometryRecorder::VertexHashFunc hash_vertex = GeometryRecorder::s_hash_vertex[record.attributes];
 
-    for (size_t i = 0, n = record.vertex_count; i < n; i++)
+    out_indices.resize(record.vertex_count);
+    out_vertex_map.clear();
+
+    for (size_t i = 0; i < out_indices.size(); i++)
     {
         const size_t vertex_hash = hash_vertex(recorder, record, i);
         const auto it = vertex_hashes.find(vertex_hash);
 
         if (it != vertex_hashes.end())
         {
-            out_indices.push_back(it->second);
+            out_indices[i] = it->second;
         }
         else
         {
-            out_indices.push_back(static_cast<uint16_t>(i));
-            vertex_hashes.insert({ vertex_hash, out_indices.back() });
+            const uint16_t idx = static_cast<uint16_t>(out_vertex_map.size());
+            assert(idx == out_vertex_map.size());
+
+            out_vertex_map.push_back(static_cast<uint16_t>(i));
+
+            out_indices[i] = idx;
+
+            vertex_hashes.insert({ vertex_hash, idx });
         }
     }
 }
-
-
 
 
 // -----------------------------------------------------------------------------
@@ -491,6 +497,7 @@ struct CachedBuffers
     bgfx::VertexBufferHandle colors    = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle normals   = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle texcoords = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle  indices   = BGFX_INVALID_HANDLE;
 };
 
 struct CachedSubmission
@@ -519,13 +526,44 @@ struct VertexLayouts
     }
 };
 
-template <typename T>
-static bool update_cached_buffer(const T* data, uint32_t offset, uint32_t size, const bgfx::VertexLayout& layout, bgfx::VertexBufferHandle& buffer)
+static bool update_cached_buffer(const uint16_t* data, uint32_t offset, uint32_t count, bgfx::IndexBufferHandle& out_buffer)
 {
-    if (bgfx::isValid(buffer))
+    // TODO : Refactor with the vertex-buffer-oriented overload.
+
+    if (bgfx::isValid(out_buffer))
     {
-        bgfx::destroy(buffer);
-        buffer = BGFX_INVALID_HANDLE;
+        bgfx::destroy(out_buffer);
+        out_buffer = BGFX_INVALID_HANDLE;
+    }
+
+    if (!(data && count))
+    {
+        return true;
+    }
+
+    const bgfx::Memory* memory = bgfx::copy(data + offset, static_cast<uint32_t>(count * sizeof(uint16_t)));
+    assert(memory);
+
+    out_buffer = bgfx::createIndexBuffer(memory);
+
+    return bgfx::isValid(out_buffer);
+}
+
+template <typename T>
+static bool update_cached_buffer
+(
+    const T*                     data,
+    uint32_t                     offset,
+    uint32_t                     size,
+    const bgfx::VertexLayout&    layout,
+    const std::vector<uint16_t>& vertex_map,
+    bgfx::VertexBufferHandle&    out_buffer
+)
+{
+    if (bgfx::isValid(out_buffer))
+    {
+        bgfx::destroy(out_buffer);
+        out_buffer = BGFX_INVALID_HANDLE;
     }
 
     if (!(data && size))
@@ -534,9 +572,30 @@ static bool update_cached_buffer(const T* data, uint32_t offset, uint32_t size, 
     }
 
     // TODO : Measure whether a custom allocator (or batch allocation) would be more suitable.
-    buffer = bgfx::createVertexBuffer(bgfx::copy(data + offset, size * sizeof(T)), layout);
+    const bgfx::Memory* memory = nullptr;
 
-    return bgfx::isValid(buffer);
+    if (vertex_map.empty())
+    {
+        memory = bgfx::copy(data + offset, static_cast<uint32_t>(size * sizeof(T)));
+        assert(memory);
+    }
+    else
+    {
+        memory = bgfx::alloc(static_cast<uint32_t>(vertex_map.size() * sizeof(T)));
+        assert(memory);
+
+        std::transform(
+            vertex_map.begin(), vertex_map.end(),
+            reinterpret_cast<T*>(memory->data),
+            [&](uint16_t idx)
+            {
+                return data[offset + idx];
+            });
+    }
+
+    out_buffer = bgfx::createVertexBuffer(memory, layout);
+
+    return bgfx::isValid(out_buffer);
 }
 
 static bool update_cached_geometry
@@ -546,6 +605,9 @@ static bool update_cached_geometry
     CachedBufferMap&        out_buffer_map
 )
 {
+    std::vector<uint16_t> indices;
+    std::vector<uint16_t> vertex_map;
+
     for (const GeometryRecord& record : recorder.records)
     {
         assert(record.id           != 0);
@@ -553,12 +615,15 @@ static bool update_cached_geometry
 
         CachedBuffers& buffers = out_buffer_map[record.id];
 
-        // TODO : We need selectively upload only the buffers specified in the attributes.
+        index_geometry_record(record, recorder, indices, vertex_map);
+
         if (!(
-            update_cached_buffer(recorder.positions     .data(), record.position_offset, record.vertex_count, layouts.positions, buffers.positions) &&
-            update_cached_buffer(recorder.colors   .data.data(), record.color_offset   , record.vertex_count, layouts.colors   , buffers.colors   ) &&
-            update_cached_buffer(recorder.normals  .data.data(), record.normal_offset  , record.vertex_count, layouts.normals  , buffers.normals  ) &&
-            update_cached_buffer(recorder.texcoords.data.data(), record.texcoord_offset, record.vertex_count, layouts.texcoords, buffers.texcoords)
+            update_cached_buffer(indices.data(), 0, static_cast<uint16_t>(indices.size()), buffers.indices) &&
+
+            update_cached_buffer(recorder.positions     .data(), record.position_offset, record.vertex_count, layouts.positions, vertex_map, buffers.positions) &&
+            update_cached_buffer(recorder.colors   .data.data(), record.color_offset   , record.vertex_count, layouts.colors   , vertex_map, buffers.colors   ) &&
+            update_cached_buffer(recorder.normals  .data.data(), record.normal_offset  , record.vertex_count, layouts.normals  , vertex_map, buffers.normals  ) &&
+            update_cached_buffer(recorder.texcoords.data.data(), record.texcoord_offset, record.vertex_count, layouts.texcoords, vertex_map, buffers.texcoords)
         ))
         {
             // TODO : We probably shouldn't dismiss all the buffers if a single one fails to upload.
@@ -598,6 +663,7 @@ static void submit_cached_geometry
             if (bgfx::isValid(buffers.colors   )) { bgfx::setVertexBuffer(1, buffers.colors   ); }
             if (bgfx::isValid(buffers.normals  )) { bgfx::setVertexBuffer(2, buffers.normals  ); }
             if (bgfx::isValid(buffers.texcoords)) { bgfx::setVertexBuffer(3, buffers.texcoords); }
+            if (bgfx::isValid(buffers.indices  )) { bgfx::setIndexBuffer (   buffers.indices  ); }
 
             bgfx::setTransform(submission.transform.Elements);
 
