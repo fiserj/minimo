@@ -10,9 +10,9 @@ else()
     )
 endif()
 
-# list(APPEND SOURCE_FILES
-#     ...
-# )
+list(APPEND SOURCE_FILES
+    ../../include/mnm/mnm.h # Not needed for build, but IDE-friendly.
+)
 
 add_library(${NAME} STATIC
     ${SOURCE_FILES}
