@@ -113,6 +113,7 @@ static bgfx::PlatformData create_platform_data
 struct Window
 {
     GLFWwindow* handle    = nullptr;
+    float       scale     = 0.0f;
     int         width     = 0;
     int         height    = 0;
     int         fb_width  = 0;
@@ -1022,7 +1023,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     gleqInit();
 
     glfwDefaultWindowHints();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_CLIENT_API      , GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE  );
 
     g_ctx.window.handle = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
     if (!g_ctx.window.handle)
@@ -1045,14 +1047,18 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     // Post size-related events, in case the user doesn't change the window size in the `setup` function.
     {
-        int width  = 0;
-        int height = 0;
+        float scale  = 0.0f;
+        int   width  = 0;
+        int   height = 0;
 
-        glfwGetWindowSize             (g_ctx.window.handle, &width, &height);
-        gleq_window_size_callback     (g_ctx.window.handle,  width,  height);
+        glfwGetWindowSize                 (g_ctx.window.handle, &width, &height );
+        gleq_window_size_callback         (g_ctx.window.handle,  width,  height );
 
-        glfwGetFramebufferSize        (g_ctx.window.handle, &width, &height);
-        gleq_framebuffer_size_callback(g_ctx.window.handle,  width,  height);
+        glfwGetFramebufferSize            (g_ctx.window.handle, &width, &height );
+        gleq_framebuffer_size_callback    (g_ctx.window.handle,  width,  height );
+
+        glfwGetWindowContentScale         (g_ctx.window.handle, &scale,  nullptr);
+        gleq_window_content_scale_callback(g_ctx.window.handle, scale ,  scale  );
     }
 
     g_ctx.scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
@@ -1145,6 +1151,10 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 g_ctx.window.width  = event.size.width;
                 g_ctx.window.height = event.size.height;
                 break;
+
+            case GLEQ_WINDOW_SCALE_CHANGED:
+                assert(event.scale.x == event.scale.y);
+                g_ctx.window.scale = event.scale.x;
 
             default:;
             }
