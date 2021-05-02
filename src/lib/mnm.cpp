@@ -850,14 +850,19 @@ struct InputState
 // TODO : Mouse coordinates are in DPI-invariant coordinates and should be stored as floats.
 struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
+    // TODO : Convert all these to floats.
     int curr [2] = { 0 };
     int prev [2] = { 0 };
     int delta[2] = { 0 };
 
-    void update_position(int x, int y)
+    void update_position(const Window& window)
     {
-        curr[0] = x;
-        curr[1] = y;
+        double x = 0.0;
+        double y = 0.0;
+        glfwGetCursorPos(window.handle, &x, &y);
+
+        curr[0] = static_cast<int>(window.position_scale_x * x);
+        curr[1] = static_cast<int>(window.position_scale_y * y);
     }
 
     void update_position_delta()
@@ -1128,13 +1133,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     );
     assert(bgfx::isValid(program));
 
-    {
-        double x, y;
-        glfwGetCursorPos(g_ctx.window.handle, &x, &y);
-
-        g_ctx.mouse.curr[0] = g_ctx.mouse.prev[0] = static_cast<int>(x);
-        g_ctx.mouse.curr[1] = g_ctx.mouse.prev[1] = static_cast<int>(y);
-    }
+    g_ctx.mouse.update_position(g_ctx.window);
 
     g_ctx.total_time.tic();
     g_ctx.frame_time.tic();
@@ -1148,6 +1147,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         g_ctx.frame_time.toc(true);
 
         glfwPollEvents();
+
+        bool update_cursor_position = false;
 
         GLEQevent event;
         while (gleqNextEvent(&event))
@@ -1171,15 +1172,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 break;
 
             case GLEQ_CURSOR_MOVED:
-                // TODO : Just pass floats.
-                // TODO : Not sure how well will this behave if the window was dragged between different-DPI monitors
-                //        (can the scale be obsolete in such case?). Perhaps we should just request the position to be
-                //        pooled and poll it eventually after all events are processed (and after `reset_back_buffer`
-                //        is handled).
-                g_ctx.mouse.update_position(
-                    static_cast<int>(g_ctx.window.position_scale_x * event.pos.x),
-                    static_cast<int>(g_ctx.window.position_scale_y * event.pos.y)
-                );
+                update_cursor_position = true;
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
@@ -1192,10 +1185,6 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
             gleqFreeEvent(&event);
         }
-
-        // We have to wait with the mouse delta computation after all events
-        // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
-        g_ctx.mouse.update_position_delta();
 
         if (g_ctx.reset_back_buffer)
         {
@@ -1211,6 +1200,13 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
             bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
         }
+
+        if (update_cursor_position)
+        {
+            g_ctx.mouse.update_position(g_ctx.window);
+        }
+
+        g_ctx.mouse.update_position_delta();
 
         bgfx::touch(DEFAULT_VIEW);
 
