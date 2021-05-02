@@ -74,13 +74,13 @@ void quit(void);
 ///
 /// @returns Window width in screen coordinates.
 ///
-int width(void);
+float width(void);
 
 /// Returns window height in screen coordinates.
 ///
 /// @returns Window height in screen coordinates.
 ///
-int height(void);
+float height(void);
 
 /// Returns window aspect ratio, i.e, its width divided by its height.
 ///
