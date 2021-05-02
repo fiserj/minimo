@@ -121,6 +121,11 @@ static void draw(void)
         caching_on = !caching_on;
     }
 
+    if (mouse_down(MOUSE_LEFT))
+    {
+        printf("(%4i, %4i)\n", mouse_x(), mouse_y());
+    }
+
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
