@@ -334,20 +334,9 @@ struct GeometryRecorder
             "Invalid vertex attributes."
         );
 
-        if (ATTRIBUTES & VERTEX_COLOR)
-        {
-            recorder.colors.push();
-        }
-
-        if (ATTRIBUTES & VERTEX_NORMAL)
-        {
-            recorder.normals.push();
-        }
-
-        if (ATTRIBUTES & VERTEX_TEXCOORD)
-        {
-            recorder.texcoords.push();
-        }
+        if (ATTRIBUTES & VERTEX_COLOR   ) { recorder.colors   .push(); }
+        if (ATTRIBUTES & VERTEX_NORMAL  ) { recorder.normals  .push(); }
+        if (ATTRIBUTES & VERTEX_TEXCOORD) { recorder.texcoords.push(); }
     }
 
     template <int ATTRIBUTES>
@@ -366,20 +355,9 @@ struct GeometryRecorder
         size_t hash = 0;
         hash_combine(hash, recorder.positions[record.position_offset + i]);
 
-        if (ATTRIBUTES & VERTEX_COLOR)
-        {
-            hash_combine(hash, recorder.colors.data[record.color_offset + i]);
-        }
-
-        if (ATTRIBUTES & VERTEX_NORMAL)
-        {
-            hash_combine(hash, recorder.normals.data[record.normal_offset + i]);
-        }
-
-        if (ATTRIBUTES & VERTEX_TEXCOORD)
-        {
-            hash_combine(hash, recorder.texcoords.data[record.texcoord_offset + i]);
-        }
+        if (ATTRIBUTES & VERTEX_COLOR   ) { hash_combine(hash, recorder.colors.data   [record.color_offset    + i]); }
+        if (ATTRIBUTES & VERTEX_NORMAL  ) { hash_combine(hash, recorder.normals.data  [record.normal_offset   + i]); }
+        if (ATTRIBUTES & VERTEX_TEXCOORD) { hash_combine(hash, recorder.texcoords.data[record.texcoord_offset + i]); }
 
         return hash;
     }
