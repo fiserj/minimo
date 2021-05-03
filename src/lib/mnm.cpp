@@ -50,7 +50,6 @@ static constexpr int          DEFAULT_WINDOW_WIDTH = 640;
 static constexpr int          DEFAULT_WINDOW_HEIGHT= 480;
 
 
-
 // -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------

@@ -10,9 +10,9 @@ extern "C" {
 
 /// Entry point when running as a library. The 
 ///
-/// @param [in] setup Function that runs once after the window was created.
-/// @param [in] draw Function that runs on every frame.
-/// @param [in] cleanup Function that runs once just before the window is destroyed.
+/// @param[in] setup Function that runs once after the window was created.
+/// @param[in] draw Function that runs on every frame.
+/// @param[in] cleanup Function that runs once just before the window is destroyed.
 ///
 /// @returns Zero if no error occurred.
 ///
@@ -304,6 +304,10 @@ void end(void);
 ///
 void mesh(int id);
 
+
+// -----------------------------------------------------------------------------
+// TRANSFORMATIONS
+// -----------------------------------------------------------------------------
 
 /// Sets model matrix stack as the active one.
 ///
