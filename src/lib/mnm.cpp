@@ -1008,8 +1008,9 @@ struct ThreadContext
 
     GeometryRecorder*    recorder       = &transient_recorder;
     MatrixStack*         matrices       = &model_matrices;
+    bool                 is_recording   = false;
 
-    bool              is_main_thread = false;
+    bool                 is_main_thread = false;
 };
 
 static GlobalContext g_ctx;
@@ -1367,21 +1368,23 @@ double toc(void)
 
 void begin(int attribs)
 {
-    // TODO : Check recording is not already in progress.
+    assert(!t_ctx.is_recording);
 
-    t_ctx.recorder = &t_ctx.transient_recorder;
+    t_ctx.is_recording = true;
+    t_ctx.recorder     = &t_ctx.transient_recorder;
 
     t_ctx.recorder->begin(attribs);
 }
 
 void begin_cached(int attribs, int id)
 {
-    // TODO : Check recording is not already in progress.
     // TODO : Eventually, it'd be great to enable dynamic buffers (that change occasionally, but not every frame).
 
+    assert(!t_ctx.is_recording);
     assert(id != 0);
 
-    t_ctx.recorder = &t_ctx.cached_recorder;
+    t_ctx.is_recording = true;
+    t_ctx.recorder     = &t_ctx.cached_recorder;
 
     t_ctx.recorder->begin(attribs, id);
 }
@@ -1410,6 +1413,10 @@ void texcoord(float u, float v)
 
 void end(void)
 {
+    assert(t_ctx.is_recording);
+
+    t_ctx.is_recording = false;
+
     t_ctx.recorder->end();
 }
 
