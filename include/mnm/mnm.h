@@ -131,27 +131,27 @@ enum
 ///
 /// @returns Mouse X position in screen coordinates.
 ///
-int mouse_x(void);
+float mouse_x(void);
 
 /// Returns mouse Y position in screen coordinates.
 ///
 /// @returns Mouse Y position in screen coordinates.
 ///
-int mouse_y(void);
+float mouse_y(void);
 
 /// Returns mouse delta in X position between current and previous frames in
 /// screen coordinates.
 ///
 /// @returns Mouse delta in X position in screen coordinates.
 ///
-int mouse_dx(void);
+float mouse_dx(void);
 
 /// Returns mouse delta in Y position between current and previous frames in
 /// screen coordinates.
 ///
 /// @returns Mouse delta in Y position in screen coordinates.
 ///
-int mouse_dy(void);
+float mouse_dy(void);
 
 /// Checks whether a particular mouse button went down in the current frame.
 ///
