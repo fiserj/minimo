@@ -1378,11 +1378,10 @@ void color(unsigned int rgba)
     t_ctx.recorder->color(bx::endianSwap(rgba));
 }
 
-// TODO : Move these into a separate compilation unit, so that.
-// void normal(float nx, float ny, float nz)
-// {
-//     t_ctx.recorder->normal(nx, ny, nz);
-// }
+void normal(float nx, float ny, float nz)
+{
+    t_ctx.recorder->normal(nx, ny, nz);
+}
 
 void texcoord(float u, float v)
 {
