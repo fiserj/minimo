@@ -248,17 +248,20 @@ inline void hash_combine<hmm_vec3>(size_t& seed, const hmm_vec3& value)
 
 struct GeometryRecord
 {
-    int      id              = 0;
-    uint16_t attributes      = 0;
+    int                id              = 0;
+    uint16_t           attributes      = 0;
 
-    uint16_t index_count     = 0;
-    uint16_t index_offset    = 0;
+    uint16_t           index_count     = 0;
+    uint16_t           index_offset    = 0;
 
-    uint16_t vertex_count    = 0;
-    uint16_t position_offset = 0;
-    uint16_t color_offset    = 0;
-    uint16_t normal_offset   = 0;
-    uint16_t texcoord_offset = 0;
+    uint16_t           vertex_count    = 0;
+    uint16_t           position_offset = 0;
+    uint16_t           color_offset    = 0;
+    uint16_t           normal_offset   = 0;
+    uint16_t           texcoord_offset = 0;
+
+    bgfx::ProgramHandle program        = BGFX_INVALID_HANDLE;
+    bgfx::ViewId        view           = 0; // DEFAULT_VIEW
 };
 
 struct GeometryRecorder
@@ -286,11 +289,17 @@ struct GeometryRecorder
         texcoords.data.clear();
     }
 
-    void begin(uint16_t attributes, int id = 0)
+    void begin(bgfx::ViewId view, bgfx::ProgramHandle program, uint16_t attributes, int id = 0)
     {
+        assert(bgfx::isValid(program) == (id == 0)); // TODO : Xor also with `view` being valid.
         assert(attributes == (attributes & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
-        if (id || records.empty() || records.back().attributes != attributes)
+        if (id                                        ||
+            records.empty()                           ||
+            records.back ().attributes  != attributes ||
+            records.back ().view        != view       ||
+            records.back ().program.idx != program.idx
+        )
         {
             GeometryRecord record;
 
@@ -300,6 +309,8 @@ struct GeometryRecorder
             record.color_offset    = static_cast<uint16_t>(colors   .data.size());
             record.normal_offset   = static_cast<uint16_t>(normals  .data.size());
             record.texcoord_offset = static_cast<uint16_t>(texcoords.data.size());
+            record.program         = program;
+            record.view            = view;
 
             records.push_back(record);
         }
@@ -467,8 +478,10 @@ struct CachedBuffers
 
 struct CachedSubmission
 {
-    int      id;
-    hmm_mat4 transform;
+    int                 id;
+    hmm_mat4            transform;
+    bgfx::ProgramHandle program = BGFX_INVALID_HANDLE;
+    bgfx::ViewId        view    = 0; // DEFAULT_VIEW
 };
 
 typedef std::unordered_map<int, CachedBuffers> CachedBufferMap;
@@ -607,13 +620,9 @@ static void submit_cached_geometry
 (
     const CachedSubmissionList& cached_submissions,
     const CachedBufferMap&      buffer_map,
-    bgfx::ViewId                view,
-    bgfx::ProgramHandle         program,
     bool                        is_main_thread
 )
 {
-    // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
-
     bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
     if (!encoder)
     {
@@ -642,7 +651,7 @@ static void submit_cached_geometry
 
             encoder->setState(BGFX_STATE_DEFAULT);
 
-            encoder->submit(view, program);
+            encoder->submit(submission.view, submission.program);
         }
     }
 
@@ -690,13 +699,9 @@ static void submit_transient_geometry
 (
     const GeometryRecorder& recorder,
     const TransientBuffers& buffers,
-    bgfx::ViewId            view,
-    bgfx::ProgramHandle     program,
     bool                    is_main_thread
 )
 {
-    // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
-
     bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
     if (!encoder)
     {
@@ -717,7 +722,7 @@ static void submit_transient_geometry
 
         encoder->setState(BGFX_STATE_DEFAULT);
 
-        encoder->submit(view, program);
+        encoder->submit(record.view, record.program);
     }
 
     bgfx::end(encoder);
@@ -985,6 +990,8 @@ struct GlobalContext
 
     Window              window;
 
+    bgfx::ProgramHandle default_program   = BGFX_INVALID_HANDLE; // TODO : This will eventually be a set of default programs.
+
     bool                vsync_on          = false;
     bool                reset_back_buffer = true;
 };
@@ -1009,6 +1016,9 @@ struct ThreadContext
     GeometryRecorder*    recorder       = &transient_recorder;
     MatrixStack*         matrices       = &model_matrices;
     bool                 is_recording   = false;
+
+    bgfx::ProgramHandle  program        = BGFX_INVALID_HANDLE;
+    bgfx::ViewId         view           = 0; // DEFAULT_VIEW
 
     bool                 is_main_thread = false;
 };
@@ -1086,13 +1096,13 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         BGFX_EMBEDDED_SHADER_END()
     };
 
-    bgfx::ProgramHandle program = bgfx::createProgram
+    g_ctx.default_program = bgfx::createProgram
     (
         bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
         bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
         true
     );
-    assert(bgfx::isValid(program));
+    assert(bgfx::isValid(g_ctx.default_program));
 
     g_ctx.mouse.update_position(g_ctx.window);
 
@@ -1187,12 +1197,12 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         {
             if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
-                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, DEFAULT_VIEW, program, t_ctx.is_main_thread);
+                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, t_ctx.is_main_thread);
             }
 
             if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
             {
-                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, DEFAULT_VIEW, program, t_ctx.is_main_thread);
+                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, t_ctx.is_main_thread);
             }
         }
 
@@ -1205,6 +1215,9 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     }
 
     g_ctx.scheduler.WaitforAllAndShutdown();
+
+    // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
+    bgfx::destroy(g_ctx.default_program);
 
     bgfx::shutdown();
 
@@ -1373,7 +1386,7 @@ void begin(int attribs)
     t_ctx.is_recording = true;
     t_ctx.recorder     = &t_ctx.transient_recorder;
 
-    t_ctx.recorder->begin(attribs);
+    t_ctx.recorder->begin(t_ctx.view, bgfx::isValid(t_ctx.program) ? t_ctx.program : g_ctx.default_program, attribs);
 }
 
 void begin_cached(int attribs, int id)
@@ -1386,7 +1399,9 @@ void begin_cached(int attribs, int id)
     t_ctx.is_recording = true;
     t_ctx.recorder     = &t_ctx.cached_recorder;
 
-    t_ctx.recorder->begin(attribs, id);
+    // TODO : View here is also irrelevant (the one bound when `cache` is called is).
+    constexpr bgfx::ViewId INVALID_VIEW = static_cast<bgfx::ViewId>(-1);
+    t_ctx.recorder->begin(INVALID_VIEW, BGFX_INVALID_HANDLE, attribs, id);
 }
 
 void vertex(float x, float y, float z)
@@ -1424,7 +1439,12 @@ void cache(int id)
 {
     assert(id != 0);
 
-    t_ctx.cached_submissions.push_back({ id, t_ctx.model_matrices.top });
+    t_ctx.cached_submissions.push_back({
+        id,
+        t_ctx.model_matrices.top,
+        bgfx::isValid(t_ctx.program) ? t_ctx.program : g_ctx.default_program,
+        t_ctx.view
+    });
 }
 
 void model(void)
