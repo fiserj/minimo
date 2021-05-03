@@ -17,7 +17,6 @@
 
 #include <bx/bx.h>                // BX_COUNTOF
 #include <bx/endian.h>            // endianSwap
-#include <bx/platform.h>          // BX_PLATFORM_*
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 
 #define GLFW_INCLUDE_NONE
@@ -40,53 +39,13 @@
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
-// Creates BGFX-specific platform data.
-// static bgfx::PlatformData create_platform_data
-// (
-//     GLFWwindow*              window,
-//     bgfx::RendererType::Enum renderer
-// )
-// {
-//     assert(window);
-
-//     bgfx::PlatformData data;
-// #if BX_PLATFORM_LINUX
-//     data.ndt = glfwGetX11Display();
-//     data.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
-// #elif BX_PLATFORM_OSX
-//     data.nwh = glfwGetCocoaWindow(window);
-// #elif BX_PLATFORM_WINDOWS
-//     data.nwh = glfwGetWin32Window(window);
-// #endif
-
-// #if BX_PLATFORM_OSX
-//     // Momentary fix for https://github.com/bkaradzic/bgfx/issues/2036.
-//     if (renderer == bgfx::RendererType::Metal ||
-//         renderer == bgfx::RendererType::Count)
-//     {
-//         bgfx::RendererType::Enum types[bgfx::RendererType::Count];
-//         const int n = bgfx::getSupportedRenderers(BX_COUNTOF(types), types);
-
-//         for (int i = 0; i < n; i++)
-//         {
-//             if (types[i] == bgfx::RendererType::Metal)
-//             {
-//                 CAMetalLayer* layer = [CAMetalLayer layer];
-
-//                 NSWindow* ns_window = static_cast<NSWindow*>(data.nwh);
-//                 ns_window.contentView.layer = layer;
-//                 ns_window.contentView.wantsLayer = YES;
-
-//                 data.nwh = layer;
-
-//                 break;
-//             }
-//         }
-//     }
-// #endif
-
-//     return data;
-// }
+// Compiled separately due to the name clash of `normal` function with an enum
+// from MacTypes.h.
+extern bgfx::PlatformData create_platform_data
+(
+    GLFWwindow*              window,
+    bgfx::RendererType::Enum renderer
+);
 
 
 // -----------------------------------------------------------------------------
@@ -1041,14 +1000,6 @@ static ThreadContext t_ctx;
 // -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY
 // -----------------------------------------------------------------------------
-
-// Compiled separately due to the name clash of `normal` function with an enum
-// from MacTypes.h.
-extern bgfx::PlatformData create_platform_data
-(
-    GLFWwindow*              window,
-    bgfx::RendererType::Enum renderer
-);
 
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
