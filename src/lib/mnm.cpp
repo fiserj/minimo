@@ -608,11 +608,19 @@ static void submit_cached_geometry
     const CachedSubmissionList& cached_submissions,
     const CachedBufferMap&      buffer_map,
     bgfx::ViewId                view,
-    bgfx::ProgramHandle         program
+    bgfx::ProgramHandle         program,
+    bool                        is_main_thread
 )
 {
-    // TODO : Use BGFX encoder.
     // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
+
+    bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
+    if (!encoder)
+    {
+        // TODO : Meaningful error handling.
+        assert(encoder);
+        return;
+    }
 
     for (const CachedSubmission& submission : cached_submissions)
     {
@@ -624,19 +632,21 @@ static void submit_cached_geometry
             const CachedBuffers& buffers = it->second;
 
             // TODO : Use record's attributes and make function variants like in case of `GeometryRecorder::PushFunc`.
-                                                    bgfx::setVertexBuffer(0, buffers.positions);
-            if (bgfx::isValid(buffers.colors   )) { bgfx::setVertexBuffer(1, buffers.colors   ); }
-            if (bgfx::isValid(buffers.normals  )) { bgfx::setVertexBuffer(2, buffers.normals  ); }
-            if (bgfx::isValid(buffers.texcoords)) { bgfx::setVertexBuffer(3, buffers.texcoords); }
-            if (bgfx::isValid(buffers.indices  )) { bgfx::setIndexBuffer (   buffers.indices  ); }
+                                                    encoder->setVertexBuffer(0, buffers.positions);
+            if (bgfx::isValid(buffers.colors   )) { encoder->setVertexBuffer(1, buffers.colors   ); }
+            if (bgfx::isValid(buffers.normals  )) { encoder->setVertexBuffer(2, buffers.normals  ); }
+            if (bgfx::isValid(buffers.texcoords)) { encoder->setVertexBuffer(3, buffers.texcoords); }
+            if (bgfx::isValid(buffers.indices  )) { encoder->setIndexBuffer (   buffers.indices  ); }
 
-            bgfx::setTransform(submission.transform.Elements);
+            encoder->setTransform(submission.transform.Elements);
 
-            bgfx::setState(BGFX_STATE_DEFAULT);
+            encoder->setState(BGFX_STATE_DEFAULT);
 
-            bgfx::submit(view, program);
+            encoder->submit(view, program);
         }
     }
+
+    bgfx::end(encoder);
 }
 
 template <typename T>
@@ -681,26 +691,36 @@ static void submit_transient_geometry
     const GeometryRecorder& recorder,
     const TransientBuffers& buffers,
     bgfx::ViewId            view,
-    bgfx::ProgramHandle     program
+    bgfx::ProgramHandle     program,
+    bool                    is_main_thread
 )
 {
-    // TODO : Use BGFX encoder.
     // TODO : The state, view ID and program should be part of each `GeometryRecord`s.
+
+    bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
+    if (!encoder)
+    {
+        // TODO : Meaningful error handling.
+        assert(encoder);
+        return;
+    }
 
     for (const GeometryRecord& record : recorder.records)
     {
         assert(record.vertex_count > 0);
 
         // TODO : Make function variants like in case of `GeometryRecorder::PushFunc`.
-                                                   bgfx::setVertexBuffer(0, &buffers.positions);
-        if (record.attributes & VERTEX_COLOR   ) { bgfx::setVertexBuffer(1, &buffers.colors   ); }
-        if (record.attributes & VERTEX_NORMAL  ) { bgfx::setVertexBuffer(2, &buffers.normals  ); }
-        if (record.attributes & VERTEX_TEXCOORD) { bgfx::setVertexBuffer(3, &buffers.texcoords); }
+                                                   encoder->setVertexBuffer(0, &buffers.positions);
+        if (record.attributes & VERTEX_COLOR   ) { encoder->setVertexBuffer(1, &buffers.colors   ); }
+        if (record.attributes & VERTEX_NORMAL  ) { encoder->setVertexBuffer(2, &buffers.normals  ); }
+        if (record.attributes & VERTEX_TEXCOORD) { encoder->setVertexBuffer(3, &buffers.texcoords); }
 
-        bgfx::setState(BGFX_STATE_DEFAULT);
+        encoder->setState(BGFX_STATE_DEFAULT);
 
-        bgfx::submit(view, program);
+        encoder->submit(view, program);
     }
+
+    bgfx::end(encoder);
 }
 
 
@@ -1166,12 +1186,12 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         {
             if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
-                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, DEFAULT_VIEW, program);
+                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, DEFAULT_VIEW, program, t_ctx.is_main_thread);
             }
 
             if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
             {
-                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, DEFAULT_VIEW, program);
+                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, DEFAULT_VIEW, program, t_ctx.is_main_thread);
             }
         }
 
