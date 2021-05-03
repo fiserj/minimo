@@ -79,7 +79,7 @@ static void scene(int cube_cache_id = 0)
         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        cube_cache_id ? cache(cube_cache_id) : cube();
+        cube_cache_id ? mesh(cube_cache_id) : cube();
 
         pop();
     }

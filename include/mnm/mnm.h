@@ -248,12 +248,12 @@ enum
 ///
 void begin(int attribs);
 
-/// Starts cached geometry building mode. Only supported primitive is
+/// Starts cached geometry / mesh building mode. Only supported primitive is
 /// triangles. Only vertex attributes specified in the `attribs` parameter are
 /// recorded. Vertex position is always recorded. The user-defined identifier
 /// can be used repeatedly to overwrite existing content, but only the last
-/// content is retained. Use the `cache` function to submit a cached geometry
-/// using the current model matrix.
+/// content is retained. Use the `mesh` function to submit cached geometry using
+/// the current model matrix.
 ///
 /// @param[in] attribs Vertex attribute flags.
 /// @param[in] id Cached geometry identifier. Must be non-zero.
@@ -297,12 +297,13 @@ void texcoord(float u, float v);
 ///
 void end(void);
 
-/// Submits a cached geometry created previously with `begin_cached` with the
-/// same identifier.
+/// Submits a cached geometry / mesh created previously with `begin_cached` with
+/// the same identifier.
 ///
 /// @param[in] id Cached geometry identifier. Must be non-zero.
 ///
-void cache(int id);
+void mesh(int id);
+
 
 /// Sets model matrix stack as the active one.
 ///
