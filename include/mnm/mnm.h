@@ -306,6 +306,48 @@ void mesh(int id);
 
 
 // -----------------------------------------------------------------------------
+// TEXTURING
+// -----------------------------------------------------------------------------
+
+/// Texture mode flags.
+///
+enum
+{
+    TEXTURE_LINEAR  =  1,
+    TEXTURE_NEAREST =  2,
+    TEXTURE_REPEAT  =  4,
+    TEXTURE_MIRROR  =  8,
+    TEXTURE_CLAMP   = 12,
+};
+
+/// Loads an RGBA texture from raw pixel data. The user-defined identifier can
+/// be used repeatedly to overwrite existing content, but only the last content
+/// is retained. Use the `texture` function to submit loaded texture.
+///
+/// @param[in] id Texture identifier. Must be non-zero.
+/// @param[in] width Image width in pixels.
+/// @param[in] width Image height in pixels.
+/// @param[in] stride Image stride in bytes. If zero, `width * 4` is assumed.
+/// @param[in] rgba RGBA pixels.
+///
+void load_texture(int id, int width, int height, int stride, const void* rgba);
+
+/// Sets the current texture mode properties. Default properties are
+/// `TEXTURE_LINEAR | TEXTURE_REPEAT`.
+///
+/// @param[in] flags Texture mode properties.
+///
+void texture_mode(int flags);
+
+/// Sets the active texture which is used with following `begin` and `mesh`
+/// calls, until a new identifier is provided.
+///
+/// @param[in] id Non-zero texture identifier, or zero to disable texturing.
+///
+void texture(int id);
+
+
+// -----------------------------------------------------------------------------
 // TRANSFORMATIONS
 // -----------------------------------------------------------------------------
 
