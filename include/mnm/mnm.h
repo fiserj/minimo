@@ -241,18 +241,24 @@ enum
 };
 
 /// Starts immediate geometry building mode. Only supported primitive is
-/// triangles.
+/// triangles. Only vertex attributes specified in the `attribs` parameter are
+/// recorded. Vertex position is always recorded.
 ///
-void begin(void);
+/// @param[in] attribs Vertex attribute flags.
+///
+void begin(int attribs);
 
 /// Starts cached geometry building mode. Only supported primitive is
-/// triangles. The user-defined identifier can be used repeatedly to overwrite
-/// existing content, but only the last content is retained. Use the `cache`
-/// function to submit a cached geometry using the current model matrix.
+/// triangles. Only vertex attributes specified in the `attribs` parameter are
+/// recorded. Vertex position is always recorded. The user-defined identifier
+/// can be used repeatedly to overwrite existing content, but only the last
+/// content is retained. Use the `cache` function to submit a cached geometry
+/// using the current model matrix.
 ///
+/// @param[in] attribs Vertex attribute flags.
 /// @param[in] id Cached geometry identifier. Must be non-zero.
 ///
-void begin_cached(int id);
+void begin_cached(int attribs, int id);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.

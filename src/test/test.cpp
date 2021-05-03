@@ -92,7 +92,7 @@ static void setup(void)
     size(800, 600, WINDOW_DEFAULT);
     title("MiNiMo Test");
 
-    begin_cached(CUBE_ID);
+    begin_cached(VERTEX_COLOR, CUBE_ID);
     {
         cube();
     }
@@ -155,7 +155,7 @@ static void draw(void)
     }
     else
     {
-        begin();
+        begin(VERTEX_COLOR);
         {
             scene();
         }
