@@ -1,56 +1,39 @@
 #include <mnm/mnm.h>
 
-#include <assert.h>                    // assert
-#include <stdint.h>                    // uint32_t
-#include <string.h>                    // memcpy
+#include <assert.h>               // assert
+#include <stdint.h>               // uint32_t
+#include <string.h>               // memcpy
 
-#include <algorithm>                   // max, transform
-#include <chrono>                      // duration
-#include <functional>                  // hash
-#include <mutex>                       // lock_guard, mutex
-#include <thread>                      // this_thread
-#include <unordered_map>               // unordered_map
-#include <vector>                      // vector
+#include <algorithm>              // max, transform
+#include <chrono>                 // duration
+#include <functional>             // hash
+#include <mutex>                  // lock_guard, mutex
+#include <thread>                 // this_thread
+#include <unordered_map>          // unordered_map
+#include <vector>                 // vector
 
-#include <bgfx/bgfx.h>                 // bgfx::*
-#include <bgfx/embedded_shader.h>      // BGFX_EMBEDDED_SHADER*
+#include <bgfx/bgfx.h>            // bgfx::*
+#include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER*
 
-#include <bx/bx.h>                     // BX_COUNTOF
-#include <bx/endian.h>                 // endianSwap
-#include <bx/platform.h>               // BX_PLATFORM_*
-#include <bx/timer.h>                  // getHPCounter, getHPFrequency
+#include <bx/bx.h>                // BX_COUNTOF
+#include <bx/endian.h>            // endianSwap
+#include <bx/platform.h>          // BX_PLATFORM_*
+#include <bx/timer.h>             // getHPCounter, getHPFrequency
 
 #define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>                // glfw*
-
-#if BX_PLATFORM_LINUX
-#   define GLFW_EXPOSE_NATIVE_X11
-#   define GLFW_EXPOSE_NATIVE_GLX
-#elif BX_PLATFORM_OSX
-#   define GLFW_EXPOSE_NATIVE_COCOA
-#   define GLFW_EXPOSE_NATIVE_NSGL
-#elif BX_PLATFORM_WINDOWS
-#   define GLFW_EXPOSE_NATIVE_WIN32
-#   define GLFW_EXPOSE_NATIVE_WGL
-#endif
-#include <GLFW/glfw3native.h>          // glfwGetX11Display, glfwGet*Window
+#include <GLFW/glfw3.h>           // glfw*
 
 #define GLEQ_IMPLEMENTATION
 #define GLEQ_STATIC
-#include <gleq.h>                      // gleq*
-
-#if BX_PLATFORM_OSX
-#   import <Cocoa/Cocoa.h>             // NSWindow
-#   import <QuartzCore/CAMetalLayer.h> // CAMetalLayer
-#endif
+#include <gleq.h>                 // gleq*
 
 #define HANDMADE_MATH_IMPLEMENTATION
-#include <HandmadeMath.h>              // HMM_*, hmm_*
+#include <HandmadeMath.h>         // HMM_*, hmm_*
 
-#include <TaskScheduler.h>             // ITaskSet, TaskScheduler, TaskSetPartition
+#include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
-#include <shaders/poscolor_fs.h>       // poscolor_fs
-#include <shaders/poscolor_vs.h>       // poscolor_vs
+#include <shaders/poscolor_fs.h>  // poscolor_fs
+#include <shaders/poscolor_vs.h>  // poscolor_vs
 
 
 // -----------------------------------------------------------------------------
@@ -58,52 +41,52 @@
 // -----------------------------------------------------------------------------
 
 // Creates BGFX-specific platform data.
-static bgfx::PlatformData create_platform_data
-(
-    GLFWwindow*              window,
-    bgfx::RendererType::Enum renderer
-)
-{
-    assert(window);
+// static bgfx::PlatformData create_platform_data
+// (
+//     GLFWwindow*              window,
+//     bgfx::RendererType::Enum renderer
+// )
+// {
+//     assert(window);
 
-    bgfx::PlatformData data;
-#if BX_PLATFORM_LINUX
-    data.ndt = glfwGetX11Display();
-    data.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
-#elif BX_PLATFORM_OSX
-    data.nwh = glfwGetCocoaWindow(window);
-#elif BX_PLATFORM_WINDOWS
-    data.nwh = glfwGetWin32Window(window);
-#endif
+//     bgfx::PlatformData data;
+// #if BX_PLATFORM_LINUX
+//     data.ndt = glfwGetX11Display();
+//     data.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
+// #elif BX_PLATFORM_OSX
+//     data.nwh = glfwGetCocoaWindow(window);
+// #elif BX_PLATFORM_WINDOWS
+//     data.nwh = glfwGetWin32Window(window);
+// #endif
 
-#if BX_PLATFORM_OSX
-    // Momentary fix for https://github.com/bkaradzic/bgfx/issues/2036.
-    if (renderer == bgfx::RendererType::Metal ||
-        renderer == bgfx::RendererType::Count)
-    {
-        bgfx::RendererType::Enum types[bgfx::RendererType::Count];
-        const int n = bgfx::getSupportedRenderers(BX_COUNTOF(types), types);
+// #if BX_PLATFORM_OSX
+//     // Momentary fix for https://github.com/bkaradzic/bgfx/issues/2036.
+//     if (renderer == bgfx::RendererType::Metal ||
+//         renderer == bgfx::RendererType::Count)
+//     {
+//         bgfx::RendererType::Enum types[bgfx::RendererType::Count];
+//         const int n = bgfx::getSupportedRenderers(BX_COUNTOF(types), types);
 
-        for (int i = 0; i < n; i++)
-        {
-            if (types[i] == bgfx::RendererType::Metal)
-            {
-                CAMetalLayer* layer = [CAMetalLayer layer];
+//         for (int i = 0; i < n; i++)
+//         {
+//             if (types[i] == bgfx::RendererType::Metal)
+//             {
+//                 CAMetalLayer* layer = [CAMetalLayer layer];
 
-                NSWindow* ns_window = static_cast<NSWindow*>(data.nwh);
-                ns_window.contentView.layer = layer;
-                ns_window.contentView.wantsLayer = YES;
+//                 NSWindow* ns_window = static_cast<NSWindow*>(data.nwh);
+//                 ns_window.contentView.layer = layer;
+//                 ns_window.contentView.wantsLayer = YES;
 
-                data.nwh = layer;
+//                 data.nwh = layer;
 
-                break;
-            }
-        }
-    }
-#endif
+//                 break;
+//             }
+//         }
+//     }
+// #endif
 
-    return data;
-}
+//     return data;
+// }
 
 
 // -----------------------------------------------------------------------------
@@ -1058,6 +1041,14 @@ static ThreadContext t_ctx;
 // -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY
 // -----------------------------------------------------------------------------
+
+// Compiled separately due to the name clash of `normal` function with an enum
+// from MacTypes.h.
+extern bgfx::PlatformData create_platform_data
+(
+    GLFWwindow*              window,
+    bgfx::RendererType::Enum renderer
+);
 
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {

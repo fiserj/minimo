@@ -1,18 +1,19 @@
 set(NAME ${PROJECT_NAME})
 
-if(APPLE)
-    set(SOURCE_FILES
-        mnm.mm
-    )
-else()
-    set(SOURCE_FILES
-        mnm.cpp
-    )
-endif()
-
-list(APPEND SOURCE_FILES
+set(SOURCE_FILES
+    mnm.cpp
     ../../include/mnm/mnm.h # Not needed for build, but IDE-friendly.
 )
+
+if(APPLE)
+    list(APPEND SOURCE_FILES
+        mnm_platform.mm
+    )
+else()
+    list(APPEND SOURCE_FILES
+        mnm_platform.cpp
+    )
+endif()
 
 add_library(${NAME} STATIC
     ${SOURCE_FILES}

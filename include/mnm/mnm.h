@@ -276,7 +276,7 @@ void color(unsigned int rgba);
 /// @param[in] ny Y component of the normal vector.
 /// @param[in] nz Z component of the normal vector.
 ///
-// void normal(float nx, float ny, float nz);
+void normal(float nx, float ny, float nz);
 
 /// Sets current texture coordinate.
 ///
