@@ -1447,7 +1447,7 @@ void end(void)
     t_ctx.recorder->end();
 }
 
-void cache(int id)
+void mesh(int id)
 {
     assert(id != 0);
 
