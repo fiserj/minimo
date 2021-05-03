@@ -847,13 +847,11 @@ struct InputState
     }
 };
 
-// TODO : Mouse coordinates are in DPI-invariant coordinates and should be stored as floats.
 struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
-    // TODO : Convert all these to floats.
-    int curr [2] = { 0 };
-    int prev [2] = { 0 };
-    int delta[2] = { 0 };
+    float curr [2] = { 0.0f };
+    float prev [2] = { 0.0f };
+    float delta[2] = { 0.0f };
 
     void update_position(const Window& window)
     {
@@ -861,8 +859,8 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
         double y = 0.0;
         glfwGetCursorPos(window.handle, &x, &y);
 
-        curr[0] = static_cast<int>(window.position_scale_x * x);
-        curr[1] = static_cast<int>(window.position_scale_y * y);
+        curr[0] = static_cast<float>(window.position_scale_x * x);
+        curr[1] = static_cast<float>(window.position_scale_y * y);
     }
 
     void update_position_delta()
@@ -1318,27 +1316,23 @@ float dpi(void)
 // PUBLIC API IMPLEMENTATION - INPUT
 // -----------------------------------------------------------------------------
 
-int mouse_x(void)
+float mouse_x(void)
 {
-    // TODO : This should just return float.
     return g_ctx.mouse.curr[0];
 }
 
-int mouse_y(void)
+float mouse_y(void)
 {
-    // TODO : This should just return float.
     return g_ctx.mouse.curr[1];
 }
 
-int mouse_dx(void)
+float mouse_dx(void)
 {
-    // TODO : This should just return float.
     return g_ctx.mouse.delta[0];
 }
 
-int mouse_dy(void)
+float mouse_dy(void)
 {
-    // TODO : This should just return float.
     return g_ctx.mouse.delta[1];
 }
 

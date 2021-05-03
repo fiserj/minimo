@@ -123,7 +123,7 @@ static void draw(void)
 
     if (mouse_down(MOUSE_LEFT))
     {
-        printf("(%4i, %4i)\n", mouse_x(), mouse_y());
+        printf("(%6.1f, %6.1f)\n", mouse_x(), mouse_y());
     }
 
     projection();
