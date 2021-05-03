@@ -36,6 +36,22 @@
 
 
 // -----------------------------------------------------------------------------
+// CONSTANTS
+// -----------------------------------------------------------------------------
+
+static constexpr bgfx::ViewId DEFAULT_VIEW_ID      = 0;
+
+static constexpr bgfx::ViewId INVALID_VIEW_ID      = static_cast<bgfx::ViewId>(-1);
+
+static constexpr int          MIN_WINDOW_SIZE      = 240;
+
+static constexpr int          DEFAULT_WINDOW_WIDTH = 640;
+
+static constexpr int          DEFAULT_WINDOW_HEIGHT= 480;
+
+
+
+// -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
@@ -108,12 +124,10 @@ private:
 
 static void resize_window(GLFWwindow* window, int width, int height, int flags)
 {
+    // TODO : The DEFAULT and MIN sizes should include the DPI scale.
+
     assert(window);
     assert(flags >= 0);
-
-    constexpr int MIN_SIZE      = 240;
-    constexpr int DEFAULT_WIDTH = 640;
-    constexpr int DEFAULT_HEIGHT= 480;
 
     // Current monitor.
     GLFWmonitor* monitor = glfwGetWindowMonitor(window);
@@ -139,8 +153,8 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
     {
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
-        if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-        if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+        if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
+        if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
 
         const int x = (mode->width  - width ) / 2;
         const int y = (mode->height - height) / 2;
@@ -157,8 +171,8 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
     }
 
     // Size.
-    if (width  <= MIN_SIZE) { width  = DEFAULT_WIDTH ; }
-    if (height <= MIN_SIZE) { height = DEFAULT_HEIGHT; }
+    if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
+    if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
 
     glfwSetWindowSize(window, width, height);
 
@@ -261,7 +275,7 @@ struct GeometryRecord
     uint16_t           texcoord_offset = 0;
 
     bgfx::ProgramHandle program        = BGFX_INVALID_HANDLE;
-    bgfx::ViewId        view           = 0; // DEFAULT_VIEW
+    bgfx::ViewId        view           = DEFAULT_VIEW_ID;
 };
 
 struct GeometryRecorder
@@ -481,7 +495,7 @@ struct CachedSubmission
     int                 id;
     hmm_mat4            transform;
     bgfx::ProgramHandle program = BGFX_INVALID_HANDLE;
-    bgfx::ViewId        view    = 0; // DEFAULT_VIEW
+    bgfx::ViewId        view    = DEFAULT_VIEW_ID;
 };
 
 typedef std::unordered_map<int, CachedBuffers> CachedBufferMap;
@@ -1018,7 +1032,7 @@ struct ThreadContext
     bool                 is_recording   = false;
 
     bgfx::ProgramHandle  program        = BGFX_INVALID_HANDLE;
-    bgfx::ViewId         view           = 0; // DEFAULT_VIEW
+    bgfx::ViewId         view           = DEFAULT_VIEW_ID;
 
     bool                 is_main_thread = false;
 };
@@ -1084,8 +1098,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
 
-    constexpr bgfx::ViewId DEFAULT_VIEW = 0;
-    bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
+    // TODO : The clear values should be exposable to the end-user.
+    bgfx::setViewClear(DEFAULT_VIEW_ID, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
@@ -1169,7 +1183,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
-            bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
+            bgfx::setViewRect(DEFAULT_VIEW_ID, 0, 0, width, height);
         }
 
         if (update_cursor_position)
@@ -1179,7 +1193,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
         g_ctx.mouse.update_position_delta();
 
-        bgfx::touch(DEFAULT_VIEW);
+        bgfx::touch(DEFAULT_VIEW_ID);
 
         // TODO : This needs to be done for all contexts across all threads.
         t_ctx.transient_recorder.clear();
@@ -1191,7 +1205,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             (*draw)();
         }
 
-        bgfx::setViewTransform(DEFAULT_VIEW, &t_ctx.view_matrices.top, &t_ctx.proj_matrices.top);
+        bgfx::setViewTransform(DEFAULT_VIEW_ID, &t_ctx.view_matrices.top, &t_ctx.proj_matrices.top);
 
         // TODO : This needs to be done for all contexts across all threads.
         {
@@ -1399,9 +1413,7 @@ void begin_cached(int attribs, int id)
     t_ctx.is_recording = true;
     t_ctx.recorder     = &t_ctx.cached_recorder;
 
-    // TODO : View here is also irrelevant (the one bound when `cache` is called is).
-    constexpr bgfx::ViewId INVALID_VIEW = static_cast<bgfx::ViewId>(-1);
-    t_ctx.recorder->begin(INVALID_VIEW, BGFX_INVALID_HANDLE, attribs, id);
+    t_ctx.recorder->begin(INVALID_VIEW_ID, BGFX_INVALID_HANDLE, attribs, id);
 }
 
 void vertex(float x, float y, float z)
