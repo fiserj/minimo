@@ -1365,16 +1365,16 @@ double toc(void)
 // PUBLIC API IMPLEMENTATION - GEOMETRY
 // -----------------------------------------------------------------------------
 
-void begin(void)
+void begin(int attribs)
 {
     // TODO : Check recording is not already in progress.
 
     t_ctx.recorder = &t_ctx.transient_recorder;
 
-    t_ctx.recorder->begin(VERTEX_COLOR); // TODO : Current attributes.
+    t_ctx.recorder->begin(attribs);
 }
 
-void begin_cached(int id)
+void begin_cached(int attribs, int id)
 {
     // TODO : Check recording is not already in progress.
     // TODO : Eventually, it'd be great to enable dynamic buffers (that change occasionally, but not every frame).
@@ -1383,7 +1383,7 @@ void begin_cached(int id)
 
     t_ctx.recorder = &t_ctx.cached_recorder;
 
-    t_ctx.recorder->begin(VERTEX_COLOR, id); // TODO : Current attributes.
+    t_ctx.recorder->begin(attribs, id);
 }
 
 void vertex(float x, float y, float z)
