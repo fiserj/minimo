@@ -89,7 +89,7 @@ static const int CUBE_ID = 1;
 
 static void setup(void)
 {
-    size(2*800, 2*600, WINDOW_DEFAULT);
+    size(800, 600, WINDOW_DEFAULT);
     title("MiNiMo Test");
 
     begin_cached(CUBE_ID);
@@ -119,6 +119,11 @@ static void draw(void)
     if (key_down('C'))
     {
         caching_on = !caching_on;
+    }
+
+    if (mouse_down(MOUSE_LEFT))
+    {
+        printf("(%6.1f, %6.1f)\n", mouse_x(), mouse_y());
     }
 
     projection();

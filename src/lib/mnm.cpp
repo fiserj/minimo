@@ -112,11 +112,56 @@ static bgfx::PlatformData create_platform_data
 
 struct Window
 {
-    GLFWwindow* handle    = nullptr;
-    int         width     = 0;
-    int         height    = 0;
-    int         fb_width  = 0;
-    int         fb_height = 0;
+    GLFWwindow* handle               = nullptr;
+
+    float       display_scale_x      = 0.0f;
+    float       display_scale_y      = 0.0f;
+
+    float       position_scale_x     = 0.0f;
+    float       position_scale_y     = 0.0f;
+
+    float       dpi_invariant_width  = 0.0f;
+    float       dpi_invariant_height = 0.0f;
+
+    int         framebuffer_width    = 0;
+    int         framebuffer_height   = 0;
+
+    void update_size_info()
+    {
+        assert(handle);
+
+        int window_width  = 0;
+        int window_height = 0;
+
+        glfwGetWindowSize        (handle, &window_width     , &window_height     );
+        glfwGetFramebufferSize   (handle, &framebuffer_width, &framebuffer_height);
+        glfwGetWindowContentScale(handle, &display_scale_x  , &display_scale_y   );
+
+        adjust_dimension(display_scale_x, window_width , framebuffer_width , dpi_invariant_width , position_scale_x);
+        adjust_dimension(display_scale_y, window_height, framebuffer_height, dpi_invariant_height, position_scale_y);
+    }
+
+private:
+    static void adjust_dimension
+    (
+        float  scale,
+        int    window_size,
+        int    framebuffer_size,
+        float& out_invariant_size,
+        float& out_position_scale
+    )
+    {
+        if (scale != 1.0 && window_size * scale != static_cast<float>(framebuffer_size))
+        {
+            out_invariant_size = framebuffer_size / scale;
+            out_position_scale = 1.0f / scale;
+        }
+        else
+        {
+            out_invariant_size = static_cast<float>(window_size);
+            out_position_scale = 1.0f;
+        }
+    }
 };
 
 static void resize_window(GLFWwindow* window, int width, int height, int flags)
@@ -804,14 +849,18 @@ struct InputState
 
 struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
-    int curr [2] = { 0 };
-    int prev [2] = { 0 };
-    int delta[2] = { 0 };
+    float curr [2] = { 0.0f };
+    float prev [2] = { 0.0f };
+    float delta[2] = { 0.0f };
 
-    void update_position(int x, int y)
+    void update_position(const Window& window)
     {
-        curr[0] = x;
-        curr[1] = y;
+        double x = 0.0;
+        double y = 0.0;
+        glfwGetCursorPos(window.handle, &x, &y);
+
+        curr[0] = static_cast<float>(window.position_scale_x * x);
+        curr[1] = static_cast<float>(window.position_scale_y * y);
     }
 
     void update_position_delta()
@@ -1012,6 +1061,10 @@ static ThreadContext t_ctx;
 
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
+    // TODO : Check we're not being called multiple times witohut first terminating.
+    // TODO : Reset global context data (thread local as well, if possible, but might not be).
+    // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
+
     t_ctx.is_main_thread = true;
 
     if (glfwInit() != GLFW_TRUE)
@@ -1022,14 +1075,18 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     gleqInit();
 
     glfwDefaultWindowHints();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_CLIENT_API      , GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE  ); // Note that this will be ignored when `glfwSetWindowSize` is specified.
 
     g_ctx.window.handle = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
+
     if (!g_ctx.window.handle)
     {
         glfwTerminate();
         return 2;
     }
+
+    g_ctx.window.update_size_info();
 
     gleqTrackWindow(g_ctx.window.handle);
 
@@ -1043,18 +1100,6 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         return 3;
     }
 
-    // Post size-related events, in case the user doesn't change the window size in the `setup` function.
-    {
-        int width  = 0;
-        int height = 0;
-
-        glfwGetWindowSize             (g_ctx.window.handle, &width, &height);
-        gleq_window_size_callback     (g_ctx.window.handle,  width,  height);
-
-        glfwGetFramebufferSize        (g_ctx.window.handle, &width, &height);
-        gleq_framebuffer_size_callback(g_ctx.window.handle,  width,  height);
-    }
-
     g_ctx.scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
     if (setup)
@@ -1065,9 +1110,6 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     }
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
-
-    int last_fb_width  = 0;
-    int last_fb_height = 0;
 
     constexpr bgfx::ViewId DEFAULT_VIEW = 0;
     bgfx::setViewClear(DEFAULT_VIEW, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
@@ -1089,13 +1131,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     );
     assert(bgfx::isValid(program));
 
-    {
-        double x, y;
-        glfwGetCursorPos(g_ctx.window.handle, &x, &y);
-
-        g_ctx.mouse.curr[0] = g_ctx.mouse.prev[0] = static_cast<int>(x);
-        g_ctx.mouse.curr[1] = g_ctx.mouse.prev[1] = static_cast<int>(y);
-    }
+    g_ctx.mouse.update_position(g_ctx.window);
 
     g_ctx.total_time.tic();
     g_ctx.frame_time.tic();
@@ -1109,6 +1145,8 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         g_ctx.frame_time.toc(true);
 
         glfwPollEvents();
+
+        bool update_cursor_position = false;
 
         GLEQevent event;
         while (gleqNextEvent(&event))
@@ -1132,18 +1170,12 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
                 break;
 
             case GLEQ_CURSOR_MOVED:
-                g_ctx.mouse.update_position(event.pos.x, event.pos.y);
+                update_cursor_position = true;
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
-                g_ctx.window.fb_width   = event.size.width;
-                g_ctx.window.fb_height  = event.size.height;
+            case GLEQ_WINDOW_SCALE_CHANGED:
                 g_ctx.reset_back_buffer = true;
-                break;
-
-            case GLEQ_WINDOW_RESIZED:
-                g_ctx.window.width  = event.size.width;
-                g_ctx.window.height = event.size.height;
                 break;
 
             default:;
@@ -1152,22 +1184,27 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             gleqFreeEvent(&event);
         }
 
-        // We have to wait with the mouse delta computation after all events
-        // have been processed (there could be multiple `GLEQ_CURSOR_MOVED` ones).
-        g_ctx.mouse.update_position_delta();
-
         if (g_ctx.reset_back_buffer)
         {
             g_ctx.reset_back_buffer = false;
 
-            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.fb_width );
-            const uint16_t height = static_cast<uint16_t>(g_ctx.window.fb_height);
+            g_ctx.window.update_size_info();
+
+            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.framebuffer_width );
+            const uint16_t height = static_cast<uint16_t>(g_ctx.window.framebuffer_height);
 
             const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
             bgfx::setViewRect (DEFAULT_VIEW, 0, 0, width, height);
         }
+
+        if (update_cursor_position)
+        {
+            g_ctx.mouse.update_position(g_ctx.window);
+        }
+
+        g_ctx.mouse.update_position_delta();
 
         bgfx::touch(DEFAULT_VIEW);
 
@@ -1222,6 +1259,12 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 void size(int width, int height, int flags)
 {
     assert(t_ctx.is_main_thread);
+    assert(g_ctx.window.display_scale_x);
+    assert(g_ctx.window.display_scale_y);
+
+    // TODO : Round instead?
+    if (g_ctx.window.position_scale_x != 1.0f) { width  = static_cast<int>(width  * g_ctx.window.display_scale_x); }
+    if (g_ctx.window.position_scale_y != 1.0f) { height = static_cast<int>(height * g_ctx.window.display_scale_y); }
 
     resize_window(g_ctx.window.handle, width, height, flags);
 }
@@ -1248,24 +1291,24 @@ void quit(void)
     glfwSetWindowShouldClose(g_ctx.window.handle, GLFW_TRUE);
 }
 
-int width(void)
+float width(void)
 {
-    return g_ctx.window.width;
+    return g_ctx.window.dpi_invariant_width;
 }
 
-int height(void)
+float height(void)
 {
-    return g_ctx.window.height;
+    return g_ctx.window.dpi_invariant_height;
 }
 
 float aspect(void)
 {
-    return static_cast<float>(g_ctx.window.width) / static_cast<float>(g_ctx.window.height);
+    return static_cast<float>(g_ctx.window.framebuffer_width) / static_cast<float>(g_ctx.window.framebuffer_height);
 }
 
 float dpi(void)
 {
-    return static_cast<float>(g_ctx.window.fb_width) / static_cast<float>(g_ctx.window.width);
+    return g_ctx.window.display_scale_x;
 }
 
 
@@ -1273,22 +1316,22 @@ float dpi(void)
 // PUBLIC API IMPLEMENTATION - INPUT
 // -----------------------------------------------------------------------------
 
-int mouse_x(void)
+float mouse_x(void)
 {
     return g_ctx.mouse.curr[0];
 }
 
-int mouse_y(void)
+float mouse_y(void)
 {
     return g_ctx.mouse.curr[1];
 }
 
-int mouse_dx(void)
+float mouse_dx(void)
 {
     return g_ctx.mouse.delta[0];
 }
 
-int mouse_dy(void)
+float mouse_dy(void)
 {
     return g_ctx.mouse.delta[1];
 }
