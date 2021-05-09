@@ -24,7 +24,7 @@ static void draw(void)
     model();
     identity();
 
-    begin(SCENE_ID, COLOR);
+    begin_transient(SCENE_ID, COLOR);
     scene();
     end();
 

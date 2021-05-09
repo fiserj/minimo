@@ -1,26 +1,18 @@
 #include <mnm/mnm.h>
 
-#define SCENE_ID 1
+#define CUBE_ID 1
 
-#define TEXTURE_ID 2
-
-static void cube(unsigned int tint);
+static void cube(void);
 
 static void scene(void);
 
 static void setup(void)
 {
-    title("Textured Geometry Example");
+    title("Instanced Geometry Example");
 
-    const unsigned int checkerboard[] =
-    {
-        0xffffffff, 0x000000ff, 0xffffffff, 0x000000ff,
-        0x000000ff, 0xffffffff, 0x000000ff, 0xffffffff,
-        0xffffffff, 0x000000ff, 0xffffffff, 0x000000ff,
-        0x000000ff, 0xffffffff, 0x000000ff, 0xffffffff,
-    };
-
-    make_texture(TEXTURE_ID, 4, 4, 0, checkerboard);
+    begin_static(CUBE_ID, COLOR);
+    cube();
+    end();
 }
 
 static void draw(void)
@@ -36,12 +28,9 @@ static void draw(void)
     model();
     identity();
 
-    begin_transient(SCENE_ID, COLOR | TEXCOORD);
+    begin_instancing(CUBE_ID, TRANSFORM);
     scene();
-    end();
-
-    texture(TEXTURE_ID);
-    mesh(SCENE_ID);
+    end_instancing();
 }
 
 void scene(void)
@@ -55,13 +44,13 @@ void scene(void)
         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        cube(123);
+        mesh(CUBE_ID);
 
         pop();
     }
 }
 
-void cube(unsigned int tint)
+void cube(void)
 {
     // ...
 }

@@ -10,7 +10,7 @@ static void setup(void)
 {
     title("Static Geometry Example");
 
-    begin(CUBE_ID, STATIC | COLOR);
+    begin_static(CUBE_ID, COLOR);
     cube();
     end();
 }
