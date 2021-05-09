@@ -200,27 +200,51 @@ struct VertexAttribs
 
 struct GeometryRecord
 {
-    uint32_t byte_offset      = 0;
-    uint32_t byte_length      = 0;
-    uint16_t vertex_layout_id = 0;
+    int      user_id;
+    uint32_t attribs;
+    uint32_t byte_offset;
+    uint32_t byte_length;
+    uint16_t vertex_layout_id;
 };
 
 class GeometryRecorder
 {
-public:
-    void begin(uint32_t attribs)
-    {
+private:
+    using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
 
+public:
+    void begin(int user_id, uint32_t attribs)
+    {
+        ASSERT(!m_recording);
+        ASSERT( user_id);
+        ASSERT( attribs == (attribs & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+        ASSERT( attribs <  ms_push_func_table.size());
+        ASSERT( ms_push_func_table[attribs]);
+
+        m_push_func = ms_push_func_table[attribs];
+
+        GeometryRecord record;
+        record.user_id          = user_id;
+        record.attribs          = attribs;
+        record.byte_offset      = static_cast<uint32_t>(m_buffer.size());
+        record.byte_length      = 0;
+        record.vertex_layout_id = 0; // TODO
+
+        m_records.push_back(record);
+        m_recording = true;
     }
 
     void end()
     {
+        ASSERT( m_recording);
+        ASSERT(!m_records.empty());
 
+        m_recording = false;
     }
 
     void vertex(const Vec3& position)
     {
-
+        (*m_push_func)(*this, position);
     }
 
     inline void color(uint32_t rgba)
@@ -245,7 +269,21 @@ public:
         bx::packRg16S(&m_attribs.texcoord, texcoord.Elements);
     }
 
+    static void init_push_func_table()
+    {
+        ms_push_func_table.resize(32, nullptr);
+
+        // ...
+    }
+
 private:
+    template <typename T>
+    static inline void store_value(const T& value, uint8_t* buffer)
+    {
+        *reinterpret_cast<T*>(buffer) = value;
+        buffer += sizeof(T);
+    }
+
     template <uint32_t Attribs>
     static constexpr uint32_t attribs_size()
     {
@@ -269,18 +307,12 @@ private:
         return size;
     }
 
-    template <typename T>
-    static inline void store_value(const T& value, uint8_t* buffer)
-    {
-        *reinterpret_cast<T*>(buffer) = value;
-        buffer += sizeof(T);
-    }
-
     template <uint32_t Attribs, uint32_t AttribsSize = attribs_size<Attribs>()>
     static void push_vertex(GeometryRecorder& recorder, const Vec3& position)
     {
         const size_t offset = recorder.m_buffer.size();
 
+        recorder.m_records.back().byte_length += AttribsSize;
         recorder.m_buffer.resize(offset + AttribsSize);
 
         uint8_t* buffer = recorder.m_buffer.data() + offset;
@@ -301,14 +333,16 @@ private:
         {
             store_value(recorder.m_attribs.normal, buffer);
         }
-
-        recorder.m_records.back().byte_length += AttribsSize;
     }
 
 protected:
     VertexAttribs          m_attribs;
     Vector<GeometryRecord> m_records;
     Vector<uint8_t>        m_buffer;
+    VertexPushFunc         m_push_func = nullptr;
+    bool                   m_recording = false;
+
+    static Vector<VertexPushFunc> ms_push_func_table;
 };
 
 
