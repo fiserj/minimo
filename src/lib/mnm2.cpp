@@ -10,6 +10,7 @@
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
 #include <thread>                 // this_thread
+#include <type_traits>            // alignment_of, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
@@ -29,6 +30,7 @@
 #include <gleq.h>                 // gleq*
 
 #define HANDMADE_MATH_IMPLEMENTATION
+#define HMM_STATIC
 #include <HandmadeMath.h>         // HMM_*, hmm_*
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
@@ -137,6 +139,13 @@ inline void destroy_if_valid(HandleT& handle)
     }
 }
 
+template <typename T>
+constexpr bool is_pod()
+{
+    // Since std::is_pod is being deprecated as of C++20.
+    return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
+}
+
 
 // -----------------------------------------------------------------------------
 // DRAW SUBMISSION
@@ -213,12 +222,12 @@ private:
     using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
 
 public:
-    void begin(int user_id, uint32_t attribs)
+    void begin(int user_id, uint32_t attribs, uint16_t vertex_layout_id)
     {
         ASSERT(!m_recording);
         ASSERT( user_id);
         ASSERT( attribs == (attribs & (VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD)));
-        ASSERT( attribs <  ms_push_func_table.size());
+        ASSERT( attribs <  BX_COUNTOF(ms_push_func_table));
         ASSERT( ms_push_func_table[attribs]);
 
         m_push_func = ms_push_func_table[attribs];
@@ -228,7 +237,7 @@ public:
         record.attribs          = attribs;
         record.byte_offset      = static_cast<uint32_t>(m_buffer.size());
         record.byte_length      = 0;
-        record.vertex_layout_id = 0; // TODO
+        record.vertex_layout_id = vertex_layout_id;
 
         m_records.push_back(record);
         m_recording = true;
@@ -244,16 +253,22 @@ public:
 
     void vertex(const Vec3& position)
     {
+        ASSERT(m_recording);
+
         (*m_push_func)(*this, position);
     }
 
     inline void color(uint32_t rgba)
     {
+        ASSERT(m_recording);
+
         m_attribs.color = bx::endianSwap(rgba);
     }
 
     inline void normal(const Vec3& normal)
     {
+        ASSERT(m_recording);
+
         const float normalized[] =
         {
             normal.X * 0.5f + 0.5f,
@@ -266,72 +281,70 @@ public:
 
     inline void texcoord(const Vec2& texcoord)
     {
+        ASSERT(m_recording);
+
         bx::packRg16S(&m_attribs.texcoord, texcoord.Elements);
-    }
-
-    static void init_push_func_table()
-    {
-        ms_push_func_table.resize(32, nullptr);
-
-        // ...
     }
 
 private:
     template <typename T>
-    static inline void store_value(const T& value, uint8_t* buffer)
+    static inline void store_attrib(const T& attrib, uint8_t* buffer)
     {
-        *reinterpret_cast<T*>(buffer) = value;
+        static_assert(is_pod<T>(), "Attribute type is not POD.");
+        static_assert(std::alignment_of<T>::value == 4, "Non-standard attribute alignment.");
+
+        *reinterpret_cast<T*>(buffer) = attrib;
         buffer += sizeof(T);
     }
 
     template <uint32_t Attribs>
-    static constexpr uint32_t attribs_size()
+    static constexpr size_t attribs_size()
     {
-        uint32_t size = sizeof(Vec3);
+        size_t size = sizeof(Vec3);
 
-        if (Attribs & VERTEX_COLOR)
+        if (!!(Attribs & VERTEX_COLOR))
         {
             size += sizeof(VertexAttribs::color);
         }
 
-        if (Attribs & VERTEX_TEXCOORD)
-        {
-            size += sizeof(VertexAttribs::texcoord);
-        }
-
-        if (Attribs & VERTEX_NORMAL)
+        if (!!(Attribs & VERTEX_NORMAL))
         {
             size += sizeof(VertexAttribs::normal);
+        }
+
+        if (!!(Attribs & VERTEX_TEXCOORD))
+        {
+            size += sizeof(VertexAttribs::texcoord);
         }
 
         return size;
     }
 
-    template <uint32_t Attribs, uint32_t AttribsSize = attribs_size<Attribs>()>
+    template <uint32_t Attribs, size_t Size = attribs_size<Attribs>()>
     static void push_vertex(GeometryRecorder& recorder, const Vec3& position)
     {
         const size_t offset = recorder.m_buffer.size();
 
-        recorder.m_records.back().byte_length += AttribsSize;
-        recorder.m_buffer.resize(offset + AttribsSize);
+        recorder.m_records.back().byte_length += Size;
+        recorder.m_buffer.resize(offset + Size);
 
         uint8_t* buffer = recorder.m_buffer.data() + offset;
 
-        store_value(position, buffer);
+        store_attrib(position, buffer);
 
-        if (Attribs & VERTEX_COLOR)
+        if (!!(Attribs & VERTEX_COLOR))
         {
-            store_value(recorder.m_attribs.color, buffer);
+            store_attrib(recorder.m_attribs.color, buffer);
         }
 
-        if (Attribs & VERTEX_TEXCOORD)
+        if (!!(Attribs & VERTEX_NORMAL))
         {
-            store_value(recorder.m_attribs.texcoord, buffer);
+            store_attrib(recorder.m_attribs.normal, buffer);
         }
 
-        if (Attribs & VERTEX_NORMAL)
+        if (!!(Attribs & VERTEX_TEXCOORD))
         {
-            store_value(recorder.m_attribs.normal, buffer);
+            store_attrib(recorder.m_attribs.texcoord, buffer);
         }
     }
 
@@ -342,7 +355,22 @@ protected:
     VertexPushFunc         m_push_func = nullptr;
     bool                   m_recording = false;
 
-    static Vector<VertexPushFunc> ms_push_func_table;
+    static const VertexPushFunc ms_push_func_table[8];
+};
+
+const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
+{
+    GeometryRecorder::push_vertex<0>,
+
+    GeometryRecorder::push_vertex<VERTEX_COLOR   >,
+    GeometryRecorder::push_vertex<VERTEX_NORMAL  >,
+    GeometryRecorder::push_vertex<VERTEX_TEXCOORD>,
+        
+    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL  >,
+    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_TEXCOORD>,
+    GeometryRecorder::push_vertex<VERTEX_NORMAL | VERTEX_TEXCOORD>,
+
+    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
 };
 
 

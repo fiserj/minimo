@@ -19,3 +19,9 @@ set_target_properties(${NAME} PROPERTIES
     DEBUG_POSTFIX "_d"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
+
+if(MSVC)
+    target_compile_options(${NAME} PRIVATE /Wall)
+else()
+    target_compile_options(${NAME} PRIVATE -Wall)
+endif()
