@@ -189,6 +189,26 @@ struct DrawItem
     int vertex_layout_id = 0;
 };
 
+class DrawList
+{
+public:
+    void submit_mesh(int id)
+    {
+        m_state.mesh_id = id;
+        m_items.push_back(m_state);
+
+        m_state = {};
+    }
+
+    inline DrawItem& state() { return m_state; }
+
+    inline const DrawItem& state() const { return m_state; }
+
+private:
+    DrawItem         m_state;
+    Vector<DrawItem> m_items;
+};
+
 
 // -----------------------------------------------------------------------------
 // VERTEX LAYOUT CACHE
@@ -837,6 +857,8 @@ struct LocalContext
     GeometryRecorder  transient_recorder;
     GeometryRecorder  static_recorder;
 
+    DrawList          draw_list;
+
     MatrixStack       view_matrix_stack;
     MatrixStack       proj_matrix_stack;
     MatrixStack       model_matrix_stack;
@@ -864,7 +886,7 @@ thread_local LocalContext t_ctx;
 
 static void begin_recording(mnm::GeometryRecorder& recorder, int id, int attribs)
 {
-    ASSERT(id);
+    ASSERT(id > 0);
     ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
     ASSERT(!mnm::t_ctx.is_recording);
@@ -884,6 +906,26 @@ void begin_static(int id, int attribs)
     begin_recording(mnm::t_ctx.static_recorder, id, attribs);
 }
 
+void vertex(float x, float y, float z)
+{
+    mnm::t_ctx.active_recorder->vertex((mnm::t_ctx.model_matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+}
+
+void color(unsigned int rgba)
+{
+    mnm::t_ctx.active_recorder->color(rgba);
+}
+
+void normal(float nx, float ny, float nz)
+{
+    mnm::t_ctx.active_recorder->normal(HMM_Vec3(nx, ny, nz));
+}
+
+void texcoord(float u, float v)
+{
+    mnm::t_ctx.active_recorder->texcoord(HMM_Vec2(u, v));
+}
+
 void end(void)
 {
     ASSERT(mnm::t_ctx.is_recording);
@@ -892,7 +934,99 @@ void end(void)
     mnm::t_ctx.active_recorder->end();
 }
 
-// ...
+void mesh(int id)
+{
+    ASSERT(id > 0);
+
+    // TODO : Set other necessary state properties.
+
+    mnm::t_ctx.draw_list.submit_mesh(id);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TRANSFORMATIONS
+// -----------------------------------------------------------------------------
+
+void model(void)
+{
+    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.model_matrix_stack;
+}
+
+void view(void)
+{
+    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.view_matrix_stack;
+}
+
+void projection(void)
+{
+    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.proj_matrix_stack;
+}
+
+void push(void)
+{
+    ASSERT(mnm::t_ctx.active_matrix_stack);
+    mnm::t_ctx.active_matrix_stack->push();
+}
+
+void pop(void)
+{
+    ASSERT(mnm::t_ctx.active_matrix_stack);
+    mnm::t_ctx.active_matrix_stack->pop();
+}
+
+void identity(void)
+{
+    mnm::t_ctx.active_matrix_stack->top() = HMM_Mat4d(1.0f);
+}
+
+void ortho(float left, float right, float bottom, float top, float near_, float far_)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
+}
+
+void perspective(float fovy, float aspect, float near_, float far_)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
+}
+
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
+}
+
+void rotate(float angle, float x, float y, float z)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
+}
+
+void rotate_x(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 1.0f, 0.0f, 0.0f);
+}
+
+void rotate_y(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 1.0f, 0.0f);
+}
+
+void rotate_z(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 0.0f, 1.0f);
+}
+
+void scale(float scale)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
+}
+
+void translate(float x, float y, float z)
+{
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
+}
 
 
 // -----------------------------------------------------------------------------
