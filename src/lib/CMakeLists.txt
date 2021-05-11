@@ -33,6 +33,7 @@ target_link_libraries(${NAME} PRIVATE
     gleq
     glfw
     HandmadeMath
+    meshoptimizer
 )
 
 set_target_properties(${NAME} PROPERTIES
