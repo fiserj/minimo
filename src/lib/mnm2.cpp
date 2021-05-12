@@ -6,6 +6,7 @@
 #include <string.h>               // memcpy
 
 #include <algorithm>              // max, transform
+#include <array>                  // array
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
@@ -37,6 +38,10 @@
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
+#include <shaders/poscolor_fs.h>  // poscolor_fs
+#include <shaders/poscolor_vs.h>  // poscolor_vs
+
+
 namespace mnm
 {
 
@@ -61,6 +66,9 @@ static constexpr int DEFAULT_WINDOW_HEIGHT= 480;
 // -----------------------------------------------------------------------------
 // TYPE ALIASES
 // -----------------------------------------------------------------------------
+
+template <typename T, uint32_t Size>
+using Array = std::array<T, Size>;
 
 template <typename T>
 using Vector = std::vector<T>;
@@ -211,6 +219,79 @@ private:
 
 
 // -----------------------------------------------------------------------------
+// PROGRAM CACHE
+// -----------------------------------------------------------------------------
+
+class ProgramCache
+{
+public:
+    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
+    {
+        if (m_handles.size() >= UINT8_MAX)
+        {
+            ASSERT(false && "Program cache full.");
+            return UINT8_MAX;
+        }
+
+        // TODO : Don't necessarily destroy shaders.
+        bgfx::ProgramHandle handle = bgfx::createProgram(vertex, fragment, true);
+        if (!bgfx::isValid( handle))
+        {
+            ASSERT(false && "Invalid program handle.");
+            return UINT8_MAX;
+        }
+
+        const uint8_t idx = static_cast<uint8_t>(m_handles.size());
+
+        if (attribs != UINT32_MAX)
+        {
+            ASSERT(attribs <  UINT8_MAX);
+            ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+
+            if (attribs >= m_attribs_to_ids.size())
+            {
+                m_attribs_to_ids.resize(attribs, UINT8_MAX);
+            }
+
+            if (m_attribs_to_ids[attribs] != UINT8_MAX)
+            {
+                ASSERT(false && "Default shader for given attributes already set.");
+                bgfx::destroy(handle);
+                return UINT8_MAX;
+            }
+
+            m_attribs_to_ids[attribs] = idx;
+        }
+
+        m_handles.push_back(handle);
+
+        return idx;
+    }
+
+    inline bgfx::ProgramHandle program_handle_from_id(uint8_t id) const
+    {
+        ASSERT(id < m_handles.size());
+        ASSERT(bgfx::isValid(m_handles[id]));
+
+        return m_handles[id];
+    }
+
+    inline bgfx::ProgramHandle program_handle_from_attribs(uint32_t attribs) const
+    {
+        ASSERT(attribs < UINT8_MAX);
+        ASSERT(attribs < m_attribs_to_ids.size());
+        ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
+
+        return program_handle_from_id(m_attribs_to_ids[attribs]);
+    }
+
+private:
+    Vector<bgfx::ProgramHandle> m_handles;
+    Vector<uint8_t>             m_attribs_to_ids;
+};
+
+
+// -----------------------------------------------------------------------------
 // VERTEX LAYOUT CACHE
 // -----------------------------------------------------------------------------
 
@@ -219,7 +300,8 @@ class VertexLayoutCache
 public:
     void add(uint32_t attribs)
     {
-        ASSERT(attribs < UINT8_MAX);
+        ASSERT(attribs <  UINT8_MAX);
+        ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
         if (attribs < m_ids.size() && m_ids[attribs] != UINT8_MAX)
         {
@@ -518,7 +600,7 @@ struct Window
 
     void update_size_info()
     {
-        assert(handle);
+        ASSERT(handle);
 
         int window_width  = 0;
         int window_height = 0;
@@ -558,8 +640,8 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
 {
     // TODO : The DEFAULT and MIN sizes should include the DPI scale.
 
-    assert(window);
-    assert(flags >= 0);
+    ASSERT(window);
+    ASSERT(flags >= 0);
 
     // Current monitor.
     GLFWmonitor* monitor = glfwGetWindowMonitor(window);
@@ -808,8 +890,8 @@ struct TaskPool
 
     void release_task(const Task* task)
     {
-        assert(task);
-        assert(task >= &tasks[0] && task <= &tasks[MAX_TASKS - 1]);
+        ASSERT(task);
+        ASSERT(task >= &tasks[0] && task <= &tasks[MAX_TASKS - 1]);
 
         std::lock_guard<std::mutex> lock(mutex);
 
@@ -824,10 +906,10 @@ struct TaskPool
 
 void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
 {
-    assert(func);
+    ASSERT(func);
     (*func)(data);
 
-    assert(pool);
+    ASSERT(pool);
     pool->release_task(this);
 }
 
@@ -850,6 +932,9 @@ struct GlobalContext
     Timer               frame_time;
 
     Window              window;
+
+    bool                vsync_on          = false;
+    bool                reset_back_buffer = true;
 };
 
 struct LocalContext
@@ -862,6 +947,9 @@ struct LocalContext
     MatrixStack       view_matrix_stack;
     MatrixStack       proj_matrix_stack;
     MatrixStack       model_matrix_stack;
+
+    Timer             stop_watch;
+    Timer             frame_time;
 
     GeometryRecorder* active_recorder     = &transient_recorder;
     MatrixStack*      active_matrix_stack = &model_matrix_stack;
@@ -878,6 +966,355 @@ thread_local LocalContext t_ctx;
 // -----------------------------------------------------------------------------
 
 } // namespace mnm
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY
+// -----------------------------------------------------------------------------
+
+int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+{
+    using namespace mnm;
+
+    // TODO : Check we're not being called multiple times witohut first terminating.
+    // TODO : Reset global context data (thread local as well, if possible, but might not be).
+    // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
+
+    t_ctx.is_main_thread = true;
+
+    if (glfwInit() != GLFW_TRUE)
+    {
+        return 1;
+    }
+
+    gleqInit();
+
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_CLIENT_API      , GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE  ); // Note that this will be ignored when `glfwSetWindowSize` is specified.
+
+    g_ctx.window.handle = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
+
+    if (!g_ctx.window.handle)
+    {
+        glfwTerminate();
+        return 2;
+    }
+
+    g_ctx.window.update_size_info();
+
+    gleqTrackWindow(g_ctx.window.handle);
+
+    bgfx::Init init;
+    init.platformData = create_platform_data(g_ctx.window.handle, init.type);
+
+    if (!bgfx::init(init))
+    {
+        glfwDestroyWindow(g_ctx.window.handle);
+        glfwTerminate();
+        return 3;
+    }
+
+    g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
+
+    if (setup)
+    {
+        (*setup)();
+
+        //(void)update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers);
+    }
+
+    bgfx::setDebug(BGFX_DEBUG_STATS);
+
+    // TODO : The clear values should be exposable to the end-user.
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
+
+    const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
+    static const bgfx::EmbeddedShader s_shaders[] =
+    {
+        BGFX_EMBEDDED_SHADER(poscolor_fs),
+        BGFX_EMBEDDED_SHADER(poscolor_vs),
+
+        BGFX_EMBEDDED_SHADER_END()
+    };
+
+    g_ctx.default_program = bgfx::createProgram
+    (
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
+        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
+        true
+    );
+    assert(bgfx::isValid(g_ctx.default_program));
+
+    g_ctx.mouse.update_position(g_ctx.window);
+
+    g_ctx.total_time.tic();
+    g_ctx.frame_time.tic();
+
+    while (!glfwWindowShouldClose(g_ctx.window.handle))
+    {
+        g_ctx.keyboard.update_state_flags();
+        g_ctx.mouse   .update_state_flags();
+
+        g_ctx.total_time.toc();
+        g_ctx.frame_time.toc(true);
+
+        glfwPollEvents();
+
+        bool update_cursor_position = false;
+
+        GLEQevent event;
+        while (gleqNextEvent(&event))
+        {
+            switch (event.type)
+            {
+            case GLEQ_KEY_PRESSED:
+                g_ctx.keyboard.update_input_state(event.keyboard.key, true);
+                break;
+            
+            case GLEQ_KEY_RELEASED:
+                g_ctx.keyboard.update_input_state(event.keyboard.key, false);
+                break;
+
+            case GLEQ_BUTTON_PRESSED:
+                g_ctx.mouse.update_input_state(event.mouse.button, true);
+                break;
+
+            case GLEQ_BUTTON_RELEASED:
+                g_ctx.mouse.update_input_state(event.mouse.button, false);
+                break;
+
+            case GLEQ_CURSOR_MOVED:
+                update_cursor_position = true;
+                break;
+
+            case GLEQ_FRAMEBUFFER_RESIZED:
+            case GLEQ_WINDOW_SCALE_CHANGED:
+                g_ctx.reset_back_buffer = true;
+                break;
+
+            default:;
+            }
+
+            gleqFreeEvent(&event);
+        }
+
+        if (g_ctx.reset_back_buffer)
+        {
+            g_ctx.reset_back_buffer = false;
+
+            g_ctx.window.update_size_info();
+
+            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.framebuffer_width );
+            const uint16_t height = static_cast<uint16_t>(g_ctx.window.framebuffer_height);
+
+            const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
+
+            bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
+            bgfx::setViewRect(0, 0, 0, width, height);
+        }
+
+        if (update_cursor_position)
+        {
+            g_ctx.mouse.update_position(g_ctx.window);
+        }
+
+        g_ctx.mouse.update_position_delta();
+
+        bgfx::touch(0);
+
+        // TODO : This needs to be done for all contexts across all threads.
+        //t_ctx.transient_recorder.clear();
+        //t_ctx.cached_recorder   .clear();
+        //t_ctx.cached_submissions.clear();
+
+        if (draw)
+        {
+            (*draw)();
+        }
+
+        bgfx::setViewTransform(0, &t_ctx.view_matrix_stack.top(), &t_ctx.proj_matrix_stack.top());
+
+        // TODO : This needs to be done for all contexts across all threads.
+        {
+            if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
+            {
+                submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, t_ctx.is_main_thread);
+            }
+
+            if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
+            {
+                submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, t_ctx.is_main_thread);
+            }
+        }
+
+        bgfx::frame();
+    }
+
+    if (cleanup)
+    {
+        (*cleanup)();
+    }
+
+    g_ctx.task_scheduler.WaitforAllAndShutdown();
+
+    // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
+    //bgfx::destroy(g_ctx.default_program);
+
+    bgfx::shutdown();
+
+    glfwDestroyWindow(g_ctx.window.handle);
+    glfwTerminate();
+
+    return 0;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - WINDOW
+// -----------------------------------------------------------------------------
+
+void size(int width, int height, int flags)
+{
+    ASSERT(mnm::t_ctx.is_main_thread);
+    ASSERT(mnm::g_ctx.window.display_scale_x);
+    ASSERT(mnm::g_ctx.window.display_scale_y);
+
+    // TODO : Round instead?
+    if (mnm::g_ctx.window.position_scale_x != 1.0f) { width  = static_cast<int>(width  * mnm::g_ctx.window.display_scale_x); }
+    if (mnm::g_ctx.window.position_scale_y != 1.0f) { height = static_cast<int>(height * mnm::g_ctx.window.display_scale_y); }
+
+    mnm::resize_window(mnm::g_ctx.window.handle, width, height, flags);
+}
+
+void title(const char* title)
+{
+    ASSERT(mnm::t_ctx.is_main_thread);
+
+    glfwSetWindowTitle(mnm::g_ctx.window.handle, title);
+}
+
+void vsync(int vsync)
+{
+    ASSERT(mnm::t_ctx.is_main_thread);
+
+    mnm::g_ctx.vsync_on          = static_cast<bool>(vsync);
+    mnm::g_ctx.reset_back_buffer = true;
+}
+
+void quit(void)
+{
+    ASSERT(mnm::t_ctx.is_main_thread);
+
+    glfwSetWindowShouldClose(mnm::g_ctx.window.handle, GLFW_TRUE);
+}
+
+float width(void)
+{
+    return mnm::g_ctx.window.dpi_invariant_width;
+}
+
+float height(void)
+{
+    return mnm::g_ctx.window.dpi_invariant_height;
+}
+
+float aspect(void)
+{
+    return static_cast<float>(mnm::g_ctx.window.framebuffer_width) / static_cast<float>(mnm::g_ctx.window.framebuffer_height);
+}
+
+float dpi(void)
+{
+    return mnm::g_ctx.window.display_scale_x;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INPUT
+// -----------------------------------------------------------------------------
+
+float mouse_x(void)
+{
+    return mnm::g_ctx.mouse.curr[0];
+}
+
+float mouse_y(void)
+{
+    return mnm::g_ctx.mouse.curr[1];
+}
+
+float mouse_dx(void)
+{
+    return mnm::g_ctx.mouse.delta[0];
+}
+
+float mouse_dy(void)
+{
+    return mnm::g_ctx.mouse.delta[1];
+}
+
+int mouse_down(int button)
+{
+    return mnm::g_ctx.mouse.is(button, mnm::Mouse::DOWN);
+}
+
+int mouse_held(int button)
+{
+    return mnm::g_ctx.mouse.is(button, mnm::Mouse::HELD);
+}
+
+int mouse_up(int button)
+{
+    return mnm::g_ctx.mouse.is(button, mnm::Mouse::UP);
+}
+
+int key_down(int key)
+{
+    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::DOWN);
+}
+
+int key_held(int key)
+{
+    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::HELD);
+}
+
+int key_up(int key)
+{
+    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::UP);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TIME
+// -----------------------------------------------------------------------------
+
+double elapsed(void)
+{
+    return mnm::g_ctx.total_time.elapsed;
+}
+
+double dt(void)
+{
+    return mnm::g_ctx.frame_time.elapsed;
+}
+
+void sleep_for(double seconds)
+{
+    ASSERT(!mnm::t_ctx.is_main_thread);
+
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+}
+
+void tic(void)
+{
+    mnm::t_ctx.stop_watch.tic();
+}
+
+double toc(void)
+{
+    return mnm::t_ctx.stop_watch.toc();
+}
 
 
 // -----------------------------------------------------------------------------
@@ -1026,6 +1463,26 @@ void scale(float scale)
 void translate(float x, float y, float z)
 {
     mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MULTITHREADING
+// -----------------------------------------------------------------------------
+
+int task(void (* func)(void* data), void* data)
+{
+    mnm::Task* task = mnm::g_ctx.task_pool.get_free_task();
+
+    if (task)
+    {
+        task->func = func;
+        task->data = data;
+
+        mnm::g_ctx.task_scheduler.AddTaskSetToPipe(task);
+    }
+
+    return task != nullptr;
 }
 
 

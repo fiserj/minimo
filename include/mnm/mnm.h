@@ -21,6 +21,16 @@ extern "C" {
 ///
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 
+/// Helper macro to instantiate basic main function that just runs `mnm_run`.
+///
+#define MNM_MAIN(setup, draw, cleanup) \
+    int main(int argc, char** argv) \
+    { \
+        (void)argc; \
+        (void)argv; \
+        return mnm_run(setup, draw, cleanup); \
+    }
+
 
 // -----------------------------------------------------------------------------
 // WINDOW
@@ -240,13 +250,17 @@ enum
     VERTEX_TEXCOORD = 4,
 };
 
+void begin_transient(int id, int attribs);
+
+void begin_static(int id, int attribs);
+
 /// Starts immediate geometry building mode. Only supported primitive is
 /// triangles. Only vertex attributes specified in the `attribs` parameter are
 /// recorded. Vertex position is always recorded.
 ///
 /// @param[in] attribs Vertex attribute flags.
 ///
-void begin(int attribs);
+//void begin(int attribs);
 
 /// Starts cached geometry / mesh building mode. Only supported primitive is
 /// triangles. Only vertex attributes specified in the `attribs` parameter are
@@ -258,7 +272,7 @@ void begin(int attribs);
 /// @param[in] attribs Vertex attribute flags.
 /// @param[in] id Cached geometry identifier. Must be non-zero.
 ///
-void begin_cached(int attribs, int id);
+//void begin_cached(int attribs, int id);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.

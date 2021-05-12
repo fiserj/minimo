@@ -1,7 +1,8 @@
 set(NAME test)
 
 add_executable(${NAME}
-    test.cpp
+    # test.cpp
+    transient_geometry.cpp
 )
 
 target_include_directories(${NAME} PRIVATE
