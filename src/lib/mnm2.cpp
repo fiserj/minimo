@@ -1001,18 +1001,11 @@ thread_local LocalContext t_ctx;
 
 
 // -----------------------------------------------------------------------------
-
-} // namespace mnm
-
-
-// -----------------------------------------------------------------------------
-// PUBLIC API IMPLEMENTATION - MAIN ENTRY
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
 // -----------------------------------------------------------------------------
 
-int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 {
-    using namespace mnm;
-
     // TODO : Check we're not being called multiple times witohut first terminating.
     // TODO : Reset global context data (thread local as well, if possible, but might not be).
     // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
@@ -1198,6 +1191,21 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
     glfwTerminate();
 
     return 0;
+}
+
+
+// -----------------------------------------------------------------------------
+
+} // namespace mnm
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY FROM C
+// -----------------------------------------------------------------------------
+
+int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+{
+    return mnm::run(setup, draw, cleanup);
 }
 
 

@@ -8,28 +8,22 @@ extern "C" {
 // MAIN ENTRY
 // -----------------------------------------------------------------------------
 
-/// Entry point when running as a library. The 
+/// Entry point when running as a library.
 ///
 /// @param[in] setup Function that runs once after the window was created.
 /// @param[in] draw Function that runs on every frame.
-/// @param[in] cleanup Function that runs once just before the window is destroyed.
+/// @param[in] cleanup Function that runs once just before the window is
+///   destroyed.
 ///
 /// @returns Zero if no error occurred.
+///
+/// @attention Use `mnm::run` (see the end of this file), if compiling from C++
+///  to avoid possible warnings about exception safety (such as MSVC's C5039).
 ///
 /// @warning This function must be called from the main thread only (the thread
 ///   that calls `main`).
 ///
 int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
-
-/// Helper macro to instantiate basic main function that just runs `mnm_run`.
-///
-#define MNM_MAIN(setup, draw, cleanup) \
-    int main(int argc, char** argv) \
-    { \
-        (void)argc; \
-        (void)argv; \
-        return mnm_run(setup, draw, cleanup); \
-    }
 
 
 // -----------------------------------------------------------------------------
@@ -496,3 +490,43 @@ int task(void (* func)(void* data), void* data);
 #ifdef __cplusplus
 }
 #endif
+
+
+// -----------------------------------------------------------------------------
+// MAIN ENTRY (C++)
+// -----------------------------------------------------------------------------
+
+#ifdef __cplusplus
+
+#define MNM_MAIN_NAME mnm::run
+
+namespace mnm
+{
+
+/// Entry point when running as a library. C++ variant of `mnm_run` function. 
+///
+int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void));
+
+} // namespace mnm
+
+#else
+#   define MNM_MAIN_NAME mnm_run
+#endif // __cplusplus
+
+
+// -----------------------------------------------------------------------------
+// MAIN ENTRY IMPLEMENTATION
+// -----------------------------------------------------------------------------
+
+/// Helper macro to instantiate basic main function that just runs either
+/// `mnm_run` (if compiled as C file), or `mnm::run` (if compiled as C++).
+///
+#define MNM_MAIN(setup, draw, cleanup) \
+    int main(int argc, char** argv) \
+    { \
+        (void)argc; \
+        (void)argv; \
+        return MNM_MAIN_NAME(setup, draw, cleanup); \
+    }
+
+// -----------------------------------------------------------------------------
