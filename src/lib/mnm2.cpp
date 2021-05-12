@@ -200,6 +200,12 @@ struct DrawItem
 class DrawList
 {
 public:
+    inline void clear()
+    {
+        m_items.clear();
+        m_state = {};
+    }
+
     void submit_mesh(int id)
     {
         m_state.mesh_id = id;
@@ -233,6 +239,12 @@ public:
             return UINT8_MAX;
         }
 
+        if (!bgfx::isValid(vertex) || !bgfx::isValid(fragment))
+        {
+            ASSERT(false && "Invalid vertex and/or fragment shader.");
+            return UINT8_MAX;
+        }
+
         // TODO : Don't necessarily destroy shaders.
         bgfx::ProgramHandle handle = bgfx::createProgram(vertex, fragment, true);
         if (!bgfx::isValid( handle))
@@ -250,7 +262,7 @@ public:
 
             if (attribs >= m_attribs_to_ids.size())
             {
-                m_attribs_to_ids.resize(attribs, UINT8_MAX);
+                m_attribs_to_ids.resize(attribs + 1, UINT8_MAX);
             }
 
             if (m_attribs_to_ids[attribs] != UINT8_MAX)
@@ -266,6 +278,22 @@ public:
         m_handles.push_back(handle);
 
         return idx;
+    }
+
+    inline uint8_t add
+    (
+        const bgfx::EmbeddedShader* shaders,
+        bgfx::RendererType::Enum    renderer,
+        const char*                 vertex_name,
+        const char*                 fragment_name,
+        uint32_t                    attribs = UINT32_MAX
+    )
+    {
+        return add(
+            bgfx::createEmbeddedShader(shaders, renderer, vertex_name  ),
+            bgfx::createEmbeddedShader(shaders, renderer, fragment_name),
+            attribs
+        );
     }
 
     inline bgfx::ProgramHandle program_handle_from_id(uint8_t id) const
@@ -395,6 +423,14 @@ private:
     using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
 
 public:
+    inline void clear()
+    {
+        ASSERT(!m_recording);
+
+        m_records.clear();
+        m_buffer .clear();
+    }
+
     void begin(int user_id, uint32_t attribs)
     {
         ASSERT(!m_recording);
@@ -926,6 +962,7 @@ struct GlobalContext
     enki::TaskScheduler task_scheduler;
     TaskPool            task_pool;
 
+    ProgramCache        program_cache;
     VertexLayoutCache   vertex_layout_cache;
 
     Timer               total_time;
@@ -1038,13 +1075,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         BGFX_EMBEDDED_SHADER_END()
     };
 
-    g_ctx.default_program = bgfx::createProgram
-    (
-        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_vs"),
-        bgfx::createEmbeddedShader(s_shaders, type, "poscolor_fs"),
-        true
-    );
-    assert(bgfx::isValid(g_ctx.default_program));
+    (void)g_ctx.program_cache.add(s_shaders, type, "poscolor_vs", "poscolor_fs", VERTEX_COLOR);
 
     g_ctx.mouse.update_position(g_ctx.window);
 
@@ -1124,9 +1155,9 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
         bgfx::touch(0);
 
         // TODO : This needs to be done for all contexts across all threads.
-        //t_ctx.transient_recorder.clear();
-        //t_ctx.cached_recorder   .clear();
-        //t_ctx.cached_submissions.clear();
+        t_ctx.transient_recorder.clear();
+        t_ctx.static_recorder   .clear();
+        t_ctx.draw_list         .clear();
 
         if (draw)
         {
@@ -1137,7 +1168,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 
         // TODO : This needs to be done for all contexts across all threads.
         {
-            if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
+            /*if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
                 submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, t_ctx.is_main_thread);
             }
@@ -1145,7 +1176,7 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
             if (update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers))
             {
                 submit_cached_geometry(t_ctx.cached_submissions, t_ctx.cached_buffers, t_ctx.is_main_thread);
-            }
+            }*/
         }
 
         bgfx::frame();

@@ -24,6 +24,9 @@
 #   import <QuartzCore/CAMetalLayer.h> // CAMetalLayer
 #endif
 
+namespace mnm
+{
+
 bgfx::PlatformData create_platform_data
 (
     GLFWwindow*              window,
@@ -70,3 +73,5 @@ bgfx::PlatformData create_platform_data
 
     return data;
 }
+
+} // namespace mnm
