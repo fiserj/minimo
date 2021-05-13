@@ -6,12 +6,13 @@
 #include <string.h>               // memcpy
 
 #include <algorithm>              // max, transform
+#include <atomic>                 // atomic
 #include <array>                  // array
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
 #include <thread>                 // this_thread
-#include <type_traits>            // alignment_of, is_trivial, is_standard_layout
+#include <type_traits>            // alignment_of, is_integral, is_trivial, is_standard_layout, make_unsigned_t
 #include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
@@ -51,9 +52,9 @@ namespace mnm
 
 static constexpr int MIN_WINDOW_SIZE      = 240;
 
-static constexpr int DEFAULT_WINDOW_WIDTH = 640;
+static constexpr int DEFAULT_WINDOW_WIDTH = 800;
 
-static constexpr int DEFAULT_WINDOW_HEIGHT= 480;
+static constexpr int DEFAULT_WINDOW_HEIGHT= 600;
 
 
 // -----------------------------------------------------------------------------
@@ -71,10 +72,17 @@ template <typename T, uint32_t Size>
 using Array = std::array<T, Size>;
 
 template <typename T>
-using Vector = std::vector<T>;
+using Atomic = std::atomic<T>;
 
-template <typename Key, typename T>
-using HashMap = std::unordered_map<Key, T>;
+template <typename KeyT, typename T>
+using HashMap = std::unordered_map<KeyT, T>;
+
+using Mutex = std::mutex;
+
+using MutexScope = std::lock_guard<std::mutex>;
+
+template <typename T>
+using Vector = std::vector<T>;
 
 using Mat4 = hmm_mat4;
 
@@ -185,16 +193,22 @@ constexpr bool is_pod()
 // DRAW SUBMISSION
 // -----------------------------------------------------------------------------
 
+enum : uint8_t
+{
+    MESH_STATE_TRANSIENT = 0x00,
+    MESH_STATE_STATIC    = 0x01,
+};
+
 // TODO : Many members (if not all) can use smaller types.
 struct DrawItem
 {
-    int type             = 0;
-    int state            = 0;
-    int pass_id          = 0;
-    int program_id       = 0;
-    int mesh_id          = 0;
-    int texture_id       = 0;
-    int vertex_layout_id = 0;
+    Mat4                     transform; // TODO : Maybe this could be cached like it is in BGFX?
+    int                      user_mesh_id  = 0;
+    bgfx::ViewId             pass_id       = 0;
+    bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle      texture       = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayoutHandle vertex_layout = BGFX_INVALID_HANDLE;
+    uint8_t                  state         = 0; // TODO : Blending, etc.
 };
 
 class DrawList
@@ -206,11 +220,12 @@ public:
         m_state = {};
     }
 
-    void submit_mesh(int id)
+    void submit_mesh(int id, const Mat4& transform)
     {
-        m_state.mesh_id = id;
-        m_items.push_back(m_state);
+        m_state.user_mesh_id = id;
+        m_state.transform    = transform;
 
+        m_items.push_back(m_state);
         m_state = {};
     }
 
@@ -221,6 +236,44 @@ public:
 private:
     DrawItem         m_state;
     Vector<DrawItem> m_items;
+};
+
+
+// -----------------------------------------------------------------------------
+// MESH INFO CACHE
+// -----------------------------------------------------------------------------
+
+template <typename KeyT, typename T, uint32_t ArraySize>
+class ArrayHashMap
+{
+    static_assert(std::is_integral<KeyT>::value, "ArrayHashMap's key type must be integral.");
+
+public:
+    ArrayHashMap(const T& invalid_value)
+        : m_invalid_value(invalid_value)
+    {
+        m_low.fill(m_invalid_value);
+    }
+
+    inline void insert(KeyT key, const T& value)
+    {
+        if (static_cast<UnsignedKeyT>(key) < ArraySize)
+        {
+            m_low[static_cast<UnsignedKeyT>(key)] = value;
+        }
+        else
+        {
+            m_high.insert({ key, value });
+        }
+    }
+
+private:
+    using UnsignedKeyT = std::make_unsigned_t<KeyT>;
+
+private:
+    Array<T, ArraySize> m_low;
+    HashMap<KeyT, T>    m_high;
+    T                   m_invalid_value;
 };
 
 
@@ -581,6 +634,13 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 
 
 // -----------------------------------------------------------------------------
+// GEOMETRY SUBMISSION
+// -----------------------------------------------------------------------------
+
+//static void submit_transient_geometry(const Geometry t_ctx.transient_recorder, g_ctx.vertex_layout_cache);
+
+
+// -----------------------------------------------------------------------------
 // TIME MEASUREMENT
 // -----------------------------------------------------------------------------
 
@@ -892,10 +952,10 @@ struct TaskPool
 {
     static constexpr int MAX_TASKS = 64;
 
-    std::mutex mutex;
-    Task       tasks[MAX_TASKS];
-    int        nexts[MAX_TASKS];
-    int        head = 0;
+    Mutex mutex;
+    Task  tasks[MAX_TASKS];
+    int   nexts[MAX_TASKS];
+    int   head = 0;
 
     TaskPool()
     {
@@ -908,7 +968,7 @@ struct TaskPool
 
     Task* get_free_task()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        MutexScope lock(mutex);
 
         Task* task = nullptr;
 
@@ -929,7 +989,7 @@ struct TaskPool
         ASSERT(task);
         ASSERT(task >= &tasks[0] && task <= &tasks[MAX_TASKS - 1]);
 
-        std::lock_guard<std::mutex> lock(mutex);
+        MutexScope lock(mutex);
 
         const int i = static_cast<int>(task - &tasks[0]);
 
@@ -969,6 +1029,8 @@ struct GlobalContext
     Timer               frame_time;
 
     Window              window;
+
+    Atomic<uint32_t>    frame_number      = 0;
 
     bool                vsync_on          = false;
     bool                reset_back_buffer = true;
@@ -1020,10 +1082,10 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     gleqInit();
 
     glfwDefaultWindowHints();
-    glfwWindowHint(GLFW_CLIENT_API      , GLFW_NO_API);
-    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE  ); // Note that this will be ignored when `glfwSetWindowSize` is specified.
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE); // Note that this will be ignored when `glfwSetWindowSize` is specified.
 
-    g_ctx.window.handle = glfwCreateWindow(640, 480, "MiNiMo", nullptr, nullptr);
+    g_ctx.window.handle = glfwCreateWindow(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, "MiNiMo", nullptr, nullptr);
 
     if (!g_ctx.window.handle)
     {
@@ -1075,6 +1137,8 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     g_ctx.total_time.tic();
     g_ctx.frame_time.tic();
 
+    g_ctx.frame_number = 0;
+
     while (!glfwWindowShouldClose(g_ctx.window.handle))
     {
         g_ctx.keyboard.update_state_flags();
@@ -1118,6 +1182,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
                 break;
 
             default:;
+                break;
             }
 
             gleqFreeEvent(&event);
@@ -1148,9 +1213,14 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         bgfx::touch(0);
 
         // TODO : This needs to be done for all contexts across all threads.
-        t_ctx.transient_recorder.clear();
-        t_ctx.static_recorder   .clear();
-        t_ctx.draw_list         .clear();
+        // We don't clear on zero-th frame, since the user may have recorded
+        // something in the `setup` callback.
+        if (g_ctx.frame_number)
+        {
+            t_ctx.transient_recorder.clear();
+            t_ctx.static_recorder   .clear();
+            t_ctx.draw_list         .clear();
+        }
 
         if (draw)
         {
@@ -1161,6 +1231,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
         // TODO : This needs to be done for all contexts across all threads.
         {
+            //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache);
             /*if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
                 submit_transient_geometry(t_ctx.transient_recorder, t_ctx.transient_buffers, t_ctx.is_main_thread);
@@ -1173,6 +1244,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         }
 
         bgfx::frame();
+        g_ctx.frame_number++;
     }
 
     if (cleanup)
@@ -1408,15 +1480,14 @@ void end(void)
     mnm::t_ctx.is_recording = false;
 
     mnm::t_ctx.active_recorder->end();
+    mnm::t_ctx.active_recorder = nullptr;
 }
 
 void mesh(int id)
 {
     ASSERT(id > 0);
 
-    // TODO : Set other necessary state properties.
-
-    mnm::t_ctx.draw_list.submit_mesh(id);
+    mnm::t_ctx.draw_list.submit_mesh(id, mnm::t_ctx.model_matrix_stack.top());
 }
 
 
@@ -1522,6 +1593,16 @@ int task(void (* func)(void* data), void* data)
     }
 
     return task != nullptr;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MISCELLANEOUS
+// -----------------------------------------------------------------------------
+
+int frame(void)
+{
+    return static_cast<int>(mnm::g_ctx.frame_number);
 }
 
 

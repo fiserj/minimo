@@ -486,6 +486,17 @@ int task(void (* func)(void* data), void* data);
 
 
 // -----------------------------------------------------------------------------
+// MISCELLANEOUS
+// -----------------------------------------------------------------------------
+
+/// Returns the current frame number, starting with zero-th frame.
+///
+/// @returns Frame number.
+///
+int frame(void);
+
+
+// -----------------------------------------------------------------------------
 
 #ifdef __cplusplus
 }
