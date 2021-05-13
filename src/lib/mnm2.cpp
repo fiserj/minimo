@@ -384,7 +384,7 @@ public:
         ASSERT(attribs <  UINT8_MAX);
         ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
 
-        if (attribs < m_ids.size() && m_ids[attribs] != UINT8_MAX)
+        if (attribs < m_handles.size() && bgfx::isValid(m_handles[attribs]))
         {
             return;
         }
@@ -411,26 +411,47 @@ public:
 
         layout.end();
 
-        m_layouts.push_back(layout);
-        m_handles.push_back(bgfx::createVertexLayout(layout));
-
-        const size_t idx = m_handles.size() - 1;
-
-        if (attribs >= m_ids.size())
+        if (attribs >= m_layouts.size())
         {
-            m_ids.resize(attribs + 1, UINT8_MAX);
+            m_layouts.resize(attribs + 1);
+            m_handles.resize(attribs + 1, BGFX_INVALID_HANDLE);
         }
+
+        m_layouts[attribs] = layout;
+        m_handles[attribs] = bgfx::createVertexLayout(layout);
 
         return;
     }
 
-    inline bgfx::VertexLayoutHandle layout_handle(uint32_t attribs) const
+    void add_builtins()
+    {
+        add(0);
+
+        add(VERTEX_COLOR   );
+        add(VERTEX_NORMAL  );
+        add(VERTEX_TEXCOORD);
+
+        add(VERTEX_COLOR  | VERTEX_NORMAL  );
+        add(VERTEX_COLOR  | VERTEX_TEXCOORD);
+        add(VERTEX_NORMAL | VERTEX_TEXCOORD);
+
+        add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
+    }
+
+    inline const bgfx::VertexLayout& layout(uint32_t attribs) const
+       {
+        ASSERT(attribs < UINT8_MAX);
+        ASSERT(attribs < m_layouts.size());
+
+        return m_layouts[attribs];
+    }
+
+    inline bgfx::VertexLayoutHandle handle(uint32_t attribs) const
     {
         ASSERT(attribs < UINT8_MAX);
-        ASSERT(attribs < m_ids.size());
-        ASSERT(m_ids[attribs] != UINT8_MAX);
+        ASSERT(attribs < m_handles.size());
 
-        return m_handles[m_ids[attribs]];
+        return m_handles[attribs];
     }
 
     void clear()
@@ -445,7 +466,6 @@ public:
     }
 
 protected:
-    Vector<uint8_t>                  m_ids;
     Vector<bgfx::VertexLayout>       m_layouts;
     Vector<bgfx::VertexLayoutHandle> m_handles;
 };
@@ -484,13 +504,19 @@ public:
         m_buffer .clear();
     }
 
-    void begin(int user_id, uint32_t attribs)
+    void begin(int user_id, uint32_t attribs, uint32_t alias_padding)
     {
         ASSERT(!m_recording);
         ASSERT(attribs <  BX_COUNTOF(ms_push_func_table));
         ASSERT(ms_push_func_table[attribs]);
+        ASSERT(alias_padding <= 128);
 
         m_push_func = ms_push_func_table[attribs];
+
+        if (alias_padding)
+        {
+            m_buffer.resize(m_buffer.size() + alias_padding, 0);
+        }
 
         GeometryRecord record;
         record.user_id          = user_id;
@@ -544,6 +570,10 @@ public:
 
         bx::packRg16S(&m_attribs.texcoord, texcoord.Elements);
     }
+
+    inline const Vector<GeometryRecord>& records() const { return m_records; }
+
+    inline const Vector<uint8_t>& buffer() const { return m_buffer; }
 
 private:
     template <typename T>
@@ -631,6 +661,17 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 
     GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
 };
+
+// -----------------------------------------------------------------------------
+// GEOMETRY UPDATE
+// -----------------------------------------------------------------------------
+
+/*static void update_transient_geometry
+(
+    const GeometryRecorder&  t_ctx.transient_recorder, g_ctx.dummy_vertex_layout)
+{
+
+}*/
 
 
 // -----------------------------------------------------------------------------
@@ -1109,6 +1150,8 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
+    g_ctx.vertex_layout_cache.add_builtins();
+
     if (setup)
     {
         (*setup)();
@@ -1231,6 +1274,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
         // TODO : This needs to be done for all contexts across all threads.
         {
+            //update_transient_geometry(t_ctx.transient_recorder, g_ctx.dummy_vertex_layout);
             //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache);
             /*if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
@@ -1432,7 +1476,13 @@ double toc(void)
 // PUBLIC API IMPLEMENTATION - GEOMETRY
 // -----------------------------------------------------------------------------
 
-static void begin_recording(mnm::GeometryRecorder& recorder, int id, int attribs)
+static void begin_recording
+(
+    mnm::GeometryRecorder& recorder,
+    int                    id,
+    int                    attribs,
+    uint32_t               alias_padding = 0
+)
 {
     ASSERT(id > 0);
     ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
@@ -1441,12 +1491,16 @@ static void begin_recording(mnm::GeometryRecorder& recorder, int id, int attribs
     mnm::t_ctx.is_recording = true;
 
     mnm::t_ctx.active_recorder = &recorder;
-    mnm::t_ctx.active_recorder->begin(id, static_cast<uint32_t>(attribs));
+    mnm::t_ctx.active_recorder->begin(id, static_cast<uint32_t>(attribs), alias_padding);
 }
 
 void begin_transient(int id, int attribs)
 {
-    begin_recording(mnm::t_ctx.transient_recorder, id, attribs);
+    const uint32_t buffer_size   = static_cast<uint32_t>(mnm::t_ctx.transient_recorder.buffer().size());
+    const uint32_t layout_size   = mnm::g_ctx.vertex_layout_cache.layout(static_cast<uint32_t>(attribs)).getStride();
+    const uint32_t alias_padding = buffer_size % layout_size;
+
+    begin_recording(mnm::t_ctx.transient_recorder, id, attribs, alias_padding ? (layout_size - alias_padding) : 0);
 }
 
 void begin_static(int id, int attribs)
