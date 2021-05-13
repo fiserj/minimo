@@ -561,17 +561,17 @@ private:
     {
         size_t size = sizeof(Vec3);
 
-        if (!!(Attribs & VERTEX_COLOR))
+        if constexpr  (!!(Attribs & VERTEX_COLOR))
         {
             size += sizeof(VertexAttribs::color);
         }
 
-        if (!!(Attribs & VERTEX_NORMAL))
+        if constexpr  (!!(Attribs & VERTEX_NORMAL))
         {
             size += sizeof(VertexAttribs::normal);
         }
 
-        if (!!(Attribs & VERTEX_TEXCOORD))
+        if constexpr (!!(Attribs & VERTEX_TEXCOORD))
         {
             size += sizeof(VertexAttribs::texcoord);
         }
@@ -591,17 +591,17 @@ private:
 
         store_attrib(position, buffer);
 
-        if (!!(Attribs & VERTEX_COLOR))
+        if constexpr (!!(Attribs & VERTEX_COLOR))
         {
             store_attrib(recorder.m_attribs.color, buffer);
         }
 
-        if (!!(Attribs & VERTEX_NORMAL))
+        if constexpr (!!(Attribs & VERTEX_NORMAL))
         {
             store_attrib(recorder.m_attribs.normal, buffer);
         }
 
-        if (!!(Attribs & VERTEX_TEXCOORD))
+        if constexpr (!!(Attribs & VERTEX_TEXCOORD))
         {
             store_attrib(recorder.m_attribs.texcoord, buffer);
         }
