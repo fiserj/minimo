@@ -410,6 +410,7 @@ public:
         }
 
         layout.end();
+        ASSERT(layout.getStride() % 4 == 0);
 
         if (attribs >= m_layouts.size())
         {
@@ -666,12 +667,35 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 // GEOMETRY UPDATE
 // -----------------------------------------------------------------------------
 
-/*static void update_transient_geometry
+static bool update_transient_geometry
 (
-    const GeometryRecorder&  t_ctx.transient_recorder, g_ctx.dummy_vertex_layout)
+    const GeometryRecorder&      recorder,
+    const bgfx::VertexLayout&    dummy_vertex_layout,
+    bgfx::TransientVertexBuffer& out_vertex_buffer
+)
 {
+    if (recorder.buffer().size() % dummy_vertex_layout.getStride() != 0)
+    {
+        // TODO : If this happens regularly (it won't with built-in types, but
+        //        might when/if we add custom ones), we should just pad the buffer.
+        ASSERT(false && "Incompatible transient vertex buffer and vertex layout sizes.");
+        return false;
+    }
 
-}*/
+    const uint32_t dummy_vertex_count = static_cast<uint32_t>(recorder.buffer().size() / dummy_vertex_layout.getStride());
+
+    if (bgfx::getAvailTransientVertexBuffer(dummy_vertex_count, dummy_vertex_layout) < dummy_vertex_count)
+    {
+        ASSERT(false && "Unable to allocate requested number of transient vertices.");
+        return false;
+    }
+
+    bgfx::allocTransientVertexBuffer(&out_vertex_buffer, dummy_vertex_count, dummy_vertex_layout);
+
+    (void)memcpy(out_vertex_buffer.data, recorder.buffer().data(), recorder.buffer().size());
+
+    return true;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -1065,11 +1089,12 @@ struct GlobalContext
 
     ProgramCache        program_cache;
     VertexLayoutCache   vertex_layout_cache;
+    bgfx::VertexLayout  dummy_vertex_layout;
+
+    Window              window;
 
     Timer               total_time;
     Timer               frame_time;
-
-    Window              window;
 
     Atomic<uint32_t>    frame_number      = 0;
 
@@ -1079,23 +1104,24 @@ struct GlobalContext
 
 struct LocalContext
 {
-    GeometryRecorder  transient_recorder;
-    GeometryRecorder  static_recorder;
+    GeometryRecorder            transient_recorder;
+    GeometryRecorder            static_recorder;
 
-    DrawList          draw_list;
+    DrawList                    draw_list;
+    bgfx::TransientVertexBuffer transient_vertex_buffer;
 
-    MatrixStack       view_matrix_stack;
-    MatrixStack       proj_matrix_stack;
-    MatrixStack       model_matrix_stack;
+    MatrixStack                 view_matrix_stack;
+    MatrixStack                 proj_matrix_stack;
+    MatrixStack                 model_matrix_stack;
 
-    Timer             stop_watch;
-    Timer             frame_time;
+    Timer                       stop_watch;
+    Timer                       frame_time;
 
-    GeometryRecorder* active_recorder     = &transient_recorder;
-    MatrixStack*      active_matrix_stack = &model_matrix_stack;
+    GeometryRecorder*           active_recorder     = &transient_recorder;
+    MatrixStack*                active_matrix_stack = &model_matrix_stack;
 
-    bool              is_recording        = false;
-    bool              is_main_thread      = false;
+    bool                        is_recording        = false;
+    bool                        is_main_thread      = false;
 };
 
 static GlobalContext g_ctx;
@@ -1151,6 +1177,12 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
     g_ctx.vertex_layout_cache.add_builtins();
+
+    g_ctx.dummy_vertex_layout
+        .begin()
+        .add  (bgfx::Attrib::TexCoord7, 1, bgfx::AttribType::Float)
+        .end  ();
+    ASSERT(g_ctx.dummy_vertex_layout.getStride() % 4 == 0);
 
     if (setup)
     {
@@ -1274,7 +1306,11 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
         // TODO : This needs to be done for all contexts across all threads.
         {
-            //update_transient_geometry(t_ctx.transient_recorder, g_ctx.dummy_vertex_layout);
+            if (update_transient_geometry(t_ctx.transient_recorder, g_ctx.dummy_vertex_layout, t_ctx.transient_vertex_buffer))
+            {
+                // ...
+            }
+            // update_transient_geometry(t_ctx.transient_recorder, t_ctx.transient);
             //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache);
             /*if (update_transient_buffers(t_ctx.transient_recorder, g_ctx.layouts, t_ctx.transient_buffers))
             {
@@ -1496,11 +1532,13 @@ static void begin_recording
 
 void begin_transient(int id, int attribs)
 {
-    const uint32_t buffer_size   = static_cast<uint32_t>(mnm::t_ctx.transient_recorder.buffer().size());
-    const uint32_t layout_size   = mnm::g_ctx.vertex_layout_cache.layout(static_cast<uint32_t>(attribs)).getStride();
-    const uint32_t alias_padding = buffer_size % layout_size;
+    const uint32_t buffer_size = static_cast<uint32_t>(mnm::t_ctx.transient_recorder.buffer().size());
 
-    begin_recording(mnm::t_ctx.transient_recorder, id, attribs, alias_padding ? (layout_size - alias_padding) : 0);
+    const uint32_t layout_size = mnm::g_ctx.vertex_layout_cache.layout(static_cast<uint32_t>(attribs)).getStride();
+
+    const uint32_t alignment   = buffer_size % layout_size;
+
+    begin_recording(mnm::t_ctx.transient_recorder, id, attribs, alignment ? (layout_size - alignment) : 0);
 }
 
 void begin_static(int id, int attribs)
