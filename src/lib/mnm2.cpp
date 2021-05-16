@@ -2,7 +2,7 @@
 
 #include <assert.h>               // assert
 #include <stddef.h>               // size_t
-#include <stdint.h>               // *int*_t
+#include <stdint.h>               // *int*_t, UINT*_MAX
 #include <string.h>               // memcpy
 
 #include <algorithm>              // max, transform
@@ -50,11 +50,35 @@ namespace mnm
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-static constexpr int MIN_WINDOW_SIZE      = 240;
+enum
+{
+    MESH_INVALID   = 0,
+    MESH_TRANSIENT = 1,
+    MESH_STATIC    = 2,
+    MESH_DYNAMIC   = 3,
+};
 
-static constexpr int DEFAULT_WINDOW_WIDTH = 800;
+constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
-static constexpr int DEFAULT_WINDOW_HEIGHT= 600;
+constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD) << VERTEX_ATTRIB_SHIFT;
+
+constexpr uint32_t MESH_TYPE_SHIFT       = 3;
+
+constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC) << MESH_TYPE_SHIFT;
+
+constexpr uint32_t VERTEX_COUNT_SHIFT    = 8;
+
+constexpr uint32_t VERTEX_COUNT_MASK     = UINT32_MAX << VERTEX_COUNT_SHIFT;
+
+constexpr uint32_t MAX_MESHES            = 4096;
+
+constexpr uint32_t MAX_MESH_VERTICES     = VERTEX_COUNT_MASK >> VERTEX_COUNT_SHIFT;
+
+constexpr uint16_t MIN_WINDOW_SIZE       = 240;
+
+constexpr uint16_t DEFAULT_WINDOW_WIDTH  = 800;
+
+constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 
 // -----------------------------------------------------------------------------
@@ -104,6 +128,54 @@ extern bgfx::PlatformData create_platform_data
     GLFWwindow*              window,
     bgfx::RendererType::Enum renderer
 );
+
+
+// -----------------------------------------------------------------------------
+// ARRAY/HASH MAP
+// -----------------------------------------------------------------------------
+
+template <typename KeyT, typename T, T InvalidValue, uint32_t ArraySize>
+class ArrayHashMap
+{
+    static_assert(std::is_integral<KeyT>::value, "ArrayHashMap's key type must be integral.");
+
+public:
+    ArrayHashMap()
+    {
+        m_low.fill(InvalidValue);
+    }
+
+    inline void insert(KeyT key, const T& value)
+    {
+        if (static_cast<UnsignedKeyT>(key) < ArraySize)
+        {
+            m_low[static_cast<UnsignedKeyT>(key)] = value;
+        }
+        else
+        {
+            m_high.insert({ key, value });
+        }
+    }
+
+    inline void erase(KeyT key)
+    {
+        if (static_cast<UnsignedKeyT>(key) < ArraySize)
+        {
+            m_low[static_cast<UnsignedKeyT>(key)] = m_invalid_value;
+        }
+        else
+        {
+            m_high.erase(key);
+        }
+    }
+
+private:
+    using UnsignedKeyT = std::make_unsigned_t<KeyT>;
+
+protected:
+    Array<T, ArraySize> m_low;
+    HashMap<KeyT, T>    m_high;
+};
 
 
 // -----------------------------------------------------------------------------
@@ -193,17 +265,17 @@ constexpr bool is_pod()
 // DRAW SUBMISSION
 // -----------------------------------------------------------------------------
 
-enum : uint8_t
+/*enum : uint8_t
 {
     MESH_STATE_TRANSIENT = 0x00,
     MESH_STATE_STATIC    = 0x01,
-};
+};*/
 
 // TODO : Many members (if not all) can use smaller types.
 struct DrawItem
 {
     Mat4                     transform; // TODO : Maybe this could be cached like it is in BGFX?
-    int                      user_mesh_id  = 0;
+    uint16_t                 mesh          = 0;
     bgfx::ViewId             pass_id       = 0;
     bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      texture       = BGFX_INVALID_HANDLE;
@@ -220,10 +292,10 @@ public:
         m_state = {};
     }
 
-    void submit_mesh(int id, const Mat4& transform)
+    void submit_mesh(uint16_t mesh, const Mat4& transform)
     {
-        m_state.user_mesh_id = id;
-        m_state.transform    = transform;
+        m_state.mesh      = mesh;
+        m_state.transform = transform;
 
         m_items.push_back(m_state);
         m_state = {};
@@ -236,44 +308,6 @@ public:
 private:
     DrawItem         m_state;
     Vector<DrawItem> m_items;
-};
-
-
-// -----------------------------------------------------------------------------
-// MESH INFO CACHE
-// -----------------------------------------------------------------------------
-
-template <typename KeyT, typename T, uint32_t ArraySize>
-class ArrayHashMap
-{
-    static_assert(std::is_integral<KeyT>::value, "ArrayHashMap's key type must be integral.");
-
-public:
-    ArrayHashMap(const T& invalid_value)
-        : m_invalid_value(invalid_value)
-    {
-        m_low.fill(m_invalid_value);
-    }
-
-    inline void insert(KeyT key, const T& value)
-    {
-        if (static_cast<UnsignedKeyT>(key) < ArraySize)
-        {
-            m_low[static_cast<UnsignedKeyT>(key)] = value;
-        }
-        else
-        {
-            m_high.insert({ key, value });
-        }
-    }
-
-private:
-    using UnsignedKeyT = std::make_unsigned_t<KeyT>;
-
-private:
-    Array<T, ArraySize> m_low;
-    HashMap<KeyT, T>    m_high;
-    T                   m_invalid_value;
 };
 
 
@@ -311,7 +345,7 @@ public:
         if (attribs != UINT32_MAX)
         {
             ASSERT(attribs <  UINT8_MAX);
-            ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+            ASSERT(attribs == (attribs & VERTEX_ATTRIB_MASK));
 
             if (attribs >= m_attribs_to_ids.size())
             {
@@ -381,8 +415,7 @@ class VertexLayoutCache
 public:
     void add(uint32_t attribs)
     {
-        ASSERT(attribs <  UINT8_MAX);
-        ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+        ASSERT(attribs == (attribs & (mnm::VERTEX_ATTRIB_MASK >> mnm::VERTEX_ATTRIB_SHIFT)));
 
         if (attribs < m_handles.size() && bgfx::isValid(m_handles[attribs]))
         {
@@ -440,17 +473,17 @@ public:
     }
 
     inline const bgfx::VertexLayout& layout(uint32_t attribs) const
-       {
-        ASSERT(attribs < UINT8_MAX);
-        ASSERT(attribs < m_layouts.size());
+    {
+        ASSERT(attribs == (attribs & (mnm::VERTEX_ATTRIB_MASK >> mnm::VERTEX_ATTRIB_SHIFT)));
+        ASSERT(attribs <  m_layouts.size());
 
         return m_layouts[attribs];
     }
 
     inline bgfx::VertexLayoutHandle handle(uint32_t attribs) const
     {
-        ASSERT(attribs < UINT8_MAX);
-        ASSERT(attribs < m_handles.size());
+        ASSERT(attribs == (attribs & (mnm::VERTEX_ATTRIB_MASK >> mnm::VERTEX_ATTRIB_SHIFT)));
+        ASSERT(attribs < m_layouts.size());
 
         return m_handles[attribs];
     }
@@ -485,11 +518,19 @@ struct VertexAttribs
 
 struct GeometryRecord
 {
-    int      user_id;
-    uint32_t attribs;
+    uint16_t user_id;
+    uint16_t attribs;
     uint32_t byte_offset;
     uint32_t byte_length;
 };
+
+static inline uint32_t vertex_count(const GeometryRecord& record, const VertexLayoutCache& vertex_layout_cache)
+{
+    const uint16_t stride = vertex_layout_cache.layout((record.attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT).getStride();
+    ASSERT(record.byte_length % stride == 0);
+
+    return record.byte_length / stride;
+}
 
 class GeometryRecorder
 {
@@ -505,14 +546,13 @@ public:
         m_buffer .clear();
     }
 
-    void begin(int user_id, uint32_t attribs, uint32_t alias_padding)
+    void begin(int user_id, uint16_t attribs, uint32_t alias_padding)
     {
         ASSERT(!m_recording);
-        ASSERT(attribs <  BX_COUNTOF(ms_push_func_table));
-        ASSERT(ms_push_func_table[attribs]);
+        ASSERT(ms_push_func_table[attribs & VERTEX_ATTRIB_MASK]);
         ASSERT(alias_padding <= 128);
 
-        m_push_func = ms_push_func_table[attribs];
+        m_push_func = ms_push_func_table[attribs & VERTEX_ATTRIB_MASK];
 
         if (alias_padding)
         {
@@ -662,6 +702,155 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 
     GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
 };
+
+
+// -----------------------------------------------------------------------------
+// MESH CACHE
+// -----------------------------------------------------------------------------
+
+struct StaticMesh
+{
+    bgfx::VertexBufferHandle vertices;
+    bgfx::IndexBufferHandle  indices;
+};
+
+struct DynamicMesh
+{
+    bgfx::DynamicVertexBufferHandle vertices;
+    bgfx::DynamicIndexBufferHandle  indices;
+};
+
+// TODO : Merge flags as 8-bit and vertex count as 24-bit.
+struct Mesh
+{
+    // MSB to LSB:
+    // 24 bits - Element count (vertex or index).
+    //  3 bits - Currently unused.
+    //  2 bits - Mesh type.
+    //  3 bits - Vertex attribute flags.
+    uint32_t        attribs = 0;
+
+    union
+    {
+        StaticMesh  static_data;
+        DynamicMesh dynamic_data; // TODO : Add support for it.
+    };
+};
+
+class MeshCache
+{
+public:
+    MeshCache()
+    {
+        // Can't do this via `Mesh` default values, because of the union.
+        for (Mesh& mesh : m_meshes)
+        {
+            mesh.static_data.vertices = BGFX_INVALID_HANDLE;
+            mesh.static_data.indices  = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void add_from_record(const GeometryRecord& record, uint32_t vertex_count)
+    {
+        // TODO : If failed, the folowing checks should be reflected in
+        //        the program behavior (crash / report / ...).
+
+        if (record.user_id >= m_meshes.size())
+        {
+            ASSERT(false && "Mesh ID out of available range.");
+            return;
+        }
+
+        if (vertex_count > MAX_MESH_VERTICES)
+        {
+            ASSERT(false && "Too many mesh vertices.");
+            return;
+        }
+
+        MutexScope lock(m_mutex);
+
+        Mesh& mesh = m_meshes[record.user_id];
+
+        const uint32_t old_type = (mesh  .attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT;
+        const uint32_t new_type = (record.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT;
+
+        if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
+        {
+            m_destroyed_meshes.push_back(mesh);
+        }
+
+        if (new_type == MESH_TRANSIENT)
+        {
+            m_transient_meshes.push_back(record.user_id);
+        }
+
+        mesh.attribs = (vertex_count << VERTEX_COUNT_SHIFT) | record.attribs;
+    }
+
+    void clear()
+    {
+        destroy_mesh_buffers(m_meshes.data(), m_meshes.size());
+    }
+
+    void clear_transient_meshes()
+    {
+        for (uint16_t idx : m_transient_meshes)
+        {
+            m_meshes[idx] = {};
+        }
+
+        m_transient_meshes.clear();
+    }
+
+    void remove_destroyed_meshes()
+    {
+        if (!m_destroyed_meshes.empty())
+        {
+            destroy_mesh_buffers(m_destroyed_meshes.data(), m_destroyed_meshes.size());
+            m_destroyed_meshes.clear();
+        }
+    }
+
+    inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
+
+    inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
+
+private:
+    void destroy_mesh_buffers(Mesh* meshes, size_t count)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            Mesh& mesh = meshes[i];
+
+            switch ((mesh.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)
+            {
+            case MESH_INVALID:
+            case MESH_TRANSIENT:
+                break;
+            case MESH_STATIC:
+                destroy_if_valid(mesh.static_data.vertices);
+                destroy_if_valid(mesh.static_data.indices );
+                break;
+            case MESH_DYNAMIC:
+                destroy_if_valid(mesh.dynamic_data.vertices);
+                destroy_if_valid(mesh.dynamic_data.indices );
+                break;
+            default:
+                ASSERT(false && "Invalid mesh type flags.");
+                break;
+            }
+
+            mesh.attribs = 0;
+        }
+    }
+
+private:
+    Mutex                   m_mutex;
+    Array<Mesh, MAX_MESHES> m_meshes;
+    Vector<Mesh>            m_destroyed_meshes;
+    Vector<uint16_t>        m_transient_meshes;
+};
+
 
 // -----------------------------------------------------------------------------
 // GEOMETRY UPDATE
@@ -1087,6 +1276,7 @@ struct GlobalContext
     enki::TaskScheduler task_scheduler;
     TaskPool            task_pool;
 
+    MeshCache           mesh_cache;
     ProgramCache        program_cache;
     VertexLayoutCache   vertex_layout_cache;
     bgfx::VertexLayout  dummy_vertex_layout;
@@ -1297,18 +1487,29 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
             t_ctx.draw_list         .clear();
         }
 
+        // TODO : Add some sort of sync mechanism for the tasks that intend to
+        //        submit primitives for rendering in a given frame.
+
         if (draw)
         {
             (*draw)();
         }
 
+        // TODO : Add some sort of sync mechanism for the tasks that intend to
+        //        submit primitives for rendering in a given frame.
+
         bgfx::setViewTransform(0, &t_ctx.view_matrix_stack.top(), &t_ctx.proj_matrix_stack.top());
+
+        if (t_ctx.is_main_thread)
+        {
+            g_ctx.mesh_cache.remove_destroyed_meshes();
+        }
 
         // TODO : This needs to be done for all contexts across all threads.
         {
             if (update_transient_geometry(t_ctx.transient_recorder, g_ctx.dummy_vertex_layout, t_ctx.transient_vertex_buffer))
             {
-                // ...
+                //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache, t_ctx.transient_vertex_buffer);
             }
             // update_transient_geometry(t_ctx.transient_recorder, t_ctx.transient);
             //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache);
@@ -1323,6 +1524,11 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
             }*/
         }
 
+        if (t_ctx.is_main_thread)
+        {
+            g_ctx.mesh_cache.clear_transient_meshes();
+        }
+
         bgfx::frame();
         g_ctx.frame_number++;
     }
@@ -1335,7 +1541,8 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     g_ctx.task_scheduler.WaitforAllAndShutdown();
 
     // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
-    //bgfx::destroy(g_ctx.default_program);
+    g_ctx.vertex_layout_cache.clear();
+    g_ctx.mesh_cache         .clear();
 
     bgfx::shutdown();
 
@@ -1520,8 +1727,8 @@ static void begin_recording
     uint32_t               alias_padding = 0
 )
 {
-    ASSERT(id > 0);
-    ASSERT(attribs == (attribs & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)));
+    ASSERT(id > 0 && id < mnm::MAX_MESHES);
+    //ASSERT(attribs == (attribs & mnm::VERTEX_ATTRIB_MASK));
 
     ASSERT(!mnm::t_ctx.is_recording);
     mnm::t_ctx.is_recording = true;
@@ -1538,31 +1745,39 @@ void begin_transient(int id, int attribs)
 
     const uint32_t alignment   = buffer_size % layout_size;
 
+    attribs |= mnm::MESH_TRANSIENT << mnm::MESH_TYPE_SHIFT;
+
     begin_recording(mnm::t_ctx.transient_recorder, id, attribs, alignment ? (layout_size - alignment) : 0);
 }
 
 void begin_static(int id, int attribs)
 {
+    attribs |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
+
     begin_recording(mnm::t_ctx.static_recorder, id, attribs);
 }
 
 void vertex(float x, float y, float z)
 {
+    ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.active_recorder->vertex((mnm::t_ctx.model_matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
 }
 
 void color(unsigned int rgba)
 {
+    ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.active_recorder->color(rgba);
 }
 
 void normal(float nx, float ny, float nz)
 {
+    ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.active_recorder->normal(HMM_Vec3(nx, ny, nz));
 }
 
 void texcoord(float u, float v)
 {
+    ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.active_recorder->texcoord(HMM_Vec2(u, v));
 }
 
@@ -1571,6 +1786,11 @@ void end(void)
     ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.is_recording = false;
 
+    const mnm::GeometryRecord& record       = mnm::t_ctx.active_recorder->records().back();
+    const uint32_t             vertex_count = mnm::vertex_count(record, mnm::g_ctx.vertex_layout_cache);
+
+    mnm::g_ctx.mesh_cache.add_from_record(record, vertex_count);
+
     mnm::t_ctx.active_recorder->end();
     mnm::t_ctx.active_recorder = nullptr;
 }
@@ -1578,8 +1798,9 @@ void end(void)
 void mesh(int id)
 {
     ASSERT(id > 0);
+    ASSERT(!mnm::t_ctx.is_recording);
 
-    mnm::t_ctx.draw_list.submit_mesh(id, mnm::t_ctx.model_matrix_stack.top());
+    mnm::t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), mnm::t_ctx.model_matrix_stack.top());
 }
 
 

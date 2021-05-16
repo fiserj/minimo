@@ -248,6 +248,8 @@ void begin_transient(int id, int attribs);
 
 void begin_static(int id, int attribs);
 
+void begin_dynamic(int id, int attribs);
+
 /// Starts immediate geometry building mode. Only supported primitive is
 /// triangles. Only vertex attributes specified in the `attribs` parameter are
 /// recorded. Vertex position is always recorded.
