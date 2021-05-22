@@ -1,7 +1,7 @@
 #include <mnm/mnm.h>
 
 #include <assert.h>               // assert
-#include <stddef.h>               // size_t
+#include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
 #include <string.h>               // memcpy
 
@@ -71,13 +71,9 @@ constexpr uint32_t MESH_TYPE_SHIFT       = 3;
 
 constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC) << MESH_TYPE_SHIFT;
 
-constexpr uint32_t VERTEX_COUNT_SHIFT    = 8;
-
-constexpr uint32_t VERTEX_COUNT_MASK     = UINT32_MAX << VERTEX_COUNT_SHIFT;
-
 constexpr uint32_t MAX_MESHES            = 4096;
 
-constexpr uint32_t MAX_MESH_VERTICES     = VERTEX_COUNT_MASK >> VERTEX_COUNT_SHIFT;
+constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
 
@@ -136,21 +132,6 @@ extern bgfx::PlatformData create_platform_data
 
 
 // -----------------------------------------------------------------------------
-// VECTOR EXTENSION
-// -----------------------------------------------------------------------------
-
-/*template <typename T>
-class Vector : public std::vector<T>
-{
-public:
-    inline size_t byte_size() const
-    {
-        return size() * sizeof(T);
-    }
-};*/
-
-
-// -----------------------------------------------------------------------------
 // STACK VARIANTS
 // -----------------------------------------------------------------------------
 
@@ -201,37 +182,6 @@ public:
         m_top = matrix * m_top;
     }
 };
-
-
-// -----------------------------------------------------------------------------
-// INDIRECT ARRAY
-// -----------------------------------------------------------------------------
-
-// Immutable, assumes data is never removed.
-// template <typename T, typename IndexT = uint16_t>
-// class IndirectArray
-// {
-// public:
-//     IndexT add(const T& value)
-//     {
-//         const IndexT index = static_cast<IndexT>(m_elements.size()); 
-//         m_indices.push_back();
-//     }
-
-//     const T& get(IndexT index) const
-//     {
-//         ASSERT(index < m_indices.size());
-//         return m_elements[m_indices[index]];
-//     }
-
-// private:
-//     constexpr IndexT INVALID_INDEX = -1;
-
-// protected:
-//     Vector<T>      m_elements;
-//     Vector<IndexT> m_indices;
-// };
-
 
 
 // -----------------------------------------------------------------------------
@@ -316,6 +266,7 @@ private:
 class ProgramCache
 {
 public:
+    // NOTE : attribs here aren't shifted!
     uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
     {
         if (m_handles.size() >= UINT8_MAX)
@@ -342,8 +293,8 @@ public:
 
         if (attribs != UINT32_MAX)
         {
+            ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
             ASSERT(attribs <  UINT8_MAX);
-            ASSERT(attribs == (attribs & VERTEX_ATTRIB_MASK));
 
             if (attribs >= m_attribs_to_ids.size())
             {
@@ -389,9 +340,10 @@ public:
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle program_handle_from_attribs(uint32_t attribs) const
+    inline bgfx::ProgramHandle program_handle_from_flags(uint32_t flags) const
     {
-        ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
+        const uint32_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+
         ASSERT(attribs < m_attribs_to_ids.size());
         ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
 
@@ -413,9 +365,7 @@ class VertexLayoutCache
 public:
     void add(uint32_t attribs)
     {
-        // ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
-
-        attribs = (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT));
+        attribs = (attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
 
         if (attribs < m_handles.size() && bgfx::isValid(m_handles[attribs]))
         {
@@ -474,26 +424,16 @@ public:
 
     inline const bgfx::VertexLayout& layout(uint32_t attribs) const
     {
-        // ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
-        // ASSERT(attribs <  m_layouts.size());
+        ASSERT(((attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) < m_layouts.size());
 
-        // return m_layouts[attribs];
-
-        ASSERT((attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)) < m_layouts.size());
-
-        return m_layouts[(attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT))];
+        return m_layouts[((attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT)];
     }
 
     inline bgfx::VertexLayoutHandle handle(uint32_t attribs) const
     {
-        // ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
-        // ASSERT(attribs < m_layouts.size());
+        ASSERT(((attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) < m_handles.size());
 
-        // return m_handles[attribs];
-
-        ASSERT((attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)) < m_handles.size());
-
-        return m_handles[(attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT))];
+        return m_handles[((attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT)];
     }
 
     void clear()
@@ -527,7 +467,7 @@ struct VertexAttribs
 struct GeometryRecord
 {
     uint16_t user_id;
-    uint16_t attribs;
+    uint16_t attribs; // TODO : Rename to `flags` since it encodes more than active vertex attributes and will be consistent with `Mesh::flags`.
     uint32_t attribs_byte_offset;
     uint32_t position_byte_offset;
     uint32_t vertex_count;
@@ -776,12 +716,13 @@ struct DynamicMesh
 // TODO : Merge flags as 8-bit and vertex count as 24-bit.
 struct Mesh
 {
+    uint32_t        element_count = 0;
+
     // MSB to LSB:
-    // 24 bits - Element count (vertex or index).
-    //  3 bits - Currently unused.
+    // 11 bits - Currently unused.
     //  2 bits - Mesh type.
-    //  3 bits - Vertex attribute flags.
-    uint32_t        attribs = 0;
+    //  3 bits - Active vertex attributes.
+    uint16_t        flags         = 0;
 
     union
     {
@@ -817,12 +758,6 @@ public:
             return;
         }
 
-        if (record.vertex_count > MAX_MESH_VERTICES)
-        {
-            ASSERT(false && "Too many mesh vertices.");
-            return;
-        }
-
         // TODO : Perhaps we could only lock when writing the buffer handles,
         //        since creating a mesh with the same ID from multiple threads
         //        is just silly in the first place.
@@ -831,7 +766,7 @@ public:
         Mesh& mesh = m_meshes[record.user_id];
 
         // TODO : We should also check that vertex attributes didn't change.
-        const MeshType old_type = static_cast<MeshType>((mesh  .attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+        const MeshType old_type = static_cast<MeshType>((mesh  .flags   & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
         const MeshType new_type = static_cast<MeshType>((record.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
 
         if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
@@ -840,20 +775,21 @@ public:
             destroy_mesh_buffers(&mesh, 1);
         }
 
+        mesh.flags = record.attribs;
+
         switch (new_type)
         {
         case MESH_TRANSIENT:
+            mesh.element_count = record.vertex_count;
             m_transient_meshes_indices.push_back(record.user_id);
             break;
         case MESH_STATIC:
         case MESH_DYNAMIC:
-            create_mesh_buffers(mesh, recorder, record, vertex_layout_cache, new_type == MESH_DYNAMIC);
+            mesh.element_count = create_mesh_buffers(mesh, recorder, record, vertex_layout_cache, new_type == MESH_DYNAMIC);
             break;
         default:
             break;
         }
-
-        mesh.attribs = (record.vertex_count << VERTEX_COUNT_SHIFT) | record.attribs;
     }
 
     void clear()
@@ -876,7 +812,7 @@ public:
     inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
 
 private:
-    void create_mesh_buffers
+    uint32_t create_mesh_buffers
     (
         Mesh&                    mesh,
         const GeometryRecorder&  recorder,
@@ -904,6 +840,7 @@ private:
             vertex_streams,
             BX_COUNTOF(vertex_streams)
         );
+        ASSERT(indexed_vertex_count < UINT32_MAX);
 
         uint16_t index_buffer_flags = BGFX_BUFFER_NONE;
         uint32_t index_type_size    = sizeof(uint16_t);
@@ -984,6 +921,8 @@ private:
         ASSERT(bgfx::isValid(mesh.static_data.positions));
         ASSERT(bgfx::isValid(mesh.static_data.attribs  ) || !attribs);
         ASSERT(bgfx::isValid(mesh.static_data.indices  ));
+
+        return static_cast<uint32_t>(indexed_vertex_count);
     }
 
     void destroy_mesh_buffers(Mesh* meshes, size_t count)
@@ -992,7 +931,7 @@ private:
         {
             Mesh& mesh = meshes[i];
 
-            switch ((mesh.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)
+            switch ((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)
             {
             case MESH_INVALID:
             case MESH_TRANSIENT:
@@ -1012,7 +951,7 @@ private:
                 break;
             }
 
-            mesh.attribs = 0;
+            mesh.flags = 0;
         }
     }
 
@@ -1081,10 +1020,8 @@ static void submit_draw_list
 
     for (const DrawItem& item : draw_list.items())
     {
-        const Mesh     mesh         = mesh_cache.mesh(item.mesh); // `Mesh` is tiny (8 bytes), so no reference. 
-
-        const MeshType mesh_type    = static_cast<MeshType>((mesh.attribs & MESH_TYPE_MASK   ) >> MESH_TYPE_SHIFT   );
-        const uint32_t vertex_count = static_cast<uint32_t>((mesh.attribs & VERTEX_COUNT_MASK) >> VERTEX_COUNT_SHIFT);
+        const Mesh     mesh      = mesh_cache.mesh(item.mesh); // `Mesh` is tiny (12 bytes), so no reference. 
+        const MeshType mesh_type = static_cast<MeshType>((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
 
         switch (mesh_type)
         {
@@ -1426,37 +1363,31 @@ struct Task : enki::ITaskSet
     void ExecuteRange(enki::TaskSetPartition, uint32_t) override;
 };
 
-struct TaskPool
+class TaskPool
 {
-    static constexpr int MAX_TASKS = 64;
-
-    Mutex mutex;
-    Task  tasks[MAX_TASKS];
-    int   nexts[MAX_TASKS];
-    int   head = 0;
-
+public:
     TaskPool()
     {
-        for (int i = 0; i < MAX_TASKS; i++)
+        for (uint8_t i = 0; i < MAX_TASKS; i++)
         {
-            tasks[i].pool = this;
-            nexts[i]      = i + 1;
+            m_tasks[i].pool = this;
+            m_nexts[i]      = i + 1;
         }
     }
 
     Task* get_free_task()
     {
-        MutexScope lock(mutex);
+        MutexScope lock(m_mutex);
 
         Task* task = nullptr;
 
-        if (head < MAX_TASKS)
+        if (m_head < MAX_TASKS)
         {
-            const int i = head;
+            const uint32_t i = m_head;
 
-            task     = &tasks[i];
-            head     =  nexts[i];
-            nexts[i] = MAX_TASKS;
+            task       = &m_tasks[i];
+            m_head     =  m_nexts[i];
+            m_nexts[i] = MAX_TASKS;
         }
 
         return task;
@@ -1465,17 +1396,25 @@ struct TaskPool
     void release_task(const Task* task)
     {
         ASSERT(task);
-        ASSERT(task >= &tasks[0] && task <= &tasks[MAX_TASKS - 1]);
+        ASSERT(task >= &m_tasks[0] && task <= &m_tasks[MAX_TASKS - 1]);
 
-        MutexScope lock(mutex);
+        MutexScope lock(m_mutex);
 
-        const int i = static_cast<int>(task - &tasks[0]);
+        const ptrdiff_t i = task - &m_tasks[0];
 
-        tasks[i].func = nullptr;
-        tasks[i].data = nullptr;
-        nexts[i]      = head;
-        head          = i;
+        m_tasks[i].func = nullptr;
+        m_tasks[i].data = nullptr;
+        m_nexts[i]      = m_head;
+        m_head          = static_cast<uint8_t>(i);
     }
+
+private:
+    Mutex   m_mutex;
+    Task    m_tasks[MAX_TASKS];
+    uint8_t m_nexts[MAX_TASKS];
+    uint8_t m_head = 0;
+
+    static_assert(MAX_TASKS <= UINT8_MAX, "MAX_TASKS too big, change the type.");
 };
 
 void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
@@ -1707,7 +1646,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         {
             // TODO : This needs to be done for all contexts across all threads.
             t_ctx.transient_recorder.clear();
-            t_ctx.static_recorder   .clear();
+            // t_ctx.static_recorder   .clear();
             t_ctx.draw_list         .clear();
         }
 
@@ -2008,19 +1947,8 @@ void end(void)
     ASSERT(mnm::t_ctx.is_recording);
     mnm::t_ctx.is_recording = false;
 
-    // const mnm::GeometryRecord& record         = mnm::t_ctx.active_recorder->records().back();
-    // const uint32_t             vertex_attribs = (record.attribs & mnm::VERTEX_ATTRIB_MASK) >> mnm::VERTEX_ATTRIB_SHIFT;
-    // const uint16_t             vertex_size    = mnm::g_ctx.vertex_layout_cache.layout(vertex_attribs).getStride();
-
-    //ASSERT(record.byte_length % vertex_size == 0);
-
     ASSERT(mnm::t_ctx.active_recorder);
-    mnm::g_ctx.mesh_cache.add_from_last_record(*mnm::t_ctx.active_recorder, mnm::g_ctx.vertex_layout_cache
-        // // record,
-        // {}, //mnm::t_ctx.active_recorder->buffer(),
-        // record.vertex_count,
-        // mnm::g_ctx.vertex_layout_cache.layout(vertex_attribs)
-    );
+    mnm::g_ctx.mesh_cache.add_from_last_record(*mnm::t_ctx.active_recorder, mnm::g_ctx.vertex_layout_cache);
 
     mnm::t_ctx.active_recorder->end();
     mnm::t_ctx.active_recorder = nullptr;
@@ -2031,7 +1959,8 @@ void mesh(int id)
     ASSERT(id > 0 && id < mnm::MAX_MESHES);
     ASSERT(!mnm::t_ctx.is_recording);
 
-    // TODO : This "split data filling" is silly.
+    // TODO : This "split data filling" is silly, it should be done either fully
+    //        here or in the draw list.
     mnm::DrawItem& state = mnm::t_ctx.draw_list.state();
 
     if (state.pass == UINT16_MAX)
@@ -2042,8 +1971,8 @@ void mesh(int id)
 
     if (!bgfx::isValid(state.program))
     {
-        state.program = mnm::g_ctx.program_cache.program_handle_from_attribs(
-            mnm::g_ctx.mesh_cache.mesh(static_cast<uint16_t>(id)).attribs & (mnm::VERTEX_ATTRIB_MASK >> mnm::VERTEX_ATTRIB_SHIFT)
+        state.program = mnm::g_ctx.program_cache.program_handle_from_flags(
+            mnm::g_ctx.mesh_cache.mesh(static_cast<uint16_t>(id)).flags
         );
     }
 
