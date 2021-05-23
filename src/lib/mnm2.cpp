@@ -696,55 +696,218 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 
 
 // -----------------------------------------------------------------------------
+// GPU BUFFER MANIPULATION
+// -----------------------------------------------------------------------------
+
+enum BufferType : uint16_t
+{
+    STATIC_VERTEX_BUFFER,
+    STATIC_INDEX_BUFFER,
+    DYNAMIC_VERTEX_BUFFER,
+    DYNAMIC_INDEX_BUFFER,
+};
+
+template <typename HandleT>
+struct BufferTypeEnum;
+
+template <> struct BufferTypeEnum<bgfx::VertexBufferHandle       > { static constexpr BufferType VALUE = BufferType::STATIC_VERTEX_BUFFER ; };
+template <> struct BufferTypeEnum<bgfx::IndexBufferHandle        > { static constexpr BufferType VALUE = BufferType::STATIC_INDEX_BUFFER  ; };
+template <> struct BufferTypeEnum<bgfx::DynamicVertexBufferHandle> { static constexpr BufferType VALUE = BufferType::DYNAMIC_VERTEX_BUFFER; };
+template <> struct BufferTypeEnum<bgfx::DynamicIndexBufferHandle > { static constexpr BufferType VALUE = BufferType::DYNAMIC_INDEX_BUFFER ; };
+
+
+class BufferDeletionQueue
+{
+public:
+    void execute()
+    {
+        for (Record record : m_records)
+        {
+            switch (record.type)
+            {
+            case Record::STATIC_VERTEX_BUFFER:
+                bgfx::destroy(record.static_vertex_buffer);
+                break;
+            case Record::STATIC_INDEX_BUFFER:
+                bgfx::destroy(record.static_index_buffer);
+                break;
+            case Record::DYNAMIC_VERTEX_BUFFER:
+                bgfx::destroy(record.dynamic_vertex_buffer);
+                break;
+            case Record::DYNAMIC_INDEX_BUFFER:
+                bgfx::destroy(record.dynamic_index_buffer);
+                break;
+            }
+        }
+
+        m_records.clear();
+    }
+
+    template <typename HandleT>
+    inline void enqueue(HandleT handle)
+    {
+        ASSERT(bgfx::isValid(handle));
+
+        Record record;
+        record.type = BufferType<HandleT>::VALUE;
+        record.handle_index = handle.idx;
+
+        m_records.push_back();
+    }
+
+    template <typename HandleT>
+    inline void enqueue_if_valid(HandleT handle)
+    {
+        if (bgfx::isValid(handle))
+        {
+            enqueue(handle);
+        }
+    }
+
+private:
+    struct Record
+    {
+        BufferType                          type;
+
+        union
+        {
+            uint16_t                        handle_index;
+            bgfx::VertexBufferHandle        static_vertex_buffer;
+            bgfx::IndexBufferHandle         static_index_buffer;
+            bgfx::DynamicVertexBufferHandle dynamic_vertex_buffer;
+            bgfx::DynamicIndexBufferHandle  dynamic_index_buffer;
+        };
+    };
+
+private:
+    Vector<Record> m_records;
+};
+
+
+// -----------------------------------------------------------------------------
+
+
+// -----------------------------------------------------------------------------
 // MESH CACHE
 // -----------------------------------------------------------------------------
 
-struct StaticMesh
-{
-    bgfx::VertexBufferHandle positions;
-    bgfx::VertexBufferHandle attribs;
-    bgfx::IndexBufferHandle  indices;
-};
+// union VertexBuffer
+// {
+//     bgfx::VertexBufferHandle 
+// };
 
-struct DynamicMesh
-{
-    bgfx::DynamicVertexBufferHandle positions;
-    bgfx::DynamicVertexBufferHandle attribs;
-    bgfx::DynamicIndexBufferHandle  indices;
-};
+// struct StaticData
+// {
+//     bgfx::VertexBufferHandle positions;
+//     bgfx::VertexBufferHandle attribs;
+//     bgfx::IndexBufferHandle  indices;
+// };
+
+// struct DynamicData
+// {
+//     bgfx::DynamicVertexBufferHandle positions;
+//     bgfx::DynamicVertexBufferHandle attribs;
+//     bgfx::DynamicIndexBufferHandle  indices;
+// };
+
+// struct TransientData
+// {
+//     uint16_t record; // TODO : This should ideally be uint32_t, but that unfortunately adds 4 bytes to `Mesh` size (probably due to the union's alignment);
+// };
+
+// struct TransientBufferes
+// {
+//     bgfx::TransientVertexBuffer positions;
+//     bgfx::TransientVertexBuffer attribs;
+// };
+
+// struct VertexBufferUnion
+// {
+//     union
+//     {
+//         bgfx::VertexBufferHandle        static_buffer;
+//         bgfx::DynamicVertexBufferHandle dynamic_buffer;
+//     }
+// };
+
+// struct IndexBufferUnion
+// {
+//     union
+//     {
+//         bgfx::IndexBufferHandle        static_buffer;
+//         bgfx::DynamicIndexBufferHandle dynamic_buffer;
+//     }
+// };
 
 // TODO : Merge flags as 8-bit and vertex count as 24-bit.
 struct Mesh
 {
-    uint32_t        element_count = 0;
+    uint32_t                  element_count = 0;
 
-    // MSB to LSB:
-    // 11 bits - Currently unused.
-    //  2 bits - Mesh type.
-    //  3 bits - Active vertex attributes.
-    uint16_t        flags         = 0;
+    // // MSB to LSB:
+    // // 11 bits - Currently unused.
+    // //  2 bits - Mesh type.
+    // //  3 bits - Active vertex attributes.
+    uint16_t                  flags = 0;
 
     union
     {
-        StaticMesh  static_data;
-        DynamicMesh dynamic_data;
+        struct
+        {
+            VertexBufferUnion positions;
+            VertexBufferUnion attribs;
+            IndexBufferUnion  indices;
+        };
+
+        uint32_t              record_idx;
     };
+
+    // union
+    // {
+    //     bgfx::IndexBufferHandle        static_indices = BGFX_INVALID_HANDLE;
+    //     bgfx::DynamicIndexBufferHandle dynamic_indices;
+    // };
+
+    // union
+    // {
+    //     struct
+    //     {
+    //         union
+    //         {
+    //             bgfx::VertexBufferHandle        static_positions = BGFX_INVALID_HANDLE;
+    //             bgfx::DynamicVertexBufferHandle dynamic_positions;
+    //         };
+
+    //         union
+    //         {
+    //             bgfx::VertexBufferHandle        static_attribs = BGFX_INVALID_HANDLE;
+    //             bgfx::DynamicVertexBufferHandle dynamic_attribs;
+    //         };
+    //     };
+
+    //     uint32_t      record_index;
+    // };
+};
+
+
+class MeshTypeCache
+{
+public:
+    MeshTypeCache()
+    {
+    }
+
+    void set()
+    {
+    }
+
+private:
+    // Array<Mesh, MAX_MESHES> m_meshes;
 };
 
 class MeshCache
 {
 public:
-    MeshCache()
-    {
-        // Can't do this via `Mesh` default values, because of the union.
-        for (Mesh& mesh : m_meshes)
-        {
-            mesh.static_data.positions = BGFX_INVALID_HANDLE;
-            mesh.static_data.attribs   = BGFX_INVALID_HANDLE;
-            mesh.static_data.indices   = BGFX_INVALID_HANDLE;
-        }
-    }
-
     void add_from_last_record(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
     {
         // TODO : If failed, the folowing checks should be reflected in
@@ -781,6 +944,7 @@ public:
         {
         case MESH_TRANSIENT:
             mesh.element_count = record.vertex_count;
+            mesh.record_index  = static_cast<uint32_t>(recorder.records().size());
             m_transient_meshes_indices.push_back(record.user_id);
             break;
         case MESH_STATIC:
@@ -790,6 +954,11 @@ public:
         default:
             break;
         }
+    }
+
+    void update_transient_buffers(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    {
+        // ...
     }
 
     void clear()
@@ -905,22 +1074,22 @@ private:
 
         if (!dynamic)
         {
-                         mesh.static_data.positions = bgfx::createVertexBuffer(positions, positions_layout  );
-            if (attribs) mesh.static_data.attribs   = bgfx::createVertexBuffer(positions, attribs_layout    );
-                         mesh.static_data.indices   = bgfx::createIndexBuffer (indices  , index_buffer_flags);
+                         mesh.static_positions = bgfx::createVertexBuffer(positions, positions_layout  );
+            if (attribs) mesh.static_attribs   = bgfx::createVertexBuffer(positions, attribs_layout    );
+                         mesh.static_indices   = bgfx::createIndexBuffer (indices  , index_buffer_flags);
         }
         else
         {
             // TODO : Probably need resizeable flags.
-                         mesh.dynamic_data.positions = bgfx::createDynamicVertexBuffer(positions, positions_layout  );
-            if (attribs) mesh.dynamic_data.attribs   = bgfx::createDynamicVertexBuffer(positions, attribs_layout    );
-                         mesh.dynamic_data.indices   = bgfx::createDynamicIndexBuffer (indices  , index_buffer_flags);
+                         mesh.dynamic_positions = bgfx::createDynamicVertexBuffer(positions, positions_layout  );
+            if (attribs) mesh.dynamic_attribs   = bgfx::createDynamicVertexBuffer(positions, attribs_layout    );
+                         mesh.dynamic_indices   = bgfx::createDynamicIndexBuffer (indices  , index_buffer_flags);
         }
 
         // Since BGFX `isValid` just checks the index value, this will rowk for dynamic as well due to the union.
-        ASSERT(bgfx::isValid(mesh.static_data.positions));
-        ASSERT(bgfx::isValid(mesh.static_data.attribs  ) || !attribs);
-        ASSERT(bgfx::isValid(mesh.static_data.indices  ));
+        ASSERT(bgfx::isValid(mesh.static_positions));
+        ASSERT(bgfx::isValid(mesh.static_attribs  ) || !attribs);
+        ASSERT(bgfx::isValid(mesh.static_indices  ));
 
         return static_cast<uint32_t>(indexed_vertex_count);
     }
@@ -937,14 +1106,14 @@ private:
             case MESH_TRANSIENT:
                 break;
             case MESH_STATIC:
-                destroy_if_valid(mesh.static_data.positions);
-                destroy_if_valid(mesh.static_data.attribs  );
-                destroy_if_valid(mesh.static_data.indices  );
+                destroy_if_valid(mesh.static_positions);
+                destroy_if_valid(mesh.static_attribs  );
+                destroy_if_valid(mesh.static_indices  );
                 break;
             case MESH_DYNAMIC:
-                destroy_if_valid(mesh.dynamic_data.positions);
-                destroy_if_valid(mesh.dynamic_data.attribs  );
-                destroy_if_valid(mesh.dynamic_data.indices  );
+                destroy_if_valid(mesh.dynamic_positions);
+                destroy_if_valid(mesh.dynamic_attribs  );
+                destroy_if_valid(mesh.dynamic_indices  );
                 break;
             default:
                 ASSERT(false && "Invalid mesh type flags.");
@@ -971,6 +1140,7 @@ static bool update_transient_geometry
 (
     const GeometryRecorder&      recorder,
     const bgfx::VertexLayout&    dummy_vertex_layout,
+    // TransientMesh& out_transient_mesh
     bgfx::TransientVertexBuffer& out_vertex_buffer
 )
 {
@@ -1020,7 +1190,7 @@ static void submit_draw_list
 
     for (const DrawItem& item : draw_list.items())
     {
-        const Mesh     mesh      = mesh_cache.mesh(item.mesh); // `Mesh` is tiny (12 bytes), so no reference. 
+        const Mesh&    mesh      = mesh_cache.mesh(item.mesh);
         const MeshType mesh_type = static_cast<MeshType>((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
 
         switch (mesh_type)
