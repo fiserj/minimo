@@ -11,6 +11,7 @@
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
+#include <span>                   // span
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, is_integral, is_trivial, is_standard_layout, make_unsigned_t
 #include <unordered_map>          // unordered_map
@@ -50,7 +51,7 @@ namespace mnm
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-enum MeshType
+enum MeshType : uint8_t
 {
     MESH_INVALID   = 0,
     MESH_TRANSIENT = 1,
@@ -105,6 +106,9 @@ using HashMap = std::unordered_map<KeyT, T>;
 using Mutex = std::mutex;
 
 using MutexScope = std::lock_guard<std::mutex>;
+
+template <typename T>
+using Span = std::span<T>;
 
 template <typename T>
 using Vector = std::vector<T>;
@@ -457,16 +461,9 @@ protected:
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
-struct VertexAttribs
-{
-    uint32_t color    = 0xffffffff;
-    uint32_t texcoord = 0x00000000;
-    uint32_t normal   = 0x00ff0000;
-};
-
 struct GeometryRecord
 {
-    uint16_t user_id;
+    uint16_t mesh_id;
     uint16_t attribs; // TODO : Rename to `flags` since it encodes more than active vertex attributes and will be consistent with `Mesh::flags`.
     uint32_t attribs_byte_offset;
     uint32_t position_byte_offset;
@@ -488,7 +485,7 @@ public:
         m_position_buffer.clear();
     }
 
-    void begin(int user_id, uint16_t attribs, uint32_t alias_padding)
+    void begin(uint16_t mesh_id, uint16_t attribs, uint32_t alias_padding)
     {
         ASSERT(!m_recording);
         ASSERT(ms_push_func_table[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]);
@@ -502,7 +499,7 @@ public:
         }
 
         GeometryRecord record;
-        record.user_id              = user_id;
+        record.mesh_id              = mesh_id;
         record.attribs              = attribs;
         record.attribs_byte_offset  = static_cast<uint32_t>(m_attrib_buffer  .size());
         record.position_byte_offset = static_cast<uint32_t>(m_position_buffer.size());
@@ -617,6 +614,13 @@ private:
 #endif
     };
 
+    struct VertexAttribs
+    {
+        uint32_t color    = 0xffffffff;
+        uint32_t texcoord = 0x00000000;
+        uint32_t normal   = 0x00ff0000;
+    };
+
     template <uint32_t Attribs>
     static constexpr size_t attribs_size()
     {
@@ -696,6 +700,43 @@ const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
 
 
 // -----------------------------------------------------------------------------
+// MESH
+// -----------------------------------------------------------------------------
+
+union VertexBufferUnion
+{
+    uint16_t                        handle_index;
+    bgfx::VertexBufferHandle        static_buffer;
+    bgfx::DynamicVertexBufferHandle dynamic_buffer;
+};
+
+union IndexBufferUnion
+{
+    uint16_t                       handle_index;
+    bgfx::IndexBufferHandle        static_buffer;
+    bgfx::DynamicIndexBufferHandle dynamic_buffer;
+};
+
+// TODO : Merge flags as 8-bit and vertex count as 24-bit.
+struct Mesh
+{
+    uint32_t                  element_count = 0;
+
+    // // MSB to LSB:
+    // // 11 bits - Currently unused.
+    // //  2 bits - Mesh type.
+    // //  3 bits - Active vertex attributes.
+    uint16_t                  flags = 0;
+
+    VertexBufferUnion         positions;
+
+    VertexBufferUnion         attribs;
+
+    IndexBufferUnion          indices;
+};
+
+
+// -----------------------------------------------------------------------------
 // GPU BUFFER MANIPULATION
 // -----------------------------------------------------------------------------
 
@@ -715,7 +756,6 @@ template <> struct BufferTypeEnum<bgfx::IndexBufferHandle        > { static cons
 template <> struct BufferTypeEnum<bgfx::DynamicVertexBufferHandle> { static constexpr BufferType VALUE = BufferType::DYNAMIC_VERTEX_BUFFER; };
 template <> struct BufferTypeEnum<bgfx::DynamicIndexBufferHandle > { static constexpr BufferType VALUE = BufferType::DYNAMIC_INDEX_BUFFER ; };
 
-
 class BufferDeletionQueue
 {
 public:
@@ -725,16 +765,16 @@ public:
         {
             switch (record.type)
             {
-            case Record::STATIC_VERTEX_BUFFER:
+            case BufferType::STATIC_VERTEX_BUFFER:
                 bgfx::destroy(record.static_vertex_buffer);
                 break;
-            case Record::STATIC_INDEX_BUFFER:
+            case BufferType::STATIC_INDEX_BUFFER:
                 bgfx::destroy(record.static_index_buffer);
                 break;
-            case Record::DYNAMIC_VERTEX_BUFFER:
+            case BufferType::DYNAMIC_VERTEX_BUFFER:
                 bgfx::destroy(record.dynamic_vertex_buffer);
                 break;
-            case Record::DYNAMIC_INDEX_BUFFER:
+            case BufferType::DYNAMIC_INDEX_BUFFER:
                 bgfx::destroy(record.dynamic_index_buffer);
                 break;
             }
@@ -749,10 +789,10 @@ public:
         ASSERT(bgfx::isValid(handle));
 
         Record record;
-        record.type = BufferType<HandleT>::VALUE;
+        record.type = BufferTypeEnum<HandleT>::VALUE;
         record.handle_index = handle.idx;
 
-        m_records.push_back();
+        m_records.push_back(record);
     }
 
     template <typename HandleT>
@@ -783,183 +823,140 @@ private:
     Vector<Record> m_records;
 };
 
+class BufferUploadQueue
+{
+public:
+    void execute(Span<const GeometryRecord> records, const VertexLayoutCache& vertex_layout_cache, Span<Mesh> inout_meshes);
 
-// -----------------------------------------------------------------------------
+    inline void enqueue(uint16_t mesh_id, uint16_t record_id)
+    {
+        m_records.push_back({ mesh_id, record_id });
+    }
+
+private:
+    struct Record
+    {
+        uint16_t mesh_id;
+        uint16_t record_id;
+    };
+
+private:
+    Vector<Record>       m_records;
+    Vector<unsigned int> m_remap_table;
+};
 
 
 // -----------------------------------------------------------------------------
 // MESH CACHE
 // -----------------------------------------------------------------------------
 
-// union VertexBuffer
-// {
-//     bgfx::VertexBufferHandle 
-// };
-
-// struct StaticData
-// {
-//     bgfx::VertexBufferHandle positions;
-//     bgfx::VertexBufferHandle attribs;
-//     bgfx::IndexBufferHandle  indices;
-// };
-
-// struct DynamicData
-// {
-//     bgfx::DynamicVertexBufferHandle positions;
-//     bgfx::DynamicVertexBufferHandle attribs;
-//     bgfx::DynamicIndexBufferHandle  indices;
-// };
-
-// struct TransientData
-// {
-//     uint16_t record; // TODO : This should ideally be uint32_t, but that unfortunately adds 4 bytes to `Mesh` size (probably due to the union's alignment);
-// };
-
-// struct TransientBufferes
-// {
-//     bgfx::TransientVertexBuffer positions;
-//     bgfx::TransientVertexBuffer attribs;
-// };
-
-// struct VertexBufferUnion
-// {
-//     union
-//     {
-//         bgfx::VertexBufferHandle        static_buffer;
-//         bgfx::DynamicVertexBufferHandle dynamic_buffer;
-//     }
-// };
-
-// struct IndexBufferUnion
-// {
-//     union
-//     {
-//         bgfx::IndexBufferHandle        static_buffer;
-//         bgfx::DynamicIndexBufferHandle dynamic_buffer;
-//     }
-// };
-
-// TODO : Merge flags as 8-bit and vertex count as 24-bit.
-struct Mesh
-{
-    uint32_t                  element_count = 0;
-
-    // // MSB to LSB:
-    // // 11 bits - Currently unused.
-    // //  2 bits - Mesh type.
-    // //  3 bits - Active vertex attributes.
-    uint16_t                  flags = 0;
-
-    union
-    {
-        struct
-        {
-            VertexBufferUnion positions;
-            VertexBufferUnion attribs;
-            IndexBufferUnion  indices;
-        };
-
-        uint32_t              record_idx;
-    };
-
-    // union
-    // {
-    //     bgfx::IndexBufferHandle        static_indices = BGFX_INVALID_HANDLE;
-    //     bgfx::DynamicIndexBufferHandle dynamic_indices;
-    // };
-
-    // union
-    // {
-    //     struct
-    //     {
-    //         union
-    //         {
-    //             bgfx::VertexBufferHandle        static_positions = BGFX_INVALID_HANDLE;
-    //             bgfx::DynamicVertexBufferHandle dynamic_positions;
-    //         };
-
-    //         union
-    //         {
-    //             bgfx::VertexBufferHandle        static_attribs = BGFX_INVALID_HANDLE;
-    //             bgfx::DynamicVertexBufferHandle dynamic_attribs;
-    //         };
-    //     };
-
-    //     uint32_t      record_index;
-    // };
-};
-
-
-class MeshTypeCache
-{
-public:
-    MeshTypeCache()
-    {
-    }
-
-    void set()
-    {
-    }
-
-private:
-    // Array<Mesh, MAX_MESHES> m_meshes;
-};
-
 class MeshCache
 {
 public:
-    void add_from_last_record(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    // Thread-safe (assuming the parent recorder has thread-local use only).
+    bool register_from_record(const GeometryRecord& record, uint16_t record_id)
     {
-        // TODO : If failed, the folowing checks should be reflected in
-        //        the program behavior (crash / report / ...).
-
-        const GeometryRecord& record = recorder.records().back();
-
-        if (record.user_id >= m_meshes.size())
+        if (record.mesh_id >= m_meshes.size())
         {
             ASSERT(false && "Mesh ID out of available range.");
-            return;
+            return false;
         }
 
-        // TODO : Perhaps we could only lock when writing the buffer handles,
-        //        since creating a mesh with the same ID from multiple threads
-        //        is just silly in the first place.
         MutexScope lock(m_mutex);
 
-        Mesh& mesh = m_meshes[record.user_id];
+        Mesh& mesh = m_meshes[record.mesh_id];
 
-        // TODO : We should also check that vertex attributes didn't change.
+        // TODO : We should also check that vertex attributes didn't change,
+        //        once we add support for buffer updates.
         const MeshType old_type = static_cast<MeshType>((mesh  .flags   & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
         const MeshType new_type = static_cast<MeshType>((record.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
 
-        if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
-        {
-            // TODO : Dynamic meshes shouldn't need to be destroyed if they were large enough.
-            destroy_mesh_buffers(&mesh, 1);
-        }
+        ASSERT(new_type != MESH_INVALID);
 
         mesh.flags = record.attribs;
 
-        switch (new_type)
+        if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
         {
-        case MESH_TRANSIENT:
-            mesh.element_count = record.vertex_count;
-            mesh.record_index  = static_cast<uint32_t>(recorder.records().size());
-            m_transient_meshes_indices.push_back(record.user_id);
-            break;
-        case MESH_STATIC:
-        case MESH_DYNAMIC:
-            mesh.element_count = create_mesh_buffers(mesh, recorder, record, vertex_layout_cache, new_type == MESH_DYNAMIC);
-            break;
-        default:
-            break;
+            if (old_type == MESH_STATIC)
+            {
+                m_buffer_deletion_queue.enqueue         (mesh.positions.static_buffer);
+                m_buffer_deletion_queue.enqueue         (mesh.attribs  .static_buffer);
+                m_buffer_deletion_queue.enqueue_if_valid(mesh.indices  .static_buffer);
+            }
+            else
+            {
+                // TODO : Dynamic meshes shouldn't need to be destroyed if they
+                //        were large enough, but just updated (another queue, I guess).
+                m_buffer_deletion_queue.enqueue         (mesh.positions.dynamic_buffer);
+                m_buffer_deletion_queue.enqueue         (mesh.attribs  .dynamic_buffer);
+                m_buffer_deletion_queue.enqueue_if_valid(mesh.indices  .dynamic_buffer);
+            }
+
+            mesh.positions.handle_index = bgfx::kInvalidHandle;
+            mesh.attribs  .handle_index = bgfx::kInvalidHandle;
+            mesh.indices  .handle_index = bgfx::kInvalidHandle;
         }
+
+        if (new_type == MESH_STATIC || new_type == MESH_DYNAMIC)
+        {
+            m_buffer_upload_queue.enqueue(record.mesh_id, record_id);
+        }
+
+        return true;
     }
 
-    void update_transient_buffers(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
-    {
-        // ...
-    }
+    // void add_from_last_record(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    // {
+    //     // TODO : If failed, the folowing checks should be reflected in
+    //     //        the program behavior (crash / report / ...).
+
+    //     const GeometryRecord& record = recorder.records().back();
+
+    //     if (record.mesh_id >= m_meshes.size())
+    //     {
+    //         ASSERT(false && "Mesh ID out of available range.");
+    //         return;
+    //     }
+
+    //     // TODO : Perhaps we could only lock when writing the buffer handles,
+    //     //        since creating a mesh with the same ID from multiple threads
+    //     //        is just silly in the first place.
+    //     MutexScope lock(m_mutex);
+
+    //     Mesh& mesh = m_meshes[record.mesh_id];
+
+    //     // TODO : We should also check that vertex attributes didn't change.
+    //     const MeshType old_type = static_cast<MeshType>((mesh  .flags   & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+    //     const MeshType new_type = static_cast<MeshType>((record.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+
+    //     if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
+    //     {
+    //         // TODO : Dynamic meshes shouldn't need to be destroyed if they were large enough.
+    //         destroy_mesh_buffers(&mesh, 1);
+    //     }
+
+    //     mesh.flags = record.attribs;
+
+    //     switch (new_type)
+    //     {
+    //     case MESH_TRANSIENT:
+    //         mesh.element_count = record.vertex_count;
+    //         mesh.record_index  = static_cast<uint32_t>(recorder.records().size());
+    //         m_transient_meshes_indices.push_back(record.mesh_id);
+    //         break;
+    //     case MESH_STATIC:
+    //     case MESH_DYNAMIC:
+    //         mesh.element_count = create_mesh_buffers(mesh, recorder, record, vertex_layout_cache, new_type == MESH_DYNAMIC);
+    //         break;
+    //     default:
+    //         break;
+    //     }
+    // }
+
+    // void update_transient_buffers(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    // {
+    //     // ...
+    // }
 
     void clear()
     {
@@ -976,20 +973,176 @@ public:
         m_transient_meshes_indices.clear();
     }
 
-    inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
+    // inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
 
-    inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
+    // inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
 
 private:
-    uint32_t create_mesh_buffers
-    (
-        Mesh&                    mesh,
-        const GeometryRecorder&  recorder,
-        const GeometryRecord&    record,
-        const VertexLayoutCache& vertex_layout_cache,
-        bool                     dynamic
-    )
+    // uint32_t create_mesh_buffers
+    // (
+    //     Mesh&                    mesh,
+    //     const GeometryRecorder&  recorder,
+    //     const GeometryRecord&    record,
+    //     const VertexLayoutCache& vertex_layout_cache,
+    //     bool                     dynamic
+    // )
+    // {
+    //     constexpr size_t position_size = sizeof(Vec3);
+    //     const     size_t attribs_size  = vertex_layout_cache.layout(record.attribs).getStride();
+
+    //     const meshopt_Stream vertex_streams[2] =
+    //     {
+    //         { recorder.position_buffer().data() + record.position_byte_offset, position_size, position_size },
+    //         { recorder.attrib_buffer  ().data() + record.attribs_byte_offset , attribs_size , attribs_size  },
+    //     };
+
+    //     m_meshopt_remap_table.resize(record.vertex_count);
+
+    //     const size_t indexed_vertex_count = meshopt_generateVertexRemapMulti(
+    //         m_meshopt_remap_table.data(),
+    //         nullptr,
+    //         record.vertex_count,
+    //         record.vertex_count,
+    //         vertex_streams,
+    //         BX_COUNTOF(vertex_streams)
+    //     );
+    //     ASSERT(indexed_vertex_count < UINT32_MAX);
+
+    //     uint16_t index_buffer_flags = BGFX_BUFFER_NONE;
+    //     uint32_t index_type_size    = sizeof(uint16_t);
+
+    //     if (indexed_vertex_count > UINT16_MAX)
+    //     {
+    //         index_buffer_flags = BGFX_BUFFER_INDEX32;
+    //         index_type_size    = sizeof(uint32_t);
+    //     }
+
+    //     const bgfx::Memory* indices = bgfx::alloc(record.vertex_count * index_type_size);
+    //     ASSERT(indices && indices->data);
+
+    //     if (index_type_size == sizeof(uint16_t))
+    //     {
+    //         meshopt_remapIndexBuffer<uint16_t>(
+    //             reinterpret_cast<uint16_t*>(indices->data),
+    //             nullptr,
+    //             record.vertex_count,
+    //             m_meshopt_remap_table.data()
+    //         );
+    //     }
+    //     else
+    //     {
+    //         meshopt_remapIndexBuffer<uint32_t>(
+    //             reinterpret_cast<uint32_t*>(indices->data),
+    //             nullptr,
+    //             record.vertex_count,
+    //             m_meshopt_remap_table.data()
+    //         );
+    //     }
+
+    //     const bgfx::Memory* positions = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[0].size));
+    //     ASSERT(positions && positions->data);
+
+    //     meshopt_remapVertexBuffer(
+    //         positions->data,
+    //         vertex_streams[0].data,
+    //         record.vertex_count,
+    //         vertex_streams[0].size,
+    //         m_meshopt_remap_table.data()
+    //     );
+
+    //     const bgfx::Memory* attribs = nullptr;
+
+    //     if ((record.attribs & VERTEX_ATTRIB_MASK))
+    //     {
+    //         attribs = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[1].size));
+    //         ASSERT(attribs && attribs->data);
+
+    //         meshopt_remapVertexBuffer(
+    //             attribs->data,
+    //             vertex_streams[1].data,
+    //             record.vertex_count,
+    //             vertex_streams[1].size,
+    //             m_meshopt_remap_table.data()
+    //         );
+    //     }
+
+    //     const bgfx::VertexLayout& positions_layout = vertex_layout_cache.layout(VERTEX_POSITION << VERTEX_ATTRIB_SHIFT);
+    //     const bgfx::VertexLayout& attribs_layout   = vertex_layout_cache.layout(record.attribs);
+
+    //     if (!dynamic)
+    //     {
+    //                      mesh.static_positions = bgfx::createVertexBuffer(positions, positions_layout  );
+    //         if (attribs) mesh.static_attribs   = bgfx::createVertexBuffer(positions, attribs_layout    );
+    //                      mesh.static_indices   = bgfx::createIndexBuffer (indices  , index_buffer_flags);
+    //     }
+    //     else
+    //     {
+    //         // TODO : Probably need resizeable flags.
+    //                      mesh.dynamic_positions = bgfx::createDynamicVertexBuffer(positions, positions_layout  );
+    //         if (attribs) mesh.dynamic_attribs   = bgfx::createDynamicVertexBuffer(positions, attribs_layout    );
+    //                      mesh.dynamic_indices   = bgfx::createDynamicIndexBuffer (indices  , index_buffer_flags);
+    //     }
+
+    //     // Since BGFX `isValid` just checks the index value, this will rowk for dynamic as well due to the union.
+    //     ASSERT(bgfx::isValid(mesh.static_positions));
+    //     ASSERT(bgfx::isValid(mesh.static_attribs  ) || !attribs);
+    //     ASSERT(bgfx::isValid(mesh.static_indices  ));
+
+    //     return static_cast<uint32_t>(indexed_vertex_count);
+    // }
+
+    // void destroy_mesh_buffers(Mesh* meshes, size_t count)
+    // {
+    //     for (size_t i = 0; i < count; i++)
+    //     {
+    //         Mesh& mesh = meshes[i];
+
+    //         switch ((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)
+    //         {
+    //         case MESH_INVALID:
+    //         case MESH_TRANSIENT:
+    //             break;
+    //         case MESH_STATIC:
+    //             destroy_if_valid(mesh.static_positions);
+    //             destroy_if_valid(mesh.static_attribs  );
+    //             destroy_if_valid(mesh.static_indices  );
+    //             break;
+    //         case MESH_DYNAMIC:
+    //             destroy_if_valid(mesh.dynamic_positions);
+    //             destroy_if_valid(mesh.dynamic_attribs  );
+    //             destroy_if_valid(mesh.dynamic_indices  );
+    //             break;
+    //         default:
+    //             ASSERT(false && "Invalid mesh type flags.");
+    //             break;
+    //         }
+
+    //         mesh.flags = 0;
+    //     }
+    // }
+
+private:
+    Mutex                   m_mutex;
+    Array<Mesh, MAX_MESHES> m_meshes;
+    // Vector<uint16_t>        m_transient_meshes_indices;
+    BufferDeletionQueue     m_buffer_deletion_queue;
+    BufferUploadQueue       m_buffer_upload_queue;
+};
+
+
+
+void BufferUploadQueue::execute(Span<const GeometryRecord> records, const VertexLayoutCache& vertex_layout_cache, Span<Mesh> inout_meshes)
+{
+    // TODO : We should allocate just a single memory block and point BGFX
+    //        to individual parts without calling explicit allocations for
+    //        single meshes (but need to check how the `ReleaseFn` works).
+    //        Even better, we could use double-buffered recorders or some
+    //        kind of frame allocators and don't bother with copying.
+    for (Record record_ : m_records)
     {
+        const Record& record = records[record_.record_id];
+        Mesh&         mesh   = meshes [record_.mesh_id  ];
+
         constexpr size_t position_size = sizeof(Vec3);
         const     size_t attribs_size  = vertex_layout_cache.layout(record.attribs).getStride();
 
@@ -999,10 +1152,10 @@ private:
             { recorder.attrib_buffer  ().data() + record.attribs_byte_offset , attribs_size , attribs_size  },
         };
 
-        m_meshopt_remap_table.resize(record.vertex_count);
+        m_remap_table.resize(record.vertex_count);
 
         const size_t indexed_vertex_count = meshopt_generateVertexRemapMulti(
-            m_meshopt_remap_table.data(),
+            m_remap_table.data(),
             nullptr,
             record.vertex_count,
             record.vertex_count,
@@ -1013,123 +1166,11 @@ private:
 
         uint16_t index_buffer_flags = BGFX_BUFFER_NONE;
         uint32_t index_type_size    = sizeof(uint16_t);
-
-        if (indexed_vertex_count > UINT16_MAX)
-        {
-            index_buffer_flags = BGFX_BUFFER_INDEX32;
-            index_type_size    = sizeof(uint32_t);
-        }
-
-        const bgfx::Memory* indices = bgfx::alloc(record.vertex_count * index_type_size);
-        ASSERT(indices && indices->data);
-
-        if (index_type_size == sizeof(uint16_t))
-        {
-            meshopt_remapIndexBuffer<uint16_t>(
-                reinterpret_cast<uint16_t*>(indices->data),
-                nullptr,
-                record.vertex_count,
-                m_meshopt_remap_table.data()
-            );
-        }
-        else
-        {
-            meshopt_remapIndexBuffer<uint32_t>(
-                reinterpret_cast<uint32_t*>(indices->data),
-                nullptr,
-                record.vertex_count,
-                m_meshopt_remap_table.data()
-            );
-        }
-
-        const bgfx::Memory* positions = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[0].size));
-        ASSERT(positions && positions->data);
-
-        meshopt_remapVertexBuffer(
-            positions->data,
-            vertex_streams[0].data,
-            record.vertex_count,
-            vertex_streams[0].size,
-            m_meshopt_remap_table.data()
-        );
-
-        const bgfx::Memory* attribs = nullptr;
-
-        if ((record.attribs & VERTEX_ATTRIB_MASK))
-        {
-            attribs = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[1].size));
-            ASSERT(attribs && attribs->data);
-
-            meshopt_remapVertexBuffer(
-                attribs->data,
-                vertex_streams[1].data,
-                record.vertex_count,
-                vertex_streams[1].size,
-                m_meshopt_remap_table.data()
-            );
-        }
-
-        const bgfx::VertexLayout& positions_layout = vertex_layout_cache.layout(VERTEX_POSITION << VERTEX_ATTRIB_SHIFT);
-        const bgfx::VertexLayout& attribs_layout   = vertex_layout_cache.layout(record.attribs);
-
-        if (!dynamic)
-        {
-                         mesh.static_positions = bgfx::createVertexBuffer(positions, positions_layout  );
-            if (attribs) mesh.static_attribs   = bgfx::createVertexBuffer(positions, attribs_layout    );
-                         mesh.static_indices   = bgfx::createIndexBuffer (indices  , index_buffer_flags);
-        }
-        else
-        {
-            // TODO : Probably need resizeable flags.
-                         mesh.dynamic_positions = bgfx::createDynamicVertexBuffer(positions, positions_layout  );
-            if (attribs) mesh.dynamic_attribs   = bgfx::createDynamicVertexBuffer(positions, attribs_layout    );
-                         mesh.dynamic_indices   = bgfx::createDynamicIndexBuffer (indices  , index_buffer_flags);
-        }
-
-        // Since BGFX `isValid` just checks the index value, this will rowk for dynamic as well due to the union.
-        ASSERT(bgfx::isValid(mesh.static_positions));
-        ASSERT(bgfx::isValid(mesh.static_attribs  ) || !attribs);
-        ASSERT(bgfx::isValid(mesh.static_indices  ));
-
-        return static_cast<uint32_t>(indexed_vertex_count);
     }
 
-    void destroy_mesh_buffers(Mesh* meshes, size_t count)
-    {
-        for (size_t i = 0; i < count; i++)
-        {
-            Mesh& mesh = meshes[i];
+    m_records.clear();
+}
 
-            switch ((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)
-            {
-            case MESH_INVALID:
-            case MESH_TRANSIENT:
-                break;
-            case MESH_STATIC:
-                destroy_if_valid(mesh.static_positions);
-                destroy_if_valid(mesh.static_attribs  );
-                destroy_if_valid(mesh.static_indices  );
-                break;
-            case MESH_DYNAMIC:
-                destroy_if_valid(mesh.dynamic_positions);
-                destroy_if_valid(mesh.dynamic_attribs  );
-                destroy_if_valid(mesh.dynamic_indices  );
-                break;
-            default:
-                ASSERT(false && "Invalid mesh type flags.");
-                break;
-            }
-
-            mesh.flags = 0;
-        }
-    }
-
-private:
-    Mutex                   m_mutex;
-    Array<Mesh, MAX_MESHES> m_meshes;
-    Vector<uint16_t>        m_transient_meshes_indices;
-    Vector<unsigned int>    m_meshopt_remap_table;
-};
 
 
 // -----------------------------------------------------------------------------
@@ -2063,7 +2104,7 @@ static void begin_recording
     mnm::t_ctx.is_recording = true;
 
     mnm::t_ctx.active_recorder = &recorder;
-    mnm::t_ctx.active_recorder->begin(id, static_cast<uint32_t>(attribs), alias_padding);
+    mnm::t_ctx.active_recorder->begin(static_cast<uint16_t>(id), static_cast<uint32_t>(attribs), alias_padding);
 }
 
 void begin_transient(int id, int attribs)
@@ -2074,6 +2115,7 @@ void begin_transient(int id, int attribs)
 
     const uint32_t alignment   = buffer_size % layout_size;
 
+    attribs  = (attribs << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
     attribs |= mnm::MESH_TRANSIENT << mnm::MESH_TYPE_SHIFT;
 
     begin_recording(mnm::t_ctx.transient_recorder, id, attribs, alignment ? (layout_size - alignment) : 0);
@@ -2081,9 +2123,8 @@ void begin_transient(int id, int attribs)
 
 void begin_static(int id, int attribs)
 {
+    attribs  = (attribs << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
     attribs |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
-
-    mnm::t_ctx.static_recorder.clear();
 
     begin_recording(mnm::t_ctx.static_recorder, id, attribs);
 }
@@ -2118,7 +2159,10 @@ void end(void)
     mnm::t_ctx.is_recording = false;
 
     ASSERT(mnm::t_ctx.active_recorder);
-    mnm::g_ctx.mesh_cache.add_from_last_record(*mnm::t_ctx.active_recorder, mnm::g_ctx.vertex_layout_cache);
+    mnm::g_ctx.mesh_cache.register_from_record(
+        mnm::t_ctx.active_recorder->records().back(),
+        static_cast<uint16_t>(mnm::t_ctx.active_recorder->records().size() - 1),
+    );
 
     mnm::t_ctx.active_recorder->end();
     mnm::t_ctx.active_recorder = nullptr;

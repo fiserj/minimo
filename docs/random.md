@@ -1,6 +1,6 @@
 ## Public Mesh Workflow
 
-* Mesh IDs are specified by the user when calling the `begin_*` API.
+* Mesh IDs are chosen by the user when calling the `begin_*` API.
 * An ID is an `int` ranging from 0 to `MAX_MESHES` (currently fixed as 4096).
 * When calling `begin_*` with existing ID, the current content is deleted.
 * The mesh type associated with an ID can change, but at most once per frame.
