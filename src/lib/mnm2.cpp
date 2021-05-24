@@ -784,7 +784,7 @@ public:
     }
 
     template <typename HandleT>
-    inline void enqueue(HandleT handle)
+    inline void enqueue(HandleT& handle)
     {
         ASSERT(bgfx::isValid(handle));
 
@@ -793,16 +793,18 @@ public:
         record.handle_index = handle.idx;
 
         m_records.push_back(record);
+
+        handle = BGFX_INVALID_HANDLE;
     }
 
-    template <typename HandleT>
+    /*template <typename HandleT>
     inline void enqueue_if_valid(HandleT handle)
     {
         if (bgfx::isValid(handle))
         {
             enqueue(handle);
         }
-    }
+    }*/
 
 private:
     struct Record
@@ -850,11 +852,148 @@ private:
 // MESH CACHE
 // -----------------------------------------------------------------------------
 
+
+
+/*class MeshTypeCache
+{
+public:
+    enum Status
+    {
+        ERROR,
+        OK,
+        OK_DELETE_OLD_BUFFER
+    };
+
+public:
+    Status register_mesh(uint16_t id, uint16_t flags)
+    {
+        if (id >= MAX_MESHES)
+        {
+            ASSERT(false && "Mesh ID out of available range.");
+            return ERROR;
+        }
+
+        MutexScope lock(m_mutex);
+
+        const MeshType old_type = m_types[id];
+        const MeshType new_type = static_cast<MeshType>((flags & MESH_TYPE_SHIFT) >> MESH_TYPE_SHIFT);
+
+        if (new_type == MESH_INVALID)
+        {
+            ASSERT(false && "Invalid registered mesh type.");
+            return ERROR;
+        }
+
+        if (old_type == MESH_INVALID)
+        {
+            return SUCCES;
+        }
+
+
+        return true;
+    }
+
+    void reset_transient_meshes()
+    {
+        MutexScope lock(m_mutex);
+
+        for (MeshType& type : m_types)
+        {
+            if (type == MESH_TRANSIENT)
+            {
+                type =  MESH_INVALID;
+            }
+        }
+    }
+
+private:
+    Mutex                       m_mutex;
+    Array<MeshType, MAX_MESHES> m_types;
+};*/
+
+class MeshCache2
+{
+public:
+    bool register_mesh(uint16_t id, uint16_t flags)
+    {
+        if (id >= MAX_MESHES)
+        {
+            ASSERT(false && "Mesh ID out of available range.");
+            return false;
+        }
+
+        MutexScope lock(m_mutex);
+
+        Mesh& mesh = m_meshes[id];
+
+        const MeshType old_type = static_cast<MeshType>((mesh.flags & MESH_TYPE_SHIFT) >> MESH_TYPE_SHIFT);
+        const MeshType new_type = static_cast<MeshType>((     flags & MESH_TYPE_SHIFT) >> MESH_TYPE_SHIFT);
+
+        if (new_type == MESH_INVALID)
+        {
+            ASSERT(false && "Invalid registered mesh type.");
+            return false;
+        }
+
+        switch (old_type)
+        {
+        case MESH_TRANSIENT:
+            ASSERT(false && "Forgot to call `unregister_transient_meshes`?");
+            break;
+
+        case MESH_STATIC:
+            m_buffer_deletion_queue.enqueue(mesh.positions.static_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.attribs  .static_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.indices  .static_buffer);
+            break;
+
+        // TODO : Enable dynamic meshes' updating.
+        case MESH_DYNAMIC:
+            m_buffer_deletion_queue.enqueue(mesh.positions.dynamic_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.attribs  .dynamic_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.indices  .dynamic_buffer);
+            break;
+
+        default:;
+        }
+
+        return true;
+    }
+
+    void unregister_transient_meshes()
+    {
+        MutexScope lock(m_mutex);
+
+        for (uint16_t idx : m_transient_mesh_idxs)
+        {
+            ASSERT(static_cast<MeshType>((m_meshes[idx].flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT) == MESH_TRANSIENT);
+            m_meshes[idx].flags = 0;
+        }
+
+        m_transient_mesh_idxs.clear();
+    }
+
+    void delete_abandoned_buffers()
+    {
+        MutexScope lock(m_mutex);
+
+        m_buffer_deletion_queue.execute();
+    }
+
+    //void add 
+
+private:
+    Mutex                   m_mutex;
+    Array<Mesh, MAX_MESHES> m_meshes;
+    Vector<uint16_t>        m_transient_mesh_idxs;
+    BufferDeletionQueue     m_buffer_deletion_queue;
+};
+
 class MeshCache
 {
 public:
-    // Thread-safe (assuming the parent recorder has thread-local use only).
-    bool register_from_record(const GeometryRecord& record, uint16_t record_id)
+    // Thread-safe (assuming the recorder has thread-local use only).
+    /*bool register_from_record(const GeometryRecord& record, uint16_t record_id)
     {
         if (record.mesh_id >= m_meshes.size())
         {
@@ -903,7 +1042,7 @@ public:
         }
 
         return true;
-    }
+    }*/
 
     // void add_from_last_record(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
     // {
@@ -958,7 +1097,7 @@ public:
     //     // ...
     // }
 
-    void clear()
+    /*void clear()
     {
         destroy_mesh_buffers(m_meshes.data(), m_meshes.size());
     }
@@ -971,7 +1110,7 @@ public:
         }
 
         m_transient_meshes_indices.clear();
-    }
+    }*/
 
     // inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
 
@@ -1691,6 +1830,57 @@ struct LocalContext
 static GlobalContext g_ctx;
 
 thread_local LocalContext t_ctx;
+
+
+// -----------------------------------------------------------------------------
+// THREAD-LOCAL CONTEXT
+// -----------------------------------------------------------------------------
+
+/*class ThreadLocalContext
+{
+public:
+    
+
+public:
+    void upload_transient_geometry()
+    {
+
+    }
+
+    void upload_persistent_geometry()
+    {
+    }
+
+    void delete_removed_buffers()
+    {
+
+    }
+
+    void submit_draw_list()
+    {
+
+    }
+
+    inline void set_as_main_thread() { m_is_main_thread = true; }
+
+    inline bool is_main_thread() const { return m_is_main_thread; }
+
+private:
+    GeometryRecorder            m_transient_recorder;
+    GeometryRecorder            m_static_recorder;
+
+    DrawList                    m_draw_list;
+
+    MatrixStack                 m_view_matrix_stack;
+    MatrixStack                 m_proj_matrix_stack;
+    MatrixStack                 m_model_matrix_stack;
+
+    GeometryRecorder*           m_active_recorder     = &m_transient_recorder;
+    MatrixStack*                m_active_matrix_stack = &m_model_matrix_stack;
+
+    bool                        m_is_recording        = false;
+    bool                        m_is_main_thread      = false;
+};*/
 
 
 // -----------------------------------------------------------------------------
