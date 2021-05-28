@@ -798,7 +798,11 @@ private:
 
 struct Mesh
 {
-    uint32_t                  element_count = 0;
+    union
+    {
+        uint32_t              element_count = 0;
+        uint32_t              record_index;
+    };
 
     // // MSB to LSB:
     // // 11 bits - Currently unused.
@@ -828,8 +832,8 @@ public:
 
         Mesh& mesh = m_meshes[id];
 
-        const MeshType old_type = static_cast<MeshType>((mesh.flags & MESH_TYPE_SHIFT) >> MESH_TYPE_SHIFT);
-        const MeshType new_type = static_cast<MeshType>((     flags & MESH_TYPE_SHIFT) >> MESH_TYPE_SHIFT);
+        const MeshType old_type = static_cast<MeshType>((mesh.flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+        const MeshType new_type = static_cast<MeshType>((     flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
 
         if (new_type == MESH_INVALID)
         {
@@ -857,7 +861,6 @@ public:
             break;
 
         default:
-            ASSERT(false && "Impossible.");
             break;
         }
 
