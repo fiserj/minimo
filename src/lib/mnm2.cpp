@@ -200,16 +200,6 @@ inline void hash_combine(size_t& seed, const T& value)
     seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
-template <typename HandleT>
-inline void destroy_if_valid(HandleT& handle)
-{
-    if (bgfx::isValid(handle))
-    {
-        bgfx::destroy(handle);
-        handle = BGFX_INVALID_HANDLE;
-    }
-}
-
 template <typename T>
 constexpr bool is_pod()
 {
@@ -232,6 +222,13 @@ struct DrawItem
     bgfx::TextureHandle      texture = BGFX_INVALID_HANDLE;
     uint8_t                  state   = 0; // TODO : Blending, etc.
 };
+
+// struct DrawItem_
+// {
+//     uint32_t            transform;
+//     bgfx::ViewId        view;
+//     bgfx::ProgramHandle program;
+// };
 
 class DrawList
 {
@@ -796,6 +793,41 @@ private:
     Vector<Record> m_records;
 };
 
+struct Mesh2
+{
+    // MSB to LSB:
+    // 11 bits - Currently unused.
+    //  2 bits - Mesh type.
+    //  3 bits - Active vertex attributes.
+    uint16_t                  flags         = 0;
+
+    uint32_t                  element_count = 0;
+
+    union
+    {
+        struct
+        {
+            VertexBufferUnion positions;
+            VertexBufferUnion attributes;
+            IndexBufferUnion  indices;
+        };
+
+        struct
+        {
+            uint32_t          position_offset;
+            uint32_t          attribute_offset;
+        };
+    };
+};
+
+struct MeshCache3
+{
+public:
+
+private:
+
+};
+
 struct Mesh
 {
     union
@@ -820,6 +852,12 @@ struct Mesh
 class MeshCache
 {
 public:
+    void register_from_last_record()
+    {
+        
+        // ...
+    }
+
     bool register_mesh(uint16_t id, uint16_t flags)
     {
         if (id >= MAX_MESHES)
@@ -899,6 +937,8 @@ private:
     Vector<uint16_t>        m_transient_mesh_idxs;
     BufferDeletionQueue     m_buffer_deletion_queue;
 };
+
+
 
 class MeshCache_OLD
 {
@@ -1312,6 +1352,70 @@ static void submit_draw_list
 
     bgfx::end(encoder);
 }
+
+
+// -----------------------------------------------------------------------------
+// TRANSIENT BUFFERS
+// -----------------------------------------------------------------------------
+
+class TransientBuffers
+{
+public:
+    inline bool update_from_recorder(const GeometryRecorder& recorder)
+    {
+        return
+            update_buffer(recorder.position_buffer(), m_positions) &&
+            update_buffer(recorder.attrib_buffer  (), m_attribs  );
+    }
+
+    inline const bgfx::TransientVertexBuffer* positions() const { return &m_positions; }
+
+    inline const bgfx::TransientVertexBuffer* attribs() const { return &m_attribs; }
+
+private:
+    static bool update_buffer(const Vector<uint8_t>& src, bgfx::TransientVertexBuffer& dst)
+    {
+        if (!src.empty())
+        {
+            const uint32_t dummy_vertex_count = static_cast<uint32_t>(src.size() / ms_dummy_vertex_layout.getStride());
+
+            if (bgfx::getAvailTransientVertexBuffer(dummy_vertex_count, ms_dummy_vertex_layout) < dummy_vertex_count)
+            {
+                ASSERT(false && "Unable to allocate requested number of transient vertices.");
+                return false;
+            }
+
+            bgfx::allocTransientVertexBuffer(&dst, dummy_vertex_count, ms_dummy_vertex_layout);
+            (void)memcpy(dst.data, src.data(), src.size());
+        }
+        else
+        {
+            dst = { nullptr, 0 };
+        }
+
+        return true;
+    }
+
+private:
+    static const bgfx::VertexLayout ms_dummy_vertex_layout;
+
+    bgfx::TransientVertexBuffer     m_positions = { nullptr, 0 };
+    bgfx::TransientVertexBuffer     m_attribs   = { nullptr, 0 };
+};
+
+const bgfx::VertexLayout TransientBuffers::ms_dummy_vertex_layout = []()
+{
+    bgfx::VertexLayout layout;
+
+    layout
+        .begin()
+        .add  (bgfx::Attrib::TexCoord7, 1, bgfx::AttribType::Float)
+        .end  ();
+
+    ASSERT(layout.getStride() % 4 == 0);
+
+    return layout;
+}();
 
 
 // -----------------------------------------------------------------------------
