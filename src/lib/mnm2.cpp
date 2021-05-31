@@ -212,39 +212,33 @@ constexpr bool is_pod()
 // DRAW SUBMISSION
 // -----------------------------------------------------------------------------
 
-// TODO : Many members (if not all) can use smaller types.
 struct DrawItem
 {
-    Mat4                     transform; // TODO : Maybe this could be cached like it is in BGFX?
-    uint16_t                 mesh    = UINT16_MAX;
-    bgfx::ViewId             pass    = UINT16_MAX;
-    bgfx::ProgramHandle      program = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture = BGFX_INVALID_HANDLE;
-    uint8_t                  state   = 0; // TODO : Blending, etc.
+    // TODO : Mesh ID and view ID could be merged to single uint16_t.
+    uint16_t                 transform = UINT16_MAX;
+    uint16_t                 mesh      = UINT16_MAX;
+    bgfx::ViewId             pass      = UINT16_MAX;
+    bgfx::ProgramHandle      program   = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture   = BGFX_INVALID_HANDLE;
 };
-
-// struct DrawItem_
-// {
-//     uint32_t            transform;
-//     bgfx::ViewId        view;
-//     bgfx::ProgramHandle program;
-// };
 
 class DrawList
 {
 public:
     inline void clear()
     {
-        m_items.clear();
+        m_items   .clear();
+        m_matrices.clear();
         m_state = {};
     }
 
     void submit_mesh(uint16_t mesh, const Mat4& transform)
     {
+        m_state.transform = static_cast<uint16_t>(m_matrices.size());
         m_state.mesh      = mesh;
-        m_state.transform = transform;
 
-        m_items.push_back(m_state);
+        m_matrices.push_back(transform);
+        m_items   .push_back(m_state  );
         m_state = {};
     }
 
@@ -254,9 +248,12 @@ public:
 
     inline const Vector<DrawItem>& items() const { return m_items; }
 
+    inline const Vector<Mat4>& matrices() const { return m_matrices; }
+
 private:
     DrawItem         m_state;
     Vector<DrawItem> m_items;
+    Vector<Mat4>     m_matrices;
 };
 
 
@@ -462,8 +459,8 @@ struct GeometryRecord
 {
     uint16_t mesh_id;
     uint16_t mesh_flags;
-    uint32_t attribs_byte_offset;
     uint32_t position_byte_offset;
+    uint32_t attribs_byte_offset;
     uint32_t vertex_count;
 };
 
@@ -852,19 +849,12 @@ struct Mesh
 class MeshCache
 {
 public:
-    void register_from_last_record()
+    bool register_mesh(uint16_t id, uint16_t flags, uint32_t vertex_count)
     {
-        
-        // ...
-    }
+        ASSERT(id < MAX_MESHES);
 
-    bool register_mesh(uint16_t id, uint16_t flags)
-    {
-        if (id >= MAX_MESHES)
-        {
-            ASSERT(false && "Mesh ID out of available range.");
-            return false;
-        }
+        // TODO : Incorporate ID into the decision whether a dynamic buffer has to be deleted, or can be just updated.
+        BX_UNUSED(vertex_count);
 
         MutexScope lock(m_mutex);
 
@@ -920,11 +910,20 @@ public:
         m_transient_mesh_idxs.clear();
     }
 
-    void delete_abandoned_buffers()
+    inline void delete_abandoned_buffers()
     {
         MutexScope lock(m_mutex);
 
         m_buffer_deletion_queue.execute();
+    }
+
+    void update_from_recorder(const GeometryRecorder& recorder)
+    {
+        // No mutex here, since the recorder is thread-local (and we're assuming
+        // that mesh with the same ID wasn't recorder in multiple threads (we
+        // should eventually try to check that)).
+
+        // ...
     }
 
     inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
@@ -994,59 +993,6 @@ public:
 
         return true;
     }*/
-
-    // void add_from_last_record(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
-    // {
-    //     // TODO : If failed, the folowing checks should be reflected in
-    //     //        the program behavior (crash / report / ...).
-
-    //     const GeometryRecord& record = recorder.records().back();
-
-    //     if (record.mesh_id >= m_meshes.size())
-    //     {
-    //         ASSERT(false && "Mesh ID out of available range.");
-    //         return;
-    //     }
-
-    //     // TODO : Perhaps we could only lock when writing the buffer handles,
-    //     //        since creating a mesh with the same ID from multiple threads
-    //     //        is just silly in the first place.
-    //     MutexScope lock(m_mutex);
-
-    //     Mesh& mesh = m_meshes[record.mesh_id];
-
-    //     // TODO : We should also check that vertex attributes didn't change.
-    //     const MeshType old_type = static_cast<MeshType>((mesh  .flags   & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
-    //     const MeshType new_type = static_cast<MeshType>((record.attribs & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
-
-    //     if (new_type != old_type && old_type != MESH_INVALID && old_type != MESH_TRANSIENT)
-    //     {
-    //         // TODO : Dynamic meshes shouldn't need to be destroyed if they were large enough.
-    //         destroy_mesh_buffers(&mesh, 1);
-    //     }
-
-    //     mesh.flags = record.attribs;
-
-    //     switch (new_type)
-    //     {
-    //     case MESH_TRANSIENT:
-    //         mesh.element_count = record.vertex_count;
-    //         mesh.record_index  = static_cast<uint32_t>(recorder.records().size());
-    //         m_transient_meshes_indices.push_back(record.mesh_id);
-    //         break;
-    //     case MESH_STATIC:
-    //     case MESH_DYNAMIC:
-    //         mesh.element_count = create_mesh_buffers(mesh, recorder, record, vertex_layout_cache, new_type == MESH_DYNAMIC);
-    //         break;
-    //     default:
-    //         break;
-    //     }
-    // }
-
-    // void update_transient_buffers(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
-    // {
-    //     // ...
-    // }
 
     /*void clear()
     {
@@ -1825,10 +1771,10 @@ struct GlobalContext
 struct LocalContext
 {
     GeometryRecorder            transient_recorder;
-    GeometryRecorder            static_recorder;
+    GeometryRecorder            persistent_recorder;
 
     DrawList                    draw_list;
-    bgfx::TransientVertexBuffer transient_vertex_buffer;
+    TransientBuffers            transient_buffers;
 
     MatrixStack                 view_matrix_stack;
     MatrixStack                 proj_matrix_stack;
@@ -1846,58 +1792,10 @@ struct LocalContext
 
 static GlobalContext g_ctx;
 
+// TODO : Number of these should probably be limited and the non-main thread
+//        should explicitly ask for them and release them (possibly with the
+//        exception of the lightweight items (timers, main-thread-ness flag, ...)).
 thread_local LocalContext t_ctx;
-
-
-// -----------------------------------------------------------------------------
-// THREAD-LOCAL CONTEXT
-// -----------------------------------------------------------------------------
-
-/*class ThreadLocalContext
-{
-public:
-    
-
-public:
-    void upload_transient_geometry()
-    {
-
-    }
-
-    void upload_persistent_geometry()
-    {
-    }
-
-    void delete_removed_buffers()
-    {
-
-    }
-
-    void submit_draw_list()
-    {
-
-    }
-
-    inline void set_as_main_thread() { m_is_main_thread = true; }
-
-    inline bool is_main_thread() const { return m_is_main_thread; }
-
-private:
-    GeometryRecorder            m_transient_recorder;
-    GeometryRecorder            m_static_recorder;
-
-    DrawList                    m_draw_list;
-
-    MatrixStack                 m_view_matrix_stack;
-    MatrixStack                 m_proj_matrix_stack;
-    MatrixStack                 m_model_matrix_stack;
-
-    GeometryRecorder*           m_active_recorder     = &m_transient_recorder;
-    MatrixStack*                m_active_matrix_stack = &m_model_matrix_stack;
-
-    bool                        m_is_recording        = false;
-    bool                        m_is_main_thread      = false;
-};*/
 
 
 // -----------------------------------------------------------------------------
@@ -2063,9 +1961,9 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         if (g_ctx.frame_number > 0)
         {
             // TODO : This needs to be done for all contexts across all threads.
-            t_ctx.transient_recorder.clear();
-            t_ctx.static_recorder   .clear();
-            t_ctx.draw_list         .clear();
+            t_ctx.transient_recorder .clear();
+            t_ctx.persistent_recorder.clear();
+            t_ctx.draw_list          .clear();
         }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
@@ -2083,6 +1981,11 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
         // TODO : This needs to be done for all contexts across all threads.
         {
+            // TODO : We should check the return value.
+            (void)t_ctx.transient_buffers.update_from_recorder(t_ctx.transient_recorder);
+
+            (void)g_ctx.mesh_cache.update_from_recorder(t_ctx.persistent_recorder);
+
             //if (update_transient_geometry(t_ctx.transient_recorder, g_ctx.dummy_vertex_layout, t_ctx.transient_vertex_buffer))
             {
                 //submit_transient_geometry(t_ctx.transient_recorder, g_ctx.vertex_layout_cache, t_ctx.transient_vertex_buffer);
@@ -2105,6 +2008,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
         if (t_ctx.is_main_thread)
         {
+            g_ctx.mesh_cache.delete_abandoned_buffers();
             g_ctx.mesh_cache.unregister_transient_meshes();
         }
 
@@ -2308,9 +2212,6 @@ static void begin_recording
 {
     ASSERT(id > 0 && id < mnm::MAX_MESHES);
 
-    // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)mnm::g_ctx.mesh_cache.register_mesh(static_cast<uint16_t>(id), static_cast<uint32_t>(flags));
-
     ASSERT(!mnm::t_ctx.is_recording);
     mnm::t_ctx.is_recording = true;
 
@@ -2337,7 +2238,7 @@ void begin_static(int id, int attribs)
     attribs  = (attribs << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
     attribs |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
 
-    begin_recording(mnm::t_ctx.static_recorder, id, attribs);
+    begin_recording(mnm::t_ctx.persistent_recorder, id, attribs);
 }
 
 void vertex(float x, float y, float z)
@@ -2367,9 +2268,14 @@ void texcoord(float u, float v)
 void end(void)
 {
     ASSERT(mnm::t_ctx.is_recording);
+    ASSERT(mnm::t_ctx.active_recorder);
+
     mnm::t_ctx.is_recording = false;
 
-    ASSERT(mnm::t_ctx.active_recorder);
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    const mnm::GeometryRecord& record = mnm::t_ctx.active_recorder->records().back();
+    (void)mnm::g_ctx.mesh_cache.register_mesh(record.mesh_id, record.mesh_flags, record.vertex_count);
+
     mnm::t_ctx.active_recorder->end();
     mnm::t_ctx.active_recorder = nullptr;
 }
