@@ -11,9 +11,9 @@
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
-#include <span>                   // span
+//#include <span>                   // span
 #include <thread>                 // this_thread
-#include <type_traits>            // alignment_of, is_integral, is_trivial, is_standard_layout, make_unsigned_t
+#include <type_traits>            // alignment_of, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
@@ -107,8 +107,8 @@ using Mutex = std::mutex;
 
 using MutexScope = std::lock_guard<std::mutex>;
 
-template <typename T>
-using Span = std::span<T>;
+//template <typename T>
+//using Span = std::span<T>;
 
 template <typename T>
 using Vector = std::vector<T>;
@@ -120,19 +120,6 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
-
-
-// -----------------------------------------------------------------------------
-// PLATFORM HELPERS
-// -----------------------------------------------------------------------------
-
-// Compiled separately mainly due to the name clash of `normal` function with
-// an enum from MacTypes.h.
-extern bgfx::PlatformData create_platform_data
-(
-    GLFWwindow*              window,
-    bgfx::RendererType::Enum renderer
-);
 
 
 // -----------------------------------------------------------------------------
@@ -462,6 +449,16 @@ struct GeometryRecord
     uint32_t position_byte_offset;
     uint32_t attribs_byte_offset;
     uint32_t vertex_count;
+
+    inline MeshType mesh_type() const
+    {
+        return static_cast<MeshType>((mesh_flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+    }
+
+    inline uint16_t mesh_attribs() const
+    {
+        return (mesh_flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+    }
 };
 
 class GeometryRecorder
@@ -736,6 +733,62 @@ union BufferUnion
 
 
 // -----------------------------------------------------------------------------
+// MESH
+// -----------------------------------------------------------------------------
+
+struct TransientMesh
+{
+    uint32_t vertex_count;
+    uint16_t flags;
+    uint32_t start_vertex;
+};
+
+struct PersistentMesh
+{
+    uint32_t          index_count;
+    uint16_t          flags;
+    VertexBufferUnion positions;
+    VertexBufferUnion attribs;
+    IndexBufferUnion  indices;
+};
+
+static_assert(offsetof(TransientMesh, flags) == offsetof(PersistentMesh, flags),
+    "Inconsistent transient and persistent mesh \"flags\" member location.");
+
+static_assert(offsetof(TransientMesh, vertex_count) == offsetof(PersistentMesh, index_count),
+    "Inconsistent transient and persistent mesh element count member location.");
+
+// TODO : Pad to 16 bytes for faster address computation?
+union Mesh
+{
+    TransientMesh  transient;
+    PersistentMesh persistent;
+
+    struct
+    {
+        uint32_t   element_count;
+        uint16_t   flags;
+    };
+
+    inline MeshType type() const
+    {
+        return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+    }
+
+    inline uint16_t attribs() const
+    {
+        return (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+    }
+};
+
+static_assert(offsetof(Mesh, flags) == offsetof(PersistentMesh, flags),
+    "Inconsistent mesh union \"flags\" member location.");
+
+static_assert(offsetof(Mesh, element_count) == offsetof(PersistentMesh, index_count),
+    "Inconsistent mesh union element count member location.");
+
+
+// -----------------------------------------------------------------------------
 // MESH CACHE
 // -----------------------------------------------------------------------------
 
@@ -790,60 +843,273 @@ private:
     Vector<Record> m_records;
 };
 
-struct Mesh2
-{
-    // MSB to LSB:
-    // 11 bits - Currently unused.
-    //  2 bits - Mesh type.
-    //  3 bits - Active vertex attributes.
-    uint16_t                  flags         = 0;
-
-    uint32_t                  element_count = 0;
-
-    union
-    {
-        struct
-        {
-            VertexBufferUnion positions;
-            VertexBufferUnion attributes;
-            IndexBufferUnion  indices;
-        };
-
-        struct
-        {
-            uint32_t          position_offset;
-            uint32_t          attribute_offset;
-        };
-    };
-};
-
 struct MeshCache3
 {
 public:
+    MeshCache3()
+    {
+        memset(m_meshes.data(), 0, m_meshes.size() * sizeof(m_meshes[0]));
+    }
+
+    bool register_mesh(const GeometryRecord& record)
+    {
+        ASSERT(record.mesh_id < m_meshes.size());
+
+        MutexScope lock(m_mutex);
+
+        Mesh& mesh = m_meshes[record.mesh_id];
+
+        const MeshType old_type =        mesh.type();
+        const MeshType new_type = record.mesh_type();
+
+        if (new_type == MESH_INVALID)
+        {
+            ASSERT(false && "Invalid registered mesh type.");
+            return false;
+        }
+
+        switch (old_type)
+        {
+        case MESH_TRANSIENT:
+            ASSERT(false && "Forgot to call `unregister_transient_meshes` at the end of last frame?");
+            break;
+
+        case MESH_STATIC:
+            m_buffer_deletion_queue.enqueue(mesh.persistent.positions.static_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.persistent.attribs  .static_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.persistent.indices  .static_buffer);
+            break;
+
+        case MESH_DYNAMIC:
+            // TODO : Enable dynamic meshes' updating.
+            m_buffer_deletion_queue.enqueue(mesh.persistent.positions.dynamic_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.persistent.attribs  .dynamic_buffer);
+            m_buffer_deletion_queue.enqueue(mesh.persistent.indices  .dynamic_buffer);
+            break;
+
+        default:
+            break;
+        }
+
+        mesh.element_count = record.vertex_count;
+        mesh.flags         = record.mesh_flags;
+
+        if (new_type == MESH_TRANSIENT)
+        {
+            //mesh.transient.positions_start_vertex = record.position_byte_offset / ;
+        }
+
+        return true;
+    }
+
+    void unregister_transient_meshes()
+    {
+        MutexScope lock(m_mutex);
+
+        for (uint16_t idx : m_transient_mesh_idxs)
+        {
+            ASSERT(m_meshes[idx].type() == MESH_TRANSIENT);
+            m_meshes[idx].flags = 0;
+        }
+
+        m_transient_mesh_idxs.clear();
+    }
+
+    void clear_persistent_meshes()
+    {
+        MutexScope lock(m_mutex);
+
+        for (Mesh& mesh : m_meshes)
+        {
+            switch (mesh.type())
+            {
+            case MESH_STATIC:
+                m_buffer_deletion_queue.enqueue(mesh.persistent.positions.static_buffer);
+                m_buffer_deletion_queue.enqueue(mesh.persistent.attribs  .static_buffer);
+                m_buffer_deletion_queue.enqueue(mesh.persistent.indices  .static_buffer);
+                break;
+
+            case MESH_DYNAMIC:
+                m_buffer_deletion_queue.enqueue(mesh.persistent.positions.dynamic_buffer);
+                m_buffer_deletion_queue.enqueue(mesh.persistent.attribs  .dynamic_buffer);
+                m_buffer_deletion_queue.enqueue(mesh.persistent.indices  .dynamic_buffer);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        m_buffer_deletion_queue.execute();
+    }
+
+    inline void clear_abandoned_persistent_buffers()
+    {
+        MutexScope lock(m_mutex);
+
+        m_buffer_deletion_queue.execute();
+    }
+
+    void update_persistent_meshes
+    (
+        const GeometryRecorder&    recorder,
+        const VertexLayoutCache&   vertex_layout_cache,
+        std::vector<unsigned int>* aux_remap_table = nullptr
+    )
+    {
+        // Note that it should be safe to not use mutexes here, since the
+        // mesh recording is thread-local (and assuming that mesh with the
+        // same ID wasn't recorder in multiple threads (we should eventually
+        // try to check that)). But given that persistent meshes shouldn't
+        // be updated that often, it's probably fine to do it here.
+
+        std::vector<unsigned int>  local_remap_table;
+        std::vector<unsigned int>* remap_table = aux_remap_table ? aux_remap_table : &local_remap_table;
+
+        for (const GeometryRecord& record : recorder.records())
+        {
+            ASSERT(record.mesh_id < m_meshes.size());
+
+            Mesh mesh;
+            {
+                MutexScope lock(m_mutex);
+                mesh = m_meshes[record.mesh_id];
+            }
+
+            ASSERT(mesh.type()        == MESH_STATIC ||
+                   mesh.type()        == MESH_DYNAMIC);
+            ASSERT(mesh.element_count == record.vertex_count);
+            ASSERT(mesh.flags         == record.mesh_flags  );
+
+            // TODO : Relax this to static meshes when updating dynamic meshes is permitted, and only update is to be done.
+            ASSERT(mesh.persistent.positions.handle_index == bgfx::kInvalidHandle);
+            ASSERT(mesh.persistent.attribs  .handle_index == bgfx::kInvalidHandle);
+            ASSERT(mesh.persistent.indices  .handle_index == bgfx::kInvalidHandle);
+
+            {
+                constexpr size_t position_size = sizeof(Vec3);
+                const     size_t attribs_size  = vertex_layout_cache.layout(mesh.attribs()).getStride();
+
+                const meshopt_Stream vertex_streams[2] =
+                {
+                    { recorder.position_buffer().data() + record.position_byte_offset, position_size, position_size },
+                    { recorder.attrib_buffer  ().data() + record.attribs_byte_offset , attribs_size , attribs_size  },
+                };
+
+                remap_table->resize(mesh.element_count);
+
+                const size_t indexed_vertex_count = meshopt_generateVertexRemapMulti(
+                    remap_table->data(),
+                    nullptr,
+                    mesh.element_count,
+                    mesh.element_count,
+                    vertex_streams,
+                    BX_COUNTOF(vertex_streams)
+                );
+                ASSERT(indexed_vertex_count < UINT32_MAX);
+
+                uint16_t index_buffer_flags = BGFX_BUFFER_NONE;
+                uint32_t index_type_size    = sizeof(uint16_t);
+
+                if (indexed_vertex_count > UINT16_MAX)
+                {
+                    index_buffer_flags = BGFX_BUFFER_INDEX32;
+                    index_type_size    = sizeof(uint32_t);
+                }
+
+                // TODO : We should allocate just a single memory block and point BGFX
+                //        to individual parts without calling explicit allocations for
+                //        single meshes (but need to check how the `ReleaseFn` works).
+                //        Even better, we could use double-buffered recorders or some
+                //        kind of frame allocators and don't bother with copying.
+
+                const bgfx::Memory* indices = bgfx::alloc(record.vertex_count * index_type_size);
+                ASSERT(indices && indices->data);
+
+                if (index_type_size == sizeof(uint16_t))
+                {
+                    meshopt_remapIndexBuffer<uint16_t>(
+                        reinterpret_cast<uint16_t*>(indices->data),
+                        nullptr,
+                        mesh.element_count,
+                        remap_table->data()
+                    );
+                }
+                else
+                {
+                    meshopt_remapIndexBuffer<uint32_t>(
+                        reinterpret_cast<uint32_t*>(indices->data),
+                        nullptr,
+                        mesh.element_count,
+                        remap_table->data()
+                    );
+                }
+
+                const bgfx::Memory* positions = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[0].size));
+                ASSERT(positions && positions->data);
+
+                meshopt_remapVertexBuffer(
+                    positions->data,
+                    vertex_streams[0].data,
+                    mesh.element_count,
+                    vertex_streams[0].size,
+                    remap_table->data()
+                );
+
+                const bgfx::Memory* attribs = nullptr;
+
+                if ((mesh.attribs() & VERTEX_ATTRIB_MASK))
+                {
+                    attribs = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * vertex_streams[1].size));
+                    ASSERT(attribs && attribs->data);
+
+                    meshopt_remapVertexBuffer(
+                        attribs->data,
+                        vertex_streams[1].data,
+                        mesh.element_count,
+                        vertex_streams[1].size,
+                        remap_table->data()
+                    );
+                }
+
+                const bgfx::VertexLayout& positions_layout = vertex_layout_cache.layout(VERTEX_POSITION << VERTEX_ATTRIB_SHIFT);
+                const bgfx::VertexLayout& attribs_layout   = vertex_layout_cache.layout(mesh.attribs());
+
+                if (mesh.type() == MESH_STATIC)
+                {
+                                 mesh.persistent.positions.static_buffer = bgfx::createVertexBuffer(positions, positions_layout  );
+                    if (attribs) mesh.persistent.attribs  .static_buffer = bgfx::createVertexBuffer(positions, attribs_layout    );
+                                 mesh.persistent.indices  .static_buffer = bgfx::createIndexBuffer (indices  , index_buffer_flags);
+                }
+                else
+                {
+                    // TODO : Probably needs resizeable flags.
+                                 mesh.persistent.positions.dynamic_buffer = bgfx::createDynamicVertexBuffer(positions, positions_layout  );
+                    if (attribs) mesh.persistent.attribs  .dynamic_buffer = bgfx::createDynamicVertexBuffer(positions, attribs_layout    );
+                                 mesh.persistent.indices  .dynamic_buffer = bgfx::createDynamicIndexBuffer (indices  , index_buffer_flags);
+                }
+
+                ASSERT(mesh.persistent.positions.handle_index != bgfx::kInvalidHandle);
+                ASSERT(mesh.persistent.attribs  .handle_index != bgfx::kInvalidHandle || ! attribs);
+                ASSERT(mesh.persistent.indices  .handle_index != bgfx::kInvalidHandle);
+            }
+
+            {
+                MutexScope lock(m_mutex);
+                m_meshes[record.mesh_id] = mesh;
+            }
+        }
+    }
+
+    inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
+
+    inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
 
 private:
-
-};
-
-struct Mesh
-{
-    union
-    {
-        uint32_t              element_count = 0;
-        uint32_t              record_index;
-    };
-
-    // // MSB to LSB:
-    // // 11 bits - Currently unused.
-    // //  2 bits - Mesh type.
-    // //  3 bits - Active vertex attributes.
-    uint16_t                  flags         = 0;
-
-    VertexBufferUnion         positions     = BGFX_INVALID_HANDLE;
-
-    VertexBufferUnion         attribs       = BGFX_INVALID_HANDLE;
-
-    IndexBufferUnion          indices       = BGFX_INVALID_HANDLE;
+    Mutex                   m_mutex;
+    Array<Mesh, MAX_MESHES> m_meshes;
+    Vector<uint16_t>        m_transient_mesh_idxs;
+    BufferDeletionQueue     m_buffer_deletion_queue;
 };
 
 class MeshCache
@@ -851,7 +1117,7 @@ class MeshCache
 public:
     bool register_mesh(uint16_t id, uint16_t flags, uint32_t vertex_count)
     {
-        ASSERT(id < MAX_MESHES);
+        /*ASSERT(id < MAX_MESHES);
 
         // TODO : Incorporate ID into the decision whether a dynamic buffer has to be deleted, or can be just updated.
         BX_UNUSED(vertex_count);
@@ -892,7 +1158,7 @@ public:
             break;
         }
 
-        mesh.flags = flags;
+        mesh.flags = flags;*/
 
         return true;
     }
@@ -921,9 +1187,8 @@ public:
     {
         // No mutex here, since the recorder is thread-local (and we're assuming
         // that mesh with the same ID wasn't recorder in multiple threads (we
-        // should eventually try to check that)).
-
-        // ...
+        // should eventually try to check that)). But if we want to do that, just
+        // add the mutex scope to the scopes where the mesh is read and written.
     }
 
     inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
@@ -1738,6 +2003,19 @@ void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
     ASSERT(pool);
     pool->release_task(this);
 }
+
+
+// -----------------------------------------------------------------------------
+// PLATFORM HELPERS
+// -----------------------------------------------------------------------------
+
+// Compiled separately mainly due to the name clash of `normal` function with
+// an enum from MacTypes.h.
+extern bgfx::PlatformData create_platform_data
+(
+    GLFWwindow*              window,
+    bgfx::RendererType::Enum renderer
+);
 
 
 // -----------------------------------------------------------------------------
