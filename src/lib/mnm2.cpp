@@ -438,7 +438,7 @@ protected:
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
-struct GeometryRecord
+/*struct GeometryRecord
 {
     uint16_t mesh_id;
     uint16_t mesh_flags;
@@ -455,7 +455,7 @@ struct GeometryRecord
     {
         return (mesh_flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
     }
-};
+};*/
 
 class GeometryRecorder
 {
@@ -467,32 +467,19 @@ public:
     {
         ASSERT(!m_recording);
 
-        m_records        .clear();
         m_attrib_buffer  .clear();
         m_position_buffer.clear();
+        m_index_buffer   .clear();
     }
 
-    void begin(uint16_t mesh_id, uint16_t mesh_flags, uint32_t alias_padding)
+    void begin(uint16_t attribs)
     {
         ASSERT(!m_recording);
-        ASSERT(ms_push_func_table[(mesh_flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]);
-        ASSERT(alias_padding <= 128);
+        ASSERT(attribs < BX_COUNTOF(ms_push_func_table));
 
-        m_push_func = ms_push_func_table[(mesh_flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
-
-        if (alias_padding)
-        {
-            m_attrib_buffer.resize(m_attrib_buffer.size() + alias_padding, 0);
-        }
-
-        GeometryRecord record;
-        record.mesh_id              = mesh_id;
-        record.mesh_flags           = mesh_flags;
-        record.attribs_byte_offset  = static_cast<uint32_t>(m_attrib_buffer  .size());
-        record.position_byte_offset = static_cast<uint32_t>(m_position_buffer.size());
-        record.vertex_count         = 0;
-
-        m_records.push_back(record);
+        m_push_func = ms_push_func_table[attribs];
+        m_vertex_count = 0;
+        m_vertex_count = 0;
         m_recording = true;
     }
 
@@ -515,7 +502,7 @@ public:
     {
         ASSERT(m_recording);
 
-        m_attribs.color = bx::endianSwap(rgba);
+        m_attribs_state.color = bx::endianSwap(rgba);
     }
 
     inline void normal(const Vec3& normal)
@@ -529,14 +516,14 @@ public:
             normal.Z * 0.5f + 0.5f,
         };
 
-        bx::packRgb8(&m_attribs.normal, normalized);
+        bx::packRgb8(&m_attribs_state.normal, normalized);
     }
 
     inline void texcoord(const Vec2& texcoord)
     {
         ASSERT(m_recording);
 
-        bx::packRg16S(&m_attribs.texcoord, texcoord.Elements);
+        bx::packRg16S(&m_attribs_state.texcoord, texcoord.Elements);
     }
 
     inline const Vector<GeometryRecord>& records() const { return m_records; }
@@ -644,28 +631,29 @@ private:
 
             if constexpr (!!(Attribs & VERTEX_COLOR))
             {
-                push_data(recorder.m_attribs.color);
+                push_data(recorder.m_attribs_state.color);
             }
 
             if constexpr (!!(Attribs & VERTEX_NORMAL))
             {
-                push_data(recorder.m_attribs.normal);
+                push_data(recorder.m_attribs_state.normal);
             }
 
             if constexpr (!!(Attribs & VERTEX_TEXCOORD))
             {
-                push_data(recorder.m_attribs.texcoord);
+                push_data(recorder.m_attribs_state.texcoord);
             }
         }
     }
 
 protected:
-    VertexAttribs          m_attribs;
-    Vector<GeometryRecord> m_records;
-    Vector<uint8_t>        m_attrib_buffer;
-    Vector<uint8_t>        m_position_buffer;
-    VertexPushFunc         m_push_func = nullptr;
-    bool                   m_recording = false;
+    Vector<uint8_t>      m_attrib_buffer;
+    Vector<uint8_t>      m_position_buffer;
+    Vector<uint8_t>      m_index_buffer;
+    Vector<unsigned int> m_remap_table;
+    VertexAttribs        m_attribs_state;
+    VertexPushFunc       m_push_func = nullptr;
+    bool                 m_recording = false;
 
     static const VertexPushFunc ms_push_func_table[8];
 };
@@ -732,39 +720,13 @@ union BufferUnion
 // MESH
 // -----------------------------------------------------------------------------
 
-struct TransientMesh
+struct Mesh
 {
-    uint16_t flags;
-    uint32_t vertex_count;
-    uint32_t positions_start_vertex;
-    uint32_t attribs_start_vertex;
-};
-
-struct PersistentMesh
-{
-    uint16_t          flags;
-    uint32_t          index_count;
-    VertexBufferUnion positions;
-    VertexBufferUnion attribs;
-    IndexBufferUnion  indices;
-};
-
-static_assert(offsetof(TransientMesh, flags) == offsetof(PersistentMesh, flags),
-    "Inconsistent transient and persistent mesh \"flags\" member location.");
-
-static_assert(offsetof(TransientMesh, vertex_count) == offsetof(PersistentMesh, index_count),
-    "Inconsistent transient and persistent mesh element count member location.");
-
-union Mesh
-{
-    TransientMesh  transient;
-    PersistentMesh persistent;
-
-    struct
-    {
-        uint16_t   flags;
-        uint32_t   element_count;
-    };
+    uint32_t element_count   = 0;
+    uint16_t flags           = 0;
+    uint16_t vertex_position = 0;
+    uint16_t vertex_attribs  = 0;
+    uint16_t indices         = 0;
 
     inline MeshType type() const
     {
@@ -776,12 +738,6 @@ union Mesh
         return (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
     }
 };
-
-static_assert(offsetof(Mesh, flags) == offsetof(PersistentMesh, flags),
-    "Inconsistent mesh union \"flags\" member location.");
-
-static_assert(offsetof(Mesh, element_count) == offsetof(PersistentMesh, index_count),
-    "Inconsistent mesh union element count member location.");
 
 
 // -----------------------------------------------------------------------------
@@ -957,6 +913,42 @@ public:
         m_buffer_deletion_queue.execute();
     }
 
+    /*void update_transient_meshes(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    {
+        // The original idea was to copy all transient geometry to single BGFX
+        // buffer and do the offsetting and aliasing ourselves. But BGFX already
+        // does this under the hood, so we can just ask for multiple
+        // `TransientVertexBuffer` instances instead.
+
+        ASSERT(m_transient_buffers.empty());
+
+        for (const GeometryRecord& record : recorder.records())
+        {
+            ASSERT(record.mesh_type() == MESH_TRANSIENT);
+
+            Mesh mesh;
+            {
+                MutexScope lock(m_mutex);
+                mesh = m_meshes[record.mesh_id];
+            }
+
+            ASSERT(mesh.type()        == MESH_TRANSIENT);
+            ASSERT(mesh.element_count == record.vertex_count);
+            ASSERT(mesh.flags         == record.mesh_flags);
+
+            {
+                MutexScope lock(m_mutex);
+                m_meshes[record.mesh_id] = mesh;
+            }
+        }
+    }*/
+
+    void update_persistent_meshes(const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    {
+        // ...
+    }
+
+#if 0
     void update_persistent_meshes
     (
         const GeometryRecorder&    recorder,
@@ -1107,53 +1099,19 @@ public:
             }
         }
     }
+#endif // 0
 
     inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
 
     inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
 
 private:
-    Mutex                   m_mutex;
-    Array<Mesh, MAX_MESHES> m_meshes;
-    Vector<uint16_t>        m_transient_mesh_idxs;
-    BufferDeletionQueue     m_buffer_deletion_queue;
+    Mutex                               m_mutex;
+    Array<Mesh, MAX_MESHES>             m_meshes;
+    Vector<uint16_t>                    m_transient_mesh_idxs;
+    Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
+    BufferDeletionQueue                 m_buffer_deletion_queue;
 };
-
-
-// -----------------------------------------------------------------------------
-// GEOMETRY UPDATE
-// -----------------------------------------------------------------------------
-
-static bool update_transient_geometry
-(
-    const GeometryRecorder&      recorder,
-    const bgfx::VertexLayout&    dummy_vertex_layout,
-    // TransientMesh& out_transient_mesh
-    bgfx::TransientVertexBuffer& out_vertex_buffer
-)
-{
-    /*if (recorder.buffer().size() % dummy_vertex_layout.getStride() != 0)
-    {
-        // TODO : If this happens regularly (it won't with built-in types, but
-        //        might when/if we add custom ones), we should just pad the buffer.
-        ASSERT(false && "Incompatible transient vertex buffer and vertex layout sizes.");
-        return false;
-    }
-
-    const uint32_t dummy_vertex_count = static_cast<uint32_t>(recorder.buffer().size() / dummy_vertex_layout.getStride());
-
-    if (bgfx::getAvailTransientVertexBuffer(dummy_vertex_count, dummy_vertex_layout) < dummy_vertex_count)
-    {
-        ASSERT(false && "Unable to allocate requested number of transient vertices.");
-        return false;
-    }
-
-    bgfx::allocTransientVertexBuffer(&out_vertex_buffer, dummy_vertex_count, dummy_vertex_layout);
-
-    (void)memcpy(out_vertex_buffer.data, recorder.buffer().data(), recorder.buffer().size());*/
-
-    return true;
-}
 
 
 // -----------------------------------------------------------------------------
