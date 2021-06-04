@@ -772,8 +772,8 @@ private:
     {
         static_assert(MeshType == MESH_STATIC || MeshType == MESH_DYNAMIC, "Unsupported mesh type for destruction.");
 
-        using VertexBufferT = std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
-        using IndexBufferT  = std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
+        using VertexBufferT = typename std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
+        using IndexBufferT  = typename std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
 
         ASSERT(bgfx::isValid(VertexBufferT { mesh.position_buffer }));
         ASSERT(bgfx::isValid(IndexBufferT  { mesh.index_buffer    }));
@@ -841,8 +841,8 @@ private:
     {
         static_assert(MeshType == MESH_STATIC || MeshType == MESH_DYNAMIC, "Unsupported mesh type for destruction.");
 
-        using VertexBufferT = std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
-        using IndexBufferT  = std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
+        using VertexBufferT = typename std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
+        using IndexBufferT  = typename std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
 
         meshopt_Stream            streams[2];
         const bgfx::VertexLayout* layouts[2];
