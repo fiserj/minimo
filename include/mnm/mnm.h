@@ -35,9 +35,9 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 enum
 {
     WINDOW_DEFAULT      = 0,
-    WINDOW_FIXED_SIZE   = 1,
-    WINDOW_FIXED_ASPECT = 2,
-    WINDOW_FULL_SCREEN  = 4,
+    WINDOW_FIXED_SIZE   = 1 << 0,
+    WINDOW_FIXED_ASPECT = 1 << 1,
+    WINDOW_FULL_SCREEN  = 1 << 2,
 };
 
 /// Changes window's size and attributes. The size is specified in "screen
@@ -235,20 +235,28 @@ double toc(void);
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
-/// Vertex attribute flags.
+/// Vertex attribute flags. Position by default.
 ///
 enum
 {
-    VERTEX_COLOR    = 1,
-    VERTEX_NORMAL   = 2,
-    VERTEX_TEXCOORD = 4,
+    VERTEX_COLOR    = 1 << 0,
+    VERTEX_NORMAL   = 1 << 1,
+    VERTEX_TEXCOORD = 1 << 2,
 };
 
-void begin_transient(int id, int attribs);
+/// Primitive type. Triangle by default.
+///
+enum
+{
+    PRIMITIVE_QUADS = 1 << 4,
+    PRIMITIVE_LINES = 1 << 5,
+};
 
-void begin_static(int id, int attribs);
+void begin_transient(int id, int flags);
 
-void begin_dynamic(int id, int attribs);
+void begin_static(int id, int flags);
+
+void begin_dynamic(int id, int flags);
 
 /// Starts immediate geometry building mode. Only supported primitive is
 /// triangles. Only vertex attributes specified in the `attribs` parameter are
@@ -323,11 +331,11 @@ void mesh(int id);
 ///
 enum
 {
-    TEXTURE_LINEAR  =  1,
-    TEXTURE_NEAREST =  2,
-    TEXTURE_REPEAT  =  4,
-    TEXTURE_MIRROR  =  8,
-    TEXTURE_CLAMP   = 12,
+    TEXTURE_LINEAR  = 1 << 0,
+    TEXTURE_NEAREST = 1 << 1,
+    TEXTURE_REPEAT  = 1 << 2,
+    TEXTURE_MIRROR  = 1 << 3,
+    TEXTURE_CLAMP   = 1 << 4,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can

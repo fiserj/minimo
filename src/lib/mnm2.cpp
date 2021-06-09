@@ -63,6 +63,11 @@ enum
     VERTEX_POSITION = 0, // TODO : Eventually enable 2D position as well.
 };
 
+enum
+{
+    PRIMITIVE_TRIANGLES = 0,
+};
+
 constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
 constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD) << VERTEX_ATTRIB_SHIFT;
@@ -1963,20 +1968,20 @@ static inline void begin_recording(int id, int flags)
     mnm::t_ctx.recorder.reset(mnm::Mesh::attribs(mnm::t_ctx.recorded_mesh_flags));
 }
 
-void begin_transient(int id, int attribs)
+void begin_transient(int id, int flags)
 {
-    attribs  = (attribs << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
-    attribs |= mnm::MESH_TRANSIENT << mnm::MESH_TYPE_SHIFT;
+    flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
+    flags |= mnm::MESH_TRANSIENT << mnm::MESH_TYPE_SHIFT;
 
-    begin_recording(id, attribs);
+    begin_recording(id, flags);
 }
 
-void begin_static(int id, int attribs)
+void begin_static(int id, int flags)
 {
-    attribs  = (attribs << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
-    attribs |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
+    flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
+    flags |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
 
-    begin_recording(id, attribs);
+    begin_recording(id, flags);
 }
 
 void vertex(float x, float y, float z)

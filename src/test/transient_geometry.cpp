@@ -13,6 +13,11 @@ static void setup(void)
 
 static void draw(void)
 {
+    if (key_down(KEY_ESCAPE))
+    {
+        quit();
+    }
+
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
@@ -24,7 +29,7 @@ static void draw(void)
     model();
     identity();
 
-    begin_transient(SCENE_ID, VERTEX_COLOR);
+    begin_transient(SCENE_ID, PRIMITIVE_QUADS | VERTEX_COLOR);
     scene();
     end();
 
@@ -71,11 +76,11 @@ static void quad(const Vertex* vertices, int i0, int i1, int i2, int i3)
     color(v2->color);
     vertex(v2->x, v2->y, v2->z);
 
-    color(v0->color);
-    vertex(v0->x, v0->y, v0->z);
+    // color(v0->color);
+    // vertex(v0->x, v0->y, v0->z);
 
-    color(v2->color);
-    vertex(v2->x, v2->y, v2->z);
+    // color(v2->color);
+    // vertex(v2->x, v2->y, v2->z);
 
     color(v3->color);
     vertex(v3->x, v3->y, v3->z);
