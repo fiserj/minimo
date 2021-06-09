@@ -70,7 +70,11 @@ enum
 
 constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
-constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD) << VERTEX_ATTRIB_SHIFT;
+constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD); // << VERTEX_ATTRIB_SHIFT;
+
+constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 4;
+
+constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES); // Intentionally no shift.
 
 constexpr uint32_t MESH_TYPE_SHIFT       = 3;
 
@@ -435,6 +439,12 @@ private:
 public:
     void reset(uint16_t attribs)
     {
+        /*static_assert(VERTEX_ATTRIB_SHIFT < PRIMITIVE_TYPE_SHIFT,
+            "Invalid geometry flags assumption.");
+
+        const uint16_t i = (flags & PRIMITIVE_MASK) >> VERTEX_ATTRIB_SHIFT;*/
+        //const uint16_t attribs = Mesh::attribs(flags);
+
         ASSERT(attribs < BX_COUNTOF(ms_push_func_table));
 
         m_position_buffer.clear();
@@ -563,7 +573,7 @@ private:
         return size;
     }
 
-    template <uint32_t Attribs, size_t Size = attribs_size<Attribs>()>
+    template <uint32_t Attribs, bool UsesQuads = false, size_t Size = attribs_size<Attribs>()>
     static void push_vertex(GeometryRecorder& recorder, const Vec3& position)
     {
         recorder.m_vertex_count++;
@@ -1955,33 +1965,37 @@ double toc(void)
 // PUBLIC API IMPLEMENTATION - GEOMETRY
 // -----------------------------------------------------------------------------
 
-static inline void begin_recording(int id, int flags)
+static inline void begin_recording(int id, int flags, mnm::MeshType type)
 {
     ASSERT(id > 0 && id < mnm::MAX_MESHES);
 
     ASSERT(!mnm::t_ctx.is_recording);
 
+    // TODO : Extract primitive type from flags and insert mesh type instead.
+
+    //flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
+    //flags |= type << mnm::MESH_TYPE_SHIFT;
+
     mnm::t_ctx.recorded_mesh_id    = static_cast<uint16_t>(id);
     mnm::t_ctx.recorded_mesh_flags = static_cast<uint16_t>(flags);
     mnm::t_ctx.is_recording        = true;
 
-    mnm::t_ctx.recorder.reset(mnm::Mesh::attribs(mnm::t_ctx.recorded_mesh_flags));
+    mnm::t_ctx.recorder.reset(mnm::t_ctx.recorded_mesh_flags);
 }
 
 void begin_transient(int id, int flags)
 {
-    flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
-    flags |= mnm::MESH_TRANSIENT << mnm::MESH_TYPE_SHIFT;
-
-    begin_recording(id, flags);
+    begin_recording(id, flags, mnm::MESH_TRANSIENT);
 }
 
 void begin_static(int id, int flags)
 {
-    flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
-    flags |= mnm::MESH_STATIC << mnm::MESH_TYPE_SHIFT;
+    begin_recording(id, flags, mnm::MESH_STATIC);
+}
 
-    begin_recording(id, flags);
+void begin_dynamic(int id, int flags)
+{
+    begin_recording(id, flags, mnm::MESH_DYNAMIC);
 }
 
 void vertex(float x, float y, float z)
