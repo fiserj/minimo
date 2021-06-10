@@ -13,7 +13,6 @@
 #include <mutex>                  // lock_guard, mutex
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
-#include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
 #include <bgfx/bgfx.h>            // bgfx::*
@@ -107,9 +106,6 @@ using Array = std::array<T, Size>;
 
 template <typename T>
 using Atomic = std::atomic<T>;
-
-template <typename KeyT, typename T>
-using HashMap = std::unordered_map<KeyT, T>;
 
 using Mutex = std::mutex;
 
@@ -450,8 +446,9 @@ public:
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
 
-        m_push_func    = ms_push_func_table[attribs];
-        m_vertex_count = 0;
+        m_push_func        = ms_push_func_table[attribs];
+        m_vertex_count     = 0;
+        m_invocation_count = 0;
     }
 
     void vertex(const Vec3& position)
@@ -573,12 +570,54 @@ private:
         return size;
     }
 
-    template <uint32_t Attribs, bool UsesQuads = false, size_t Size = attribs_size<Attribs>()>
+    template <size_t ElementSize>
+    static inline void emulate_quad(Vector<uint8_t>& buffer)
+    {
+        ASSERT(!buffer.empty());
+        ASSERT( buffer.size() % ElementSize      == 0);
+        ASSERT((buffer.size() / ElementSize) % 3 == 0);
+
+        buffer.resize(buffer.size() + ElementSize * 2);
+
+        struct Element
+        {
+            uint8_t bytes[ElementSize];
+        };
+
+        Element* end = reinterpret_cast<Element*>(buffer.data() + buffer.size());
+
+        // Assuming the last triangle has relative indices
+        // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
+        memcpy(end - 2, end - 5, ElementSize);
+        memcpy(end - 1, end - 3, ElementSize);
+    }
+
+    template <
+        uint32_t Attribs,
+        int      PrimitiveType = PRIMITIVE_TRIANGLES,
+        size_t   Size          = attribs_size<Attribs>()
+    >
     static void push_vertex(GeometryRecorder& recorder, const Vec3& position)
     {
+        if constexpr (PrimitiveType == PRIMITIVE_QUADS)
+        {
+            if (recorder.m_invocation_count & 3)
+            {
+                emulate_quad<sizeof(position)>(recorder.m_position_buffer);
+
+                if constexpr (Size > 0)
+                {
+                    emulate_quad<Size>(recorder.m_attrib_buffer);
+                }
+            }
+
+            recorder.m_invocation_count++;
+            recorder.m_vertex_count    += 2;
+        }
+
         recorder.m_vertex_count++;
 
-        DataPush<sizeof(Vec3)>(recorder.m_position_buffer, position);
+        DataPush<sizeof(position)>(recorder.m_position_buffer, position);
 
         if constexpr (Size > 0)
         {
@@ -602,11 +641,12 @@ private:
     }
 
 protected:
-    Vector<uint8_t>             m_attrib_buffer;
-    Vector<uint8_t>             m_position_buffer;
-    VertexAttribs               m_attribs_state;
-    VertexPushFunc              m_push_func    = nullptr;
-    uint32_t                    m_vertex_count = 0;
+    Vector<uint8_t> m_attrib_buffer;
+    Vector<uint8_t> m_position_buffer;
+    VertexAttribs   m_attribs_state;
+    VertexPushFunc  m_push_func        = nullptr;
+    uint32_t        m_vertex_count     = 0;
+    uint32_t        m_invocation_count = 0;
 
     static const VertexPushFunc ms_push_func_table[8];
 };
