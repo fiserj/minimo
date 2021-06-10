@@ -57,6 +57,13 @@ enum MeshType : uint8_t
     MESH_DYNAMIC   = 3,
 };
 
+enum struct PrimitiveType
+{
+    TRIANGLES = 0,
+    QUADS     = 1,
+    LINES     = 2,
+};
+
 enum
 {
     VERTEX_POSITION = 0, // TODO : Eventually enable 2D position as well.
@@ -71,11 +78,11 @@ constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
 constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD); // << VERTEX_ATTRIB_SHIFT;
 
-constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 4;
+constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
 
 constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES); // Intentionally no shift.
 
-constexpr uint32_t MESH_TYPE_SHIFT       = 3;
+constexpr uint32_t MESH_TYPE_SHIFT       = 5;
 
 constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC) << MESH_TYPE_SHIFT;
 
@@ -427,13 +434,49 @@ protected:
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
+class GeometryRecorder;
+
+using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
+
+class VertexPushFuncTable
+{
+public:
+    VertexPushFuncTable()
+    {
+        // ...
+    }
+
+    inline const VertexPushFunc operator[](uint16_t flags) const
+    {
+        return m_funcs[flags];
+    }
+
+private:
+    template <uint16_t>
+    static void func(GeometryRecorder&, const Vec3&);
+
+    template <uint16_t Flags>
+    inline void add()
+    {
+        if (Flags >= m_funcs.size())
+        {
+            m_funcs.resize(Flags + 1, nullptr);
+        }
+
+        m_funcs[Flags] = func<Flags>;
+    }
+
+private:
+    Vector<VertexPushFunc> m_funcs;
+};
+
 class GeometryRecorder
 {
 private:
     using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
 
 public:
-    void reset(uint16_t attribs)
+    void reset(uint16_t flags)
     {
         /*static_assert(VERTEX_ATTRIB_SHIFT < PRIMITIVE_TYPE_SHIFT,
             "Invalid geometry flags assumption.");
@@ -441,12 +484,12 @@ public:
         const uint16_t i = (flags & PRIMITIVE_MASK) >> VERTEX_ATTRIB_SHIFT;*/
         //const uint16_t attribs = Mesh::attribs(flags);
 
-        ASSERT(attribs < BX_COUNTOF(ms_push_func_table));
+        // ASSERT(attribs < BX_COUNTOF(ms_push_func_table));
 
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
 
-        m_push_func        = ms_push_func_table[attribs];
+        m_push_func        = ms_push_func_table[flags];
         m_vertex_count     = 0;
         m_invocation_count = 0;
     }
@@ -640,31 +683,47 @@ private:
         }
     }
 
+    template <uint16_t Flags>
+    static inline void add_vertex_push_func(Vector<VertexPushFunc>& funcs)
+    {
+        funcs.resize(std::max<size_t>(funcs.size(), Flags), nullptr);
+        funcs[Flags] = GeometryRecorder::push_vertex<Flags>;
+    }
+
+    static Vector<VertexPushFunc> init_vertex_push_funcs()
+    {
+        Vector<VertexPushFunc> funcs;
+
+        add_vertex_push_func<VERTEX_COLOR>(funcs);
+
+        return funcs;
+    }
+
 protected:
-    Vector<uint8_t> m_attrib_buffer;
-    Vector<uint8_t> m_position_buffer;
-    VertexAttribs   m_attribs_state;
-    VertexPushFunc  m_push_func        = nullptr;
-    uint32_t        m_vertex_count     = 0;
-    uint32_t        m_invocation_count = 0;
+    Vector<uint8_t>                     m_attrib_buffer;
+    Vector<uint8_t>                     m_position_buffer;
+    VertexAttribs                       m_attribs_state;
+    VertexPushFunc                      m_push_func        = nullptr;
+    uint32_t                            m_vertex_count     = 0;
+    uint32_t                            m_invocation_count = 0;
 
-    static const VertexPushFunc ms_push_func_table[8];
+    static const Vector<VertexPushFunc> ms_push_func_table;
 };
 
-const GeometryRecorder::VertexPushFunc GeometryRecorder::ms_push_func_table[8] =
-{
-    nullptr,
+const Vector<GeometryRecorder::VertexPushFunc> GeometryRecorder::ms_push_func_table = GeometryRecorder::init_vertex_push_funcs();
+// {
+//     // nullptr,
 
-    GeometryRecorder::push_vertex<VERTEX_COLOR   >,
-    GeometryRecorder::push_vertex<VERTEX_NORMAL  >,
-    GeometryRecorder::push_vertex<VERTEX_TEXCOORD>,
+//     // GeometryRecorder::push_vertex<VERTEX_COLOR   >,
+//     // GeometryRecorder::push_vertex<VERTEX_NORMAL  >,
+//     // GeometryRecorder::push_vertex<VERTEX_TEXCOORD>,
         
-    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL  >,
-    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_TEXCOORD>,
-    GeometryRecorder::push_vertex<VERTEX_NORMAL | VERTEX_TEXCOORD>,
+//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL  >,
+//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_TEXCOORD>,
+//     // GeometryRecorder::push_vertex<VERTEX_NORMAL | VERTEX_TEXCOORD>,
 
-    GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
-};
+//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
+// }();
 
 
 // -----------------------------------------------------------------------------
