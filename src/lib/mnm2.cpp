@@ -49,12 +49,12 @@ namespace mnm
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-enum MeshType : uint8_t
+enum MeshType
 {
     MESH_INVALID   = 0,
-    MESH_TRANSIENT = 1,
-    MESH_STATIC    = 2,
-    MESH_DYNAMIC   = 3,
+    MESH_TRANSIENT = 1 << 6,
+    MESH_STATIC    = 1 << 7,
+    MESH_DYNAMIC   = 1 << 8,
 };
 
 enum struct PrimitiveType
@@ -66,7 +66,7 @@ enum struct PrimitiveType
 
 enum
 {
-    VERTEX_POSITION = 0, // TODO : Eventually enable 2D position as well.
+    VERTEX_POSITION_3D = 0,
 };
 
 enum
@@ -76,15 +76,15 @@ enum
 
 constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
-constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD); // << VERTEX_ATTRIB_SHIFT;
+constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_POSITION_2D | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
 
-constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
+constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 4;
 
-constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES); // Intentionally no shift.
+constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES);
 
-constexpr uint32_t MESH_TYPE_SHIFT       = 5;
+constexpr uint32_t MESH_TYPE_SHIFT       = 6;
 
-constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC) << MESH_TYPE_SHIFT;
+constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC);
 
 constexpr uint32_t MAX_MESHES            = 4096;
 
@@ -443,7 +443,7 @@ class VertexPushFuncTable
 public:
     VertexPushFuncTable()
     {
-        // ...
+        add<VERTEX_COLOR>();
     }
 
     inline const VertexPushFunc operator[](uint16_t flags) const
@@ -1002,7 +1002,7 @@ private:
     }
 
     template <typename BufferT>
-    inline void update_persistent_vertex_buffer
+    inline static void update_persistent_vertex_buffer
     (
         const meshopt_Stream&       stream,
         const bgfx::VertexLayout&   layout,
@@ -1037,7 +1037,7 @@ private:
     }
 
     template <typename BufferT>
-    inline void update_persistent_index_buffer
+    inline static void update_persistent_index_buffer
     (
         uint32_t                    vertex_count,
         uint32_t                    indexed_vertex_count,
