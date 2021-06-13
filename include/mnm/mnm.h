@@ -239,18 +239,17 @@ double toc(void);
 ///
 enum
 {
-    VERTEX_POSITION_2D = 1 << 0,
-    VERTEX_COLOR       = 1 << 1,
-    VERTEX_NORMAL      = 1 << 2,
-    VERTEX_TEXCOORD    = 1 << 3,
+    VERTEX_COLOR    = 1 << 0,
+    VERTEX_NORMAL   = 1 << 1,
+    VERTEX_TEXCOORD = 1 << 2,
 };
 
 /// Primitive type. Triangle by default.
 ///
 enum
 {
-    PRIMITIVE_QUADS = 1 << 4,
-    PRIMITIVE_LINES = 1 << 5,
+    PRIMITIVE_QUADS = 1 << 3,
+    PRIMITIVE_LINES = 1 << 4,
 };
 
 void begin_transient(int id, int flags);
