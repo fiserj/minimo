@@ -463,40 +463,9 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
     }
 };
 
-struct VertexAttribStateFuncSet
+template <uint16_t Flags>
+struct VertexAttribStateTraits
 {
-    void (* color)(VertexAttribState&, uint32_t rgba) = nullptr;
-
-    void (* normal)(VertexAttribState&, float nx, float ny, float nz) = nullptr;
-
-    void (* texcoord)(VertexAttribState&, float u, float v) = nullptr;
-
-    void (* copy)(const VertexAttribState&, void* dst) = nullptr;
-};
-
-class VertexAttribStateFuncTable
-{
-public:
-    VertexAttribStateFuncTable()
-    {
-        add<VERTEX_COLOR   >();
-        add<VERTEX_NORMAL  >();
-        add<VERTEX_TEXCOORD>();
-
-        add<VERTEX_COLOR  | VERTEX_NORMAL  >();
-        add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
-        add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-    }
-
-    inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
-    {
-        return m_func_sets[flags];
-    }
-
-private:
-    template <uint16_t Flags>
     static constexpr size_t attribs_size()
     {
         size_t size = 0;
@@ -519,7 +488,7 @@ private:
         return size;
     }
 
-    template <uint16_t Flags, uint16_t Attrib>
+    template <uint16_t Attrib>
     static constexpr size_t attrib_offset()
     {
         static_assert(
@@ -550,13 +519,48 @@ private:
 
         return offset;
     }
+};
 
+struct VertexAttribStateFuncSet
+{
+    void (* color)(VertexAttribState&, uint32_t rgba) = nullptr;
+
+    void (* normal)(VertexAttribState&, float nx, float ny, float nz) = nullptr;
+
+    void (* texcoord)(VertexAttribState&, float u, float v) = nullptr;
+};
+
+class VertexAttribStateFuncTable
+{
+public:
+    VertexAttribStateFuncTable()
+    {
+        add<VERTEX_COLOR   >();
+        add<VERTEX_NORMAL  >();
+        add<VERTEX_TEXCOORD>();
+
+        add<VERTEX_COLOR  | VERTEX_NORMAL  >();
+        add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
+        add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
+
+        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+    }
+
+    inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
+    {
+        return m_func_sets[flags];
+    }
+
+private:
     template <uint16_t Flags>
     static void color(VertexAttribState& state, uint32_t rgba)
     {
         if constexpr (!!(Flags & VERTEX_COLOR))
         {
-            *state.at<VertexAttribState::ColorType, attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
+            *state.at<
+                VertexAttribState::ColorType,
+                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_COLOR>()
+            >() = bx::endianSwap(rgba);
         }
     }
 
@@ -572,7 +576,10 @@ private:
                 nz * 0.5f + 0.5f,
             };
 
-            bx::packRgb8(state.at<VertexAttribState::NormalType, attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
+            bx::packRgb8(state.at<
+                VertexAttribState::NormalType,
+                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_NORMAL>()
+            >(), normalized);
         }
     }
 
@@ -583,21 +590,10 @@ private:
         {
             const float elems[] = { u, v };
 
-            bx::packRg16S(state.at<VertexAttribState::TexcoordType, attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
-        }
-    }
-
-    template <uint16_t Flags>
-    static void copy(const VertexAttribState& state, void* dst)
-    {
-        if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
-        {
-            struct Block
-            {
-                uint8_t bytes[attribs_size<Flags>()];
-            };
-
-            *static_cast<Block*>(dst) = *state.at<Block, 0>();
+            bx::packRg16S(state.at<
+                VertexAttribState::TexcoordType,
+                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_TEXCOORD>()
+            >(), elems);
         }
     }
 
@@ -609,7 +605,6 @@ private:
         func_set.color    = color   <Flags>;
         func_set.normal   = normal  <Flags>;
         func_set.texcoord = texcoord<Flags>;
-        func_set.copy     = copy    <Flags>;
 
         if (m_func_sets.size() <= Flags)
         {
@@ -629,6 +624,41 @@ private:
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
+static inline bool is_aligned(const void* ptr, size_t size)
+{
+    return reinterpret_cast<uintptr_t>(ptr) % size == 0;
+}
+
+template <size_t Size>
+static inline void assign(const void* src, void* dst)
+{
+    struct Block
+    {
+        uint8_t bytes[Size];
+    };
+
+    ASSERT(is_aligned(src, std::alignment_of<Block>::value));
+    ASSERT(is_aligned(dst, std::alignment_of<Block>::value));
+
+    *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
+}
+
+template <size_t Size>
+static inline void push_back(Vector<uint8_t>& buffer, const void* data)
+{
+    static_assert(Size > 0, "Size must be positive.");
+
+    buffer.resize(buffer.size() + Size);
+
+    assign<Size>(data, buffer.data() - Size);
+}
+
+template <typename T>
+static inline void push_back(Vector<uint8_t>& buffer, const T& value)
+{
+    push_back<sizeof(T)>(buffer, &value);
+}
+
 class GeometryRecorder
 {
 public:
@@ -642,9 +672,34 @@ public:
         m_invocation_count = 0;
     }
 
+    template <uint16_t Flags>
+    void vertex_impl(const Vec3& position)
+    {
+        push_back(m_position_buffer, position);
+
+        if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
+        {
+            push_back<VertexAttribStateTraits<Flags>::attribs_size()>(m_attrib_buffer, m_attrib_state.data);
+        }
+    }
+
     void vertex(const Vec3& position)
     {
+        // push_back(m_position_buffer, position);
+
+        // if (Flags > 0)
+        {
+
+        }
+
+        // append(position, );
+        // resize_
+
+        // resize()
         // (*m_push_func)(*this, position);
+        // (* m_vertex_push_func)();
+
+        // m_position_buffer.push;
     }
 
     inline void color(uint32_t rgba)
