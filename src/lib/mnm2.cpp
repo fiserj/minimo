@@ -74,15 +74,15 @@ enum
     PRIMITIVE_TRIANGLES = 0,
 };
 
-constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
+// constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
 constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
 
-constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
+// constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
 
 constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES);
 
-constexpr uint32_t MESH_TYPE_SHIFT       = 5;
+// constexpr uint32_t MESH_TYPE_SHIFT       = 5;
 
 constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC);
 
@@ -286,7 +286,7 @@ public:
 
         if (attribs != UINT32_MAX)
         {
-            ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
+            // ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
             ASSERT(attribs <  UINT8_MAX);
 
             if (attribs >= m_attribs_to_ids.size())
@@ -335,7 +335,8 @@ public:
 
     inline bgfx::ProgramHandle program_handle_from_flags(uint32_t flags) const
     {
-        const uint32_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+        // const uint32_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+        const uint32_t attribs = flags & VERTEX_ATTRIB_MASK;
 
         ASSERT(attribs < m_attribs_to_ids.size());
         ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
@@ -464,62 +465,59 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
 };
 
 template <uint16_t Flags>
-struct VertexAttribStateTraits
+static constexpr size_t vertex_attribs_size()
 {
-    static constexpr size_t attribs_size()
+    size_t size = 0;
+
+    if constexpr (!!(Flags & VERTEX_COLOR))
     {
-        size_t size = 0;
-
-        if constexpr (!!(Flags & VERTEX_COLOR))
-        {
-            size += sizeof(VertexAttribState::ColorType);
-        }
-
-        if constexpr (!!(Flags & VERTEX_NORMAL))
-        {
-            size += sizeof(VertexAttribState::NormalType);
-        }
-
-        if constexpr (!!(Flags & VERTEX_TEXCOORD))
-        {
-            size += sizeof(VertexAttribState::TexcoordType);
-        }
-
-        return size;
+        size += sizeof(VertexAttribState::ColorType);
     }
 
-    template <uint16_t Attrib>
-    static constexpr size_t attrib_offset()
+    if constexpr (!!(Flags & VERTEX_NORMAL))
     {
-        static_assert(
-            Attrib == VERTEX_COLOR  ||
-            Attrib == VERTEX_NORMAL ||
-            Attrib == VERTEX_TEXCOORD,
-            "Invalid Attrib."
-        );
-
-        static_assert(
-            Flags & Attrib,
-            "Attrib must be part of Flags."
-        );
-
-        size_t offset = 0;
-
-        // Order: color, normal, texcooord.
-
-        if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
-        {
-            offset += sizeof(VertexAttribState::ColorType);
-        }
-
-        if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
-        {
-            offset += sizeof(VertexAttribState::NormalType);
-        }
-
-        return offset;
+        size += sizeof(VertexAttribState::NormalType);
     }
-};
+
+    if constexpr (!!(Flags & VERTEX_TEXCOORD))
+    {
+        size += sizeof(VertexAttribState::TexcoordType);
+    }
+
+    return size;
+}
+
+template <uint16_t Flags, uint16_t Attrib>
+static constexpr size_t vertex_attrib_offset()
+{
+    static_assert(
+        Attrib == VERTEX_COLOR  ||
+        Attrib == VERTEX_NORMAL ||
+        Attrib == VERTEX_TEXCOORD,
+        "Invalid Attrib."
+    );
+
+    static_assert(
+        Flags & Attrib,
+        "Attrib must be part of Flags."
+    );
+
+    size_t offset = 0;
+
+    // Order: color, normal, texcooord.
+
+    if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
+    {
+        offset += sizeof(VertexAttribState::ColorType);
+    }
+
+    if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
+    {
+        offset += sizeof(VertexAttribState::NormalType);
+    }
+
+    return offset;
+}
 
 struct VertexAttribStateFuncSet
 {
@@ -535,6 +533,8 @@ class VertexAttribStateFuncTable
 public:
     VertexAttribStateFuncTable()
     {
+        add<VERTEX_POSITION>();
+
         add<VERTEX_COLOR   >();
         add<VERTEX_NORMAL  >();
         add<VERTEX_TEXCOORD>();
@@ -548,7 +548,7 @@ public:
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
     {
-        return m_func_sets[flags];
+        return m_func_sets[flags & VERTEX_ATTRIB_MASK];
     }
 
 private:
@@ -557,10 +557,7 @@ private:
     {
         if constexpr (!!(Flags & VERTEX_COLOR))
         {
-            *state.at<
-                VertexAttribState::ColorType,
-                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_COLOR>()
-            >() = bx::endianSwap(rgba);
+            *state.at<VertexAttribState::ColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
         }
     }
 
@@ -576,10 +573,7 @@ private:
                 nz * 0.5f + 0.5f,
             };
 
-            bx::packRgb8(state.at<
-                VertexAttribState::NormalType,
-                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_NORMAL>()
-            >(), normalized);
+            bx::packRgb8(state.at<VertexAttribState::NormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
         }
     }
 
@@ -590,10 +584,7 @@ private:
         {
             const float elems[] = { u, v };
 
-            bx::packRg16S(state.at<
-                VertexAttribState::TexcoordType,
-                VertexAttribStateTraits<Flags>::template attrib_offset<VERTEX_TEXCOORD>()
-            >(), elems);
+            bx::packRg16S(state.at<VertexAttribState::TexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
         }
     }
 
@@ -608,7 +599,7 @@ private:
 
         if (m_func_sets.size() <= Flags)
         {
-            m_func_sets.resize(Flags);
+            m_func_sets.resize(Flags + 1);
         }
 
         m_func_sets[Flags] = func_set;
@@ -650,7 +641,7 @@ static inline void push_back(Vector<uint8_t>& buffer, const void* data)
 
     buffer.resize(buffer.size() + Size);
 
-    assign<Size>(data, buffer.data() - Size);
+    assign<Size>(data, buffer.data() + buffer.size() - Size);
 }
 
 template <typename T>
@@ -668,38 +659,14 @@ public:
         m_attrib_buffer  .clear();
 
         m_attrib_funcs     = &ms_attrib_state_func_table[flags];
+        m_vertex_func      =  ms_vertex_push_func_table [flags];
         m_vertex_count     = 0;
         m_invocation_count = 0;
     }
 
-    template <uint16_t Flags>
-    void vertex_impl(const Vec3& position)
+    inline void vertex(const Vec3& position)
     {
-        push_back(m_position_buffer, position);
-
-        if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
-        {
-            push_back<VertexAttribStateTraits<Flags>::attribs_size()>(m_attrib_buffer, m_attrib_state.data);
-        }
-    }
-
-    void vertex(const Vec3& position)
-    {
-        // push_back(m_position_buffer, position);
-
-        // if (Flags > 0)
-        {
-
-        }
-
-        // append(position, );
-        // resize_
-
-        // resize()
-        // (*m_push_func)(*this, position);
-        // (* m_vertex_push_func)();
-
-        // m_position_buffer.push;
+        (* m_vertex_func)(*this, position);
     }
 
     inline void color(uint32_t rgba)
@@ -724,266 +691,125 @@ public:
     inline const Vector<uint8_t>& position_buffer() const { return m_position_buffer; }
 
 private:
-#if 0
-//     template <size_t Size>
-//     class DataPush
-//     {
-//     public:
-//         inline DataPush(Vector<uint8_t>& buffer)
-//         {
-//             reserve(buffer, Size);
-//         }
+    using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
 
-//         template <typename T>
-//         inline DataPush(Vector<uint8_t>& buffer, const T& data)
-//         {
-//             static_assert(sizeof(T) == Size, "Pushed data size mismatch.");
+    class VertexPushFuncTable
+    {
+    public:
+        VertexPushFuncTable()
+        {
+            add<VERTEX_POSITION>();
 
-//             reserve(buffer, sizeof(T));
-//             (*this)(data);
-//         }
+            add<VERTEX_COLOR   >();
+            add<VERTEX_NORMAL  >();
+            add<VERTEX_TEXCOORD>();
 
-//         template <typename T>
-//         inline void operator()(const T& data)
-//         {
-//             static_assert(is_pod<T>(), "Pushed data type is not POD.");
-//             static_assert(std::alignment_of<T>::value == 4, "Non-standard pushed data alignment.");
+            add<VERTEX_COLOR  | VERTEX_NORMAL  >();
+            add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
+            add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
 
-// #ifndef NDEBUG
-//             ASSERT(m_push_bytes >= sizeof(T));
-//             m_push_bytes -= sizeof(T);
-// #endif
+            add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
 
-//             *reinterpret_cast<T*>(m_head) = data;
-//             m_head += sizeof(T);
-//         }
+            add<PRIMITIVE_QUADS | VERTEX_POSITION>();
 
-//     private:
-//         inline void reserve(Vector<uint8_t>& buffer, size_t push_bytes)
-//         {
-//             ASSERT(push_bytes > 0);
+            add<PRIMITIVE_QUADS | VERTEX_COLOR   >();
+            add<PRIMITIVE_QUADS | VERTEX_NORMAL  >();
+            add<PRIMITIVE_QUADS | VERTEX_TEXCOORD>();
 
-//             const size_t size = buffer.size();
+            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_NORMAL  >();
+            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD>();
+            add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD>();
 
-//             buffer.resize(size + push_bytes);
+            add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+        }
 
-//             m_head       = buffer.data() + size;
-// #ifndef NDEBUG
-//             m_push_bytes = push_bytes;
-// #endif
-//         }
+        inline const VertexPushFunc& operator[](uint16_t flags) const
+        {
+            // Clear mesh type and primitive type flags, except the quad primitive bit.
+            return m_funcs[flags & ~MESH_TYPE_MASK & (~PRIMITIVE_TYPE_MASK | PRIMITIVE_QUADS)];
+        }
 
-//     private:
-//         uint8_t* m_head;
-// #ifndef NDEBUG
-//         size_t   m_push_bytes;
-// #endif
-//     };
+    private:
+        template <size_t Size>
+        static inline void emulate_quad(Vector<uint8_t>& buffer)
+        {
+            static_assert(Size > 0, "Size must be positive.");
 
-//     struct VertexAttribs
-//     {
-//         uint32_t color    = 0xffffffff;
-//         uint32_t texcoord = 0x00000000;
-//         uint32_t normal   = 0x00ff0000;
-//     };
+            ASSERT(!buffer.empty());
+            ASSERT( buffer.size() % Size      == 0);
+            ASSERT((buffer.size() / Size) % 3 == 0);
 
-//     template <uint32_t Attribs>
-//     static constexpr size_t attribs_size()
-//     {
-//         size_t size = 0;
+            buffer.resize(buffer.size() + 2 * Size);
 
-//         if constexpr  (!!(Attribs & VERTEX_COLOR))
-//         {
-//             size += sizeof(VertexAttribs::color);
-//         }
+            uint8_t* end = buffer.data() + buffer.size();
 
-//         if constexpr  (!!(Attribs & VERTEX_NORMAL))
-//         {
-//             size += sizeof(VertexAttribs::normal);
-//         }
+            // Assuming the last triangle has relative indices
+            // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
+            assign<Size>(end - 5 * Size, end - 2 * Size);
+            assign<Size>(end - 3 * Size, end - 1 * Size);
+        }
 
-//         if constexpr (!!(Attribs & VERTEX_TEXCOORD))
-//         {
-//             size += sizeof(VertexAttribs::texcoord);
-//         }
+        template <uint16_t Flags>
+        static void vertex(GeometryRecorder& recorder, const Vec3& position)
+        {
+            if constexpr (!!(Flags & (PRIMITIVE_QUADS)))
+            {
+                if ((recorder.m_invocation_count & 3) == 3)
+                {
+                    emulate_quad<sizeof(position)>(recorder.m_position_buffer);
 
-//         return size;
-//     }
+                    if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
+                    {
+                        emulate_quad<vertex_attribs_size<Flags>()>(recorder.m_attrib_buffer);
+                    }
 
-//     template <size_t ElementSize>
-//     static inline void emulate_quad(Vector<uint8_t>& buffer)
-//     {
-//         ASSERT(!buffer.empty());
-//         ASSERT( buffer.size() % ElementSize      == 0);
-//         ASSERT((buffer.size() / ElementSize) % 3 == 0);
+                    recorder.m_vertex_count += 2;
+                }
 
-//         buffer.resize(buffer.size() + ElementSize * 2);
+                recorder.m_invocation_count++;
+            }
 
-//         struct Element
-//         {
-//             uint8_t bytes[ElementSize];
-//         };
+            recorder.m_vertex_count++;
 
-//         Element* end = reinterpret_cast<Element*>(buffer.data() + buffer.size());
+            push_back(recorder.m_position_buffer, position);
 
-//         // Assuming the last triangle has relative indices
-//         // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
-//         memcpy(end - 2, end - 5, ElementSize);
-//         memcpy(end - 1, end - 3, ElementSize);
-//     }
+            if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
+            {
+                push_back<vertex_attribs_size<Flags>()>(recorder.m_attrib_buffer, recorder.m_attrib_state.data);
+            }
+        }
 
-//     template <
-//         uint32_t Attribs,
-//         int      PrimitiveType = PRIMITIVE_TRIANGLES,
-//         size_t   Size          = attribs_size<Attribs>()
-//     >
-//     static void push_vertex(GeometryRecorder& recorder, const Vec3& position)
-//     {
-//         if constexpr (PrimitiveType == PRIMITIVE_QUADS)
-//         {
-//             if (recorder.m_invocation_count & 3)
-//             {
-//                 emulate_quad<sizeof(position)>(recorder.m_position_buffer);
+        template <uint16_t Flags>
+        void add()
+        {
+            if (m_funcs.size() <= Flags)
+            {
+                m_funcs.resize(Flags + 1, nullptr);
+            }
 
-//                 if constexpr (Size > 0)
-//                 {
-//                     emulate_quad<Size>(recorder.m_attrib_buffer);
-//                 }
-//             }
+            m_funcs[Flags] = vertex<Flags>;
+        }
 
-//             recorder.m_invocation_count++;
-//             recorder.m_vertex_count    += 2;
-//         }
-
-//         recorder.m_vertex_count++;
-
-//         DataPush<sizeof(position)>(recorder.m_position_buffer, position);
-
-//         if constexpr (Size > 0)
-//         {
-//             DataPush<Size> push_data(recorder.m_attrib_buffer);
-
-//             if constexpr (!!(Attribs & VERTEX_COLOR))
-//             {
-//                 push_data(recorder.m_attribs_state.color);
-//             }
-
-//             if constexpr (!!(Attribs & VERTEX_NORMAL))
-//             {
-//                 push_data(recorder.m_attribs_state.normal);
-//             }
-
-//             if constexpr (!!(Attribs & VERTEX_TEXCOORD))
-//             {
-//                 push_data(recorder.m_attribs_state.texcoord);
-//             }
-//         }
-//     }
-#endif // 0
+    private:
+        Vector<VertexPushFunc> m_funcs;
+    };
 
 protected:
     Vector<uint8_t>                         m_attrib_buffer;
     Vector<uint8_t>                         m_position_buffer;
     VertexAttribState                       m_attrib_state;
     const VertexAttribStateFuncSet*         m_attrib_funcs     = nullptr;
+    VertexPushFunc                          m_vertex_func      = nullptr;
     uint32_t                                m_vertex_count     = 0;
     uint32_t                                m_invocation_count = 0;
 
     static const VertexAttribStateFuncTable ms_attrib_state_func_table;
+    static const VertexPushFuncTable        ms_vertex_push_func_table;
 };
 
 const VertexAttribStateFuncTable GeometryRecorder::ms_attrib_state_func_table;
 
-// static inline uint8_t* resize(Vector<uint8_t>& buffer, size_t bytes)
-// {
-//     ASSERT(bytes > 0);
-
-//     const size_t  offset = buffer.size();
-//     buffer.resize(offset + bytes);
-
-//     return buffer.data() + offset;
-// }
-
-// template <typename T>
-// static inline void* push_back(void* buffer, const T& value)
-// {
-//     ASSERT(buffer);
-
-//     *static_cast<T*>(buffer) = value;
-
-//     return static_cast<T*>(buffer) + 1;
-// }
-
-// template <typename T>
-// static inline void push_back(Vector<uint8_t>& buffer, const T& value)
-// {
-//     push_back(buffer.data(), value);
-// }
-
-// template <uint16_t Flags>
-// class VertexAttribStateTraits
-// {
-// public:
-
-// };
-
-// template <uint16_t Flags>
-// class VertexAttribStateTraits
-// {
-// public:
-// };
-
-#if 0
-template <uint16_t Flags>
-void VertexPushFuncTable::func(GeometryRecorder& recorder, const Vec3& position)
-{
-    // recorder.m_vertex_count++;
-
-    // push_back(recorder.m_position_buffer, position);
-
-    // constexpr size_t attribs_size =
-    //     (!!(Flags & VERTEX_COLOR   ) ? sizeof(GeometryRecorder::VertexAttribs::color   ) : 0) +
-    //     (!!(Flags & VERTEX_NORMAL  ) ? sizeof(GeometryRecorder::VertexAttribs::normal  ) : 0) +
-    //     (!!(Flags & VERTEX_TEXCOORD) ? sizeof(GeometryRecorder::VertexAttribs::texcoord) : 0) ;
-
-    // if (attribs_size > 0)
-    // {
-    //     // TODO : Ideally just copy the involved part.
-
-    //     void* head = resize(recorder.m_attrib_buffer, attribs_size);
-
-    //     if constexpr (!!(Attribs & VERTEX_COLOR))
-    //     {
-    //         head = push_back(head, recorder.m_attribs_state.color);
-    //     }
-
-    //     if constexpr (!!(Attribs & VERTEX_NORMAL))
-    //     {
-    //         head = push_back(head, recorder.m_attribs_state.normal);
-    //     }
-
-    //     if constexpr (!!(Attribs & VERTEX_TEXCOORD))
-    //     {
-    //         head = push_back(head, recorder.m_attribs_state.texcoord);
-    //     }
-    // }
-}
-#endif // 0
-
-// const Vector<GeometryRecorder::VertexPushFunc> GeometryRecorder::ms_push_func_table = GeometryRecorder::init_vertex_push_funcs();
-// {
-//     // nullptr,
-
-//     // GeometryRecorder::push_vertex<VERTEX_COLOR   >,
-//     // GeometryRecorder::push_vertex<VERTEX_NORMAL  >,
-//     // GeometryRecorder::push_vertex<VERTEX_TEXCOORD>,
-        
-//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL  >,
-//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_TEXCOORD>,
-//     // GeometryRecorder::push_vertex<VERTEX_NORMAL | VERTEX_TEXCOORD>,
-
-//     // GeometryRecorder::push_vertex<VERTEX_COLOR  | VERTEX_NORMAL | VERTEX_TEXCOORD>,
-// }();
+const GeometryRecorder::VertexPushFuncTable GeometryRecorder::ms_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
@@ -1000,12 +826,14 @@ struct Mesh
 
     static inline MeshType type(uint16_t flags)
     {
-        return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+        return static_cast<MeshType>(flags & MESH_TYPE_MASK);
+        // return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
     }
 
     static inline uint16_t attribs(uint16_t flags)
     {
-        return (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
+        return flags & VERTEX_ATTRIB_MASK;
+        // return (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
     }
 
     inline MeshType type() const { return type(flags); }
@@ -2336,7 +2164,7 @@ static inline void begin_recording(int id, int flags, mnm::MeshType type)
     //flags |= type << mnm::MESH_TYPE_SHIFT;
 
     mnm::t_ctx.recorded_mesh_id    = static_cast<uint16_t>(id);
-    mnm::t_ctx.recorded_mesh_flags = static_cast<uint16_t>(flags);
+    mnm::t_ctx.recorded_mesh_flags = static_cast<uint16_t>(flags | static_cast<int>(type));
     mnm::t_ctx.is_recording        = true;
 
     mnm::t_ctx.recorder.reset(mnm::t_ctx.recorded_mesh_flags);
