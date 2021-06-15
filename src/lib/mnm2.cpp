@@ -1280,13 +1280,13 @@ static void submit_draw_list
 
         case MESH_STATIC:
                                 bgfx::setVertexBuffer(0, bgfx::VertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) bgfx::setVertexBuffer(0, bgfx::VertexBufferHandle { mesh.attrib_buffer   });
+            if (mesh.attribs()) bgfx::setVertexBuffer(1, bgfx::VertexBufferHandle { mesh.attrib_buffer   });
                                 bgfx::setIndexBuffer (   bgfx::IndexBufferHandle  { mesh.index_buffer    });
             break;
 
         case MESH_DYNAMIC:
                                 bgfx::setVertexBuffer(0, bgfx::DynamicVertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) bgfx::setVertexBuffer(0, bgfx::DynamicVertexBufferHandle { mesh.attrib_buffer   });
+            if (mesh.attribs()) bgfx::setVertexBuffer(1, bgfx::DynamicVertexBufferHandle { mesh.attrib_buffer   });
                                 bgfx::setIndexBuffer (   bgfx::DynamicIndexBufferHandle  { mesh.index_buffer    });
             break;
 

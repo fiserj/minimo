@@ -10,13 +10,18 @@ static void setup(void)
 {
     title("Static Geometry Example");
 
-    begin_static(CUBE_ID, VERTEX_COLOR);
+    begin_static(CUBE_ID, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
     end();
 }
 
 static void draw(void)
 {
+    if (key_down(KEY_ESCAPE))
+    {
+        quit();
+    }
+
     projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
@@ -48,9 +53,43 @@ void scene(void)
     }
 }
 
-void cube(void)
+static void cube(void)
 {
-    // ...
+    color (0xfff200ff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
+
+    color(0x65def1ff);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
+
+    color(0xf96900ff);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+
+    color(0xdc2e73ff);
+    vertex( 0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f, -0.5f);
+
+    color(0x5d00ffff);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+
+    color(0x000c7dff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
 }
 
 MNM_MAIN(setup, draw, 0);
