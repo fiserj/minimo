@@ -53,59 +53,43 @@ void scene(void)
     }
 }
 
-typedef struct
-{
-    float        x, y, z;
-    unsigned int color;
-
-} Vertex;
-
-static void quad(const Vertex* vertices, int i0, int i1, int i2, int i3)
-{
-    const Vertex* v0 = vertices + i0;
-    const Vertex* v1 = vertices + i1;
-    const Vertex* v2 = vertices + i2;
-    const Vertex* v3 = vertices + i3;
-
-    color(v0->color);
-    vertex(v0->x, v0->y, v0->z);
-
-    color(v1->color);
-    vertex(v1->x, v1->y, v1->z);
-
-    color(v2->color);
-    vertex(v2->x, v2->y, v2->z);
-
-    // color(v0->color);
-    // vertex(v0->x, v0->y, v0->z);
-
-    // color(v2->color);
-    // vertex(v2->x, v2->y, v2->z);
-
-    color(v3->color);
-    vertex(v3->x, v3->y, v3->z);
-}
-
 static void cube(void)
 {
-    static const Vertex vertices[] =
-    {
-        {  0.5f,  0.5f, -0.5f, 0xff00ffff }, // 0
-        { -0.5f,  0.5f, -0.5f, 0x0000ffff }, // 1
-        { -0.5f,  0.5f,  0.5f, 0x000000ff }, // 2
-        {  0.5f,  0.5f,  0.5f, 0xff0000ff }, // 3
-        {  0.5f, -0.5f,  0.5f, 0xffff00ff }, // 4
-        { -0.5f, -0.5f,  0.5f, 0x00ff00ff }, // 5
-        { -0.5f, -0.5f, -0.5f, 0x00ffffff }, // 6
-        {  0.5f, -0.5f, -0.5f, 0xffffffff }, // 7
-    };
+    color (0xfff200ff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
 
-    quad(vertices, 0, 1, 2, 3);
-    quad(vertices, 4, 5, 6, 7);
-    quad(vertices, 3, 2, 5, 4);
-    quad(vertices, 7, 6, 1, 0);
-    quad(vertices, 2, 1, 6, 5);
-    quad(vertices, 0, 3, 4, 7);
+    color(0x65def1ff);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
+
+    color(0xf96900ff);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+
+    color(0xdc2e73ff);
+    vertex( 0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f, -0.5f);
+
+    color(0x5d00ffff);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+
+    color(0x000c7dff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
 }
 
 MNM_MAIN(setup, draw, 0);
