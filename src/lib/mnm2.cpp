@@ -88,6 +88,8 @@ constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC);
 
 constexpr uint32_t MAX_MESHES            = 4096;
 
+constexpr uint32_t MAX_TEXTURES          = 4096;
+
 constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
@@ -1328,6 +1330,75 @@ static void submit_draw_list
 
 
 // -----------------------------------------------------------------------------
+// TEXTURING
+// -----------------------------------------------------------------------------
+
+struct Texture
+{
+    bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+};
+
+class TextureCache
+{
+public:
+    void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        for (Texture& texture : m_textures)
+        {
+            destroy_if_valid(texture.handle);
+        }
+    }
+
+    void add_texture(uint16_t id, uint16_t width, uint16_t height, uint16_t stride, const void* rgba)
+    {
+        ASSERT(id < m_textures.size());
+
+        MutexScope lock(m_mutex);
+
+        Texture& texture = m_textures[id];
+
+        destroy_if_valid(texture.handle);
+
+        const bgfx::Memory* memory = nullptr;
+
+        if (!stride || stride == width * 4)
+        {
+            memory = bgfx::copy(rgba, width * height * 4);
+        }
+        else
+        {
+            ASSERT(stride > width * 4);
+
+            memory = bgfx::alloc(width * height * 4);
+
+            const uint8_t* src = static_cast<const uint8_t*>(rgba);
+            uint8_t*       dst = memory->data;
+
+            for (uint16_t y = 0; y < height; y++)
+            {
+                memcpy(dst, src, width * 4);
+
+                src += stride;
+                dst += width * 4;
+            }
+        }
+
+        texture.handle = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, memory);
+    }
+
+    inline Texture& texture(uint16_t id) { return m_textures[id]; }
+
+    inline const Texture& texture(uint16_t id) const { return m_textures[id]; }
+
+private:
+    Mutex                        m_mutex;
+    Array<Texture, MAX_TEXTURES> m_textures;
+};
+
+
+// -----------------------------------------------------------------------------
 // TIME MEASUREMENT
 // -----------------------------------------------------------------------------
 
@@ -1730,6 +1801,7 @@ struct GlobalContext
 
     MeshCache           mesh_cache;
     ProgramCache        program_cache;
+    TextureCache        texture_cache;
     VertexLayoutCache   vertex_layout_cache;
     bgfx::VertexLayout  dummy_vertex_layout;
 
@@ -1991,6 +2063,8 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
     // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
     g_ctx.vertex_layout_cache.clear();
+    g_ctx.texture_cache      .clear();
+    // g_ctx.program_cache      .clear();
     g_ctx.mesh_cache         .clear_persistent_meshes();
 
     bgfx::shutdown();

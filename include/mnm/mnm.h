@@ -350,7 +350,8 @@ enum
 void load_texture(int id, int width, int height, int stride, const void* rgba);
 
 /// Sets the current texture mode properties. Default properties are
-/// `TEXTURE_LINEAR | TEXTURE_REPEAT`.
+/// `TEXTURE_LINEAR | TEXTURE_REPEAT`. Properties are reset after the next
+/// `mesh` call.
 ///
 /// @param[in] flags Texture mode properties.
 ///
