@@ -252,31 +252,32 @@ enum
     PRIMITIVE_LINES = 1 << 4,
 };
 
+/// Starts transient geometry recording. Primitive type and recorded per-vertex
+/// attributes can be specified via flags. Transient mesh ID is only valid for
+/// the duration of the frame. The amount of transient geometry that can be
+/// recorded in each frame is limited and can be specified in the setup phase
+/// via `TODO`.
+///
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
+///
 void begin_transient(int id, int flags);
 
+/// Starts static geometry recording. Primitive type and recorded per-vertex
+/// attributes can be specified via flags.
+///
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
+///
 void begin_static(int id, int flags);
 
+/// Starts dynamic geometry. Primitive type and recorded per-vertex attributes
+/// can be specified via flags.
+///
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
+///
 void begin_dynamic(int id, int flags);
-
-/// Starts immediate geometry building mode. Only supported primitive is
-/// triangles. Only vertex attributes specified in the `attribs` parameter are
-/// recorded. Vertex position is always recorded.
-///
-/// @param[in] attribs Vertex attribute flags.
-///
-//void begin(int attribs);
-
-/// Starts cached geometry / mesh building mode. Only supported primitive is
-/// triangles. Only vertex attributes specified in the `attribs` parameter are
-/// recorded. Vertex position is always recorded. The user-defined identifier
-/// can be used repeatedly to overwrite existing content, but only the last
-/// content is retained. Use the `mesh` function to submit cached geometry using
-/// the current model matrix.
-///
-/// @param[in] attribs Vertex attribute flags.
-/// @param[in] id Cached geometry identifier. Must be non-zero.
-///
-//void begin_cached(int attribs, int id);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.
@@ -309,16 +310,14 @@ void normal(float nx, float ny, float nz);
 ///
 void texcoord(float u, float v);
 
-/// Ends the current geometry. Note that the data isn't immediately copied over
-/// to the GPU, but it's retained on the CPU and submitted together after the
-/// `draw` function returns.
+/// Ends the current geometry recording.
 ///
 void end(void);
 
-/// Submits a cached geometry / mesh created previously with `begin_cached` with
+/// Submits recorded mesh geometry created previously with `begin_*`, using
 /// the same identifier.
 ///
-/// @param[in] id Cached geometry identifier. Must be non-zero.
+/// @param[in] id Mesh identifier.
 ///
 void mesh(int id);
 

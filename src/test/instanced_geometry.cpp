@@ -44,15 +44,49 @@ void scene(void)
         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        mesh(CUBE_ID);
+        transform();
 
         pop();
     }
 }
 
-void cube(void)
+static void cube(void)
 {
-    // ...
+    color (0xfff200ff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
+
+    color(0x65def1ff);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
+
+    color(0xf96900ff);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+
+    color(0xdc2e73ff);
+    vertex( 0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f, -0.5f);
+
+    color(0x5d00ffff);
+    vertex(-0.5f,  0.5f,  0.5f);
+    vertex(-0.5f,  0.5f, -0.5f);
+    vertex(-0.5f, -0.5f, -0.5f);
+    vertex(-0.5f, -0.5f,  0.5f);
+
+    color(0x000c7dff);
+    vertex( 0.5f,  0.5f, -0.5f);
+    vertex( 0.5f,  0.5f,  0.5f);
+    vertex( 0.5f, -0.5f,  0.5f);
+    vertex( 0.5f, -0.5f, -0.5f);
 }
 
 MNM_MAIN(setup, draw, 0);
