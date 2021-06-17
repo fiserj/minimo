@@ -38,8 +38,7 @@
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
-#include <shaders/poscolor_fs.h>  // poscolor_fs
-#include <shaders/poscolor_vs.h>  // poscolor_vs
+#include <mnm_shaders.h>          // *_fs, *_vs
 
 
 namespace mnm
@@ -1941,13 +1940,17 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
     {
-        BGFX_EMBEDDED_SHADER(poscolor_fs),
-        BGFX_EMBEDDED_SHADER(poscolor_vs),
+        BGFX_EMBEDDED_SHADER(position_color_fs   ),
+        BGFX_EMBEDDED_SHADER(position_color_vs   ),
+
+        BGFX_EMBEDDED_SHADER(position_texcoord_fs),
+        BGFX_EMBEDDED_SHADER(position_texcoord_vs),
 
         BGFX_EMBEDDED_SHADER_END()
     };
 
-    (void)g_ctx.program_cache.add(s_shaders, type, "poscolor_vs", "poscolor_fs", VERTEX_COLOR);
+    (void)g_ctx.program_cache.add(s_shaders, type, "position_color_vs"   , "position_color_fs"   , VERTEX_COLOR   );
+    (void)g_ctx.program_cache.add(s_shaders, type, "position_texcoord_vs", "position_texcoord_fs", VERTEX_TEXCOORD);
 
     g_ctx.mouse.update_position(g_ctx.window);
 

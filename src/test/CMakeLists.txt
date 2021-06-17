@@ -1,7 +1,6 @@
 set(NAME test)
 
 add_executable(${NAME}
-    # test.cpp
     hello_triangle.c
 )
 

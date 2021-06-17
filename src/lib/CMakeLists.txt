@@ -47,5 +47,7 @@ set_target_properties(${NAME} PROPERTIES
 
 include(cmake/add_shader_dependency.cmake)
 
-add_shader_dependency(${NAME} "shaders/poscolor.vs")
-add_shader_dependency(${NAME} "shaders/poscolor.fs")
+add_shader_dependency(${NAME} "shaders/position_color.vs"   )
+add_shader_dependency(${NAME} "shaders/position_color.fs"   )
+add_shader_dependency(${NAME} "shaders/position_texcoord.vs")
+add_shader_dependency(${NAME} "shaders/position_texcoord.fs")
