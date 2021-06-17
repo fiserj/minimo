@@ -1,7 +1,7 @@
 set(NAME ${PROJECT_NAME})
 
 set(SOURCE_FILES
-    mnm2.cpp
+    mnm.cpp
     ../../include/mnm/mnm.h # Not needed for build, but IDE-friendly.
 )
 
