@@ -2,7 +2,7 @@ set(NAME test)
 
 add_executable(${NAME}
     # test.cpp
-    transient_geometry.cpp
+    hello_triangle.c
 )
 
 target_include_directories(${NAME} PRIVATE
@@ -14,6 +14,8 @@ target_link_libraries(${NAME} PRIVATE
 )
 
 set_target_properties(${NAME} PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
     CXX_STANDARD 20
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON

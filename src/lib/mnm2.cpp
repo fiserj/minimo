@@ -90,6 +90,8 @@ constexpr uint32_t MAX_MESHES            = 4096;
 
 constexpr uint32_t MAX_TEXTURES          = 4096;
 
+constexpr uint32_t MAX_PROGRAM_UNIFORMS  = 8;
+
 constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
@@ -212,11 +214,12 @@ constexpr bool is_pod()
 struct DrawItem
 {
     // TODO : Mesh ID and view ID could be merged to single uint16_t.
-    uint16_t                 transform = UINT16_MAX;
-    uint16_t                 mesh      = UINT16_MAX;
-    bgfx::ViewId             pass      = UINT16_MAX;
-    bgfx::ProgramHandle      program   = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture   = BGFX_INVALID_HANDLE;
+    uint16_t                 transform     = UINT16_MAX;
+    uint16_t                 mesh          = UINT16_MAX;
+    bgfx::ViewId             pass          = UINT16_MAX;
+    bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE;
+    uint16_t                 texture_flags = BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE;
 };
 
 class DrawList
@@ -257,6 +260,26 @@ private:
 // -----------------------------------------------------------------------------
 // PROGRAM CACHE
 // -----------------------------------------------------------------------------
+
+// struct Program
+// {
+//     bgfx::ProgramHandle                              handle = BGFX_INVALID_HANDLE;
+//     Array<bgfx::UniformHandle, MAX_PROGRAM_UNIFORMS> uniforms;
+
+//     Program()
+//     {
+//         uniforms.fill(BGFX_INVALID_HANDLE);
+//     }
+// };
+
+// class ProgramCache2
+// {
+// public:
+
+
+// private:
+
+// };
 
 class ProgramCache
 {
@@ -1908,8 +1931,6 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     if (setup)
     {
         (*setup)();
-
-        //(void)update_cached_geometry(t_ctx.cached_recorder, g_ctx.layouts, t_ctx.cached_buffers);
     }
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
@@ -2340,6 +2361,40 @@ void mesh(int id)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXTURING
+// -----------------------------------------------------------------------------
+
+void load_texture(int id, int width, int height, int stride, const void* rgba)
+{
+    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(width > 0);
+    ASSERT(height > 0);
+    ASSERT(stride == 0 || stride >= width * 4);
+    ASSERT(rgba);
+
+    mnm::g_ctx.texture_cache.add_texture(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(width),
+        static_cast<uint16_t>(height),
+        static_cast<uint16_t>(stride),
+        rgba
+    );
+}
+
+void texture_mode(int flags)
+{
+    mnm::t_ctx.draw_list.state().texture_flags = static_cast<uint16_t>(flags);
+}
+
+void texture(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+
+    mnm::t_ctx.draw_list.state().texture = mnm::g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
+}
+
+
+// -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - TRANSFORMATIONS
 // -----------------------------------------------------------------------------
 
@@ -2392,7 +2447,7 @@ void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, floa
 
 void rotate(float angle, float x, float y, float z)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, x)));
+    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, z)));
 }
 
 void rotate_x(float angle)
