@@ -8,13 +8,17 @@ extern "C" {
 // MAIN ENTRY
 // -----------------------------------------------------------------------------
 
-/// Entry point when running as a library. The 
+/// Entry point when running as a library.
 ///
 /// @param[in] setup Function that runs once after the window was created.
 /// @param[in] draw Function that runs on every frame.
-/// @param[in] cleanup Function that runs once just before the window is destroyed.
+/// @param[in] cleanup Function that runs once just before the window is
+///   destroyed.
 ///
 /// @returns Zero if no error occurred.
+///
+/// @attention Use `mnm::run` (see the end of this file), if compiling from C++
+///  to avoid possible warnings about exception safety (such as MSVC's C5039).
 ///
 /// @warning This function must be called from the main thread only (the thread
 ///   that calls `main`).
@@ -31,9 +35,9 @@ int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 enum
 {
     WINDOW_DEFAULT      = 0,
-    WINDOW_FIXED_SIZE   = 1,
-    WINDOW_FIXED_ASPECT = 2,
-    WINDOW_FULL_SCREEN  = 4,
+    WINDOW_FIXED_SIZE   = 1 << 0,
+    WINDOW_FIXED_ASPECT = 1 << 1,
+    WINDOW_FULL_SCREEN  = 1 << 2,
 };
 
 /// Changes window's size and attributes. The size is specified in "screen
@@ -231,34 +235,49 @@ double toc(void);
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
-/// Vertex attribute flags.
+/// Vertex attribute flags. Position 3D by default.
 ///
 enum
 {
-    VERTEX_COLOR    = 1,
-    VERTEX_NORMAL   = 2,
-    VERTEX_TEXCOORD = 4,
+    VERTEX_COLOR    = 1 << 0,
+    VERTEX_NORMAL   = 1 << 1,
+    VERTEX_TEXCOORD = 1 << 2,
 };
 
-/// Starts immediate geometry building mode. Only supported primitive is
-/// triangles. Only vertex attributes specified in the `attribs` parameter are
-/// recorded. Vertex position is always recorded.
+/// Primitive type. Triangle by default.
 ///
-/// @param[in] attribs Vertex attribute flags.
-///
-void begin(int attribs);
+enum
+{
+    PRIMITIVE_QUADS = 1 << 3,
+    PRIMITIVE_LINES = 1 << 4,
+};
 
-/// Starts cached geometry / mesh building mode. Only supported primitive is
-/// triangles. Only vertex attributes specified in the `attribs` parameter are
-/// recorded. Vertex position is always recorded. The user-defined identifier
-/// can be used repeatedly to overwrite existing content, but only the last
-/// content is retained. Use the `mesh` function to submit cached geometry using
-/// the current model matrix.
+/// Starts transient geometry recording. Primitive type and recorded per-vertex
+/// attributes can be specified via flags. Transient mesh ID is only valid for
+/// the duration of the frame. The amount of transient geometry that can be
+/// recorded in each frame is limited and can be specified in the setup phase
+/// via `TODO`.
 ///
-/// @param[in] attribs Vertex attribute flags.
-/// @param[in] id Cached geometry identifier. Must be non-zero.
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
 ///
-void begin_cached(int attribs, int id);
+void begin_transient(int id, int flags);
+
+/// Starts static geometry recording. Primitive type and recorded per-vertex
+/// attributes can be specified via flags.
+///
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
+///
+void begin_static(int id, int flags);
+
+/// Starts dynamic geometry. Primitive type and recorded per-vertex attributes
+/// can be specified via flags.
+///
+/// @param[in] id Mesh identifier.
+/// @param[in] flags Recording flags.
+///
+void begin_dynamic(int id, int flags);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.
@@ -291,16 +310,14 @@ void normal(float nx, float ny, float nz);
 ///
 void texcoord(float u, float v);
 
-/// Ends the current geometry. Note that the data isn't immediately copied over
-/// to the GPU, but it's retained on the CPU and submitted together after the
-/// `draw` function returns.
+/// Ends the current geometry recording.
 ///
 void end(void);
 
-/// Submits a cached geometry / mesh created previously with `begin_cached` with
+/// Submits recorded mesh geometry created previously with `begin_*`, using
 /// the same identifier.
 ///
-/// @param[in] id Cached geometry identifier. Must be non-zero.
+/// @param[in] id Mesh identifier.
 ///
 void mesh(int id);
 
@@ -313,11 +330,11 @@ void mesh(int id);
 ///
 enum
 {
-    TEXTURE_LINEAR  =  1,
-    TEXTURE_NEAREST =  2,
-    TEXTURE_REPEAT  =  4,
-    TEXTURE_MIRROR  =  8,
-    TEXTURE_CLAMP   = 12,
+    TEXTURE_LINEAR  = 1 << 0,
+    TEXTURE_NEAREST = 1 << 1,
+    TEXTURE_REPEAT  = 1 << 2,
+    TEXTURE_MIRROR  = 1 << 3,
+    TEXTURE_CLAMP   = 1 << 4,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
@@ -333,7 +350,8 @@ enum
 void load_texture(int id, int width, int height, int stride, const void* rgba);
 
 /// Sets the current texture mode properties. Default properties are
-/// `TEXTURE_LINEAR | TEXTURE_REPEAT`.
+/// `TEXTURE_LINEAR | TEXTURE_REPEAT`. Properties are reset after the next
+/// `mesh` call.
 ///
 /// @param[in] flags Texture mode properties.
 ///
@@ -478,7 +496,58 @@ int task(void (* func)(void* data), void* data);
 
 
 // -----------------------------------------------------------------------------
+// MISCELLANEOUS
+// -----------------------------------------------------------------------------
+
+/// Returns the current frame number, starting with zero-th frame.
+///
+/// @returns Frame number.
+///
+int frame(void);
+
+
+// -----------------------------------------------------------------------------
 
 #ifdef __cplusplus
 }
 #endif
+
+
+// -----------------------------------------------------------------------------
+// MAIN ENTRY (C++)
+// -----------------------------------------------------------------------------
+
+#ifdef __cplusplus
+
+#define MNM_MAIN_NAME mnm::run
+
+namespace mnm
+{
+
+/// Entry point when running as a library. C++ variant of `mnm_run` function. 
+///
+int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void));
+
+} // namespace mnm
+
+#else
+#   define MNM_MAIN_NAME mnm_run
+#endif // __cplusplus
+
+
+// -----------------------------------------------------------------------------
+// MAIN ENTRY IMPLEMENTATION
+// -----------------------------------------------------------------------------
+
+/// Helper macro to instantiate basic main function that just runs either
+/// `mnm_run` (if compiled as C file), or `mnm::run` (if compiled as C++).
+///
+#define MNM_MAIN(setup, draw, cleanup) \
+    int main(int argc, char** argv) \
+    { \
+        (void)argc; \
+        (void)argv; \
+        return MNM_MAIN_NAME(setup, draw, cleanup); \
+    }
+
+// -----------------------------------------------------------------------------

@@ -22,6 +22,7 @@ include(cmake/bimg.cmake)
 include(cmake/bx.cmake)
 include(cmake/gleq.cmake)
 include(cmake/HandmadeMath.cmake)
+include(cmake/meshoptimizer.cmake)
 
 target_include_directories(enkiTS PUBLIC
     enkiTS/src
