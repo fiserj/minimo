@@ -1,0 +1,16 @@
+
+clear_recorders()
+
+draw_callback()
+    register_mesh_type(id, type)
+        schedule_buffers_of_changed_types_for_deletion()
+    enque_draw_item(...)
+
+update_transient_geometry()
+
+update_persistent_geometry()
+
+submit_draw_items()
+
+delete_abandoned_buffers()
+unregister_transient_meshes()

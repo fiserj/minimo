@@ -1,7 +1,8 @@
 set(NAME ${PROJECT_NAME})
 
 set(SOURCE_FILES
-    mnm.cpp
+    # mnm.cpp
+    mnm2.cpp
     ../../include/mnm/mnm.h # Not needed for build, but IDE-friendly.
 )
 
@@ -33,10 +34,11 @@ target_link_libraries(${NAME} PRIVATE
     gleq
     glfw
     HandmadeMath
+    meshoptimizer
 )
 
 set_target_properties(${NAME} PROPERTIES
-    CXX_STANDARD 17 # Needed for `__has_include`.
+    CXX_STANDARD 20 # Needed for `__has_include`.
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"
@@ -45,5 +47,7 @@ set_target_properties(${NAME} PROPERTIES
 
 include(cmake/add_shader_dependency.cmake)
 
-add_shader_dependency(${NAME} "shaders/poscolor.vs")
-add_shader_dependency(${NAME} "shaders/poscolor.fs")
+add_shader_dependency(${NAME} "shaders/position_color.vs"   )
+add_shader_dependency(${NAME} "shaders/position_color.fs"   )
+add_shader_dependency(${NAME} "shaders/position_texcoord.vs")
+add_shader_dependency(${NAME} "shaders/position_texcoord.fs")
