@@ -3,7 +3,7 @@
 #include <assert.h>               // assert
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
-#include <string.h>               // memcpy
+#include <string.h>               // memcpy, strcat, strcpy
 
 #include <algorithm>              // max, transform
 #include <atomic>                 // atomic
@@ -1940,17 +1940,45 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
     {
-        BGFX_EMBEDDED_SHADER(position_color_fs   ),
-        BGFX_EMBEDDED_SHADER(position_color_vs   ),
+        BGFX_EMBEDDED_SHADER(position_color_fs         ),
+        BGFX_EMBEDDED_SHADER(position_color_vs         ),
 
-        BGFX_EMBEDDED_SHADER(position_texcoord_fs),
-        BGFX_EMBEDDED_SHADER(position_texcoord_vs),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_fs),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_vs),
+
+        BGFX_EMBEDDED_SHADER(position_texcoord_fs      ),
+        BGFX_EMBEDDED_SHADER(position_texcoord_vs      ),
 
         BGFX_EMBEDDED_SHADER_END()
     };
 
-    (void)g_ctx.program_cache.add(s_shaders, type, "position_color_vs"   , "position_color_fs"   , VERTEX_COLOR   );
-    (void)g_ctx.program_cache.add(s_shaders, type, "position_texcoord_vs", "position_texcoord_fs", VERTEX_TEXCOORD);
+    {
+        const struct
+        {
+            const char* name;
+            uint16_t    attribs;
+        }
+        programs[] =
+        {
+            { "position_color"         , VERTEX_COLOR                   },
+            { "position_color_texcoord", VERTEX_COLOR | VERTEX_TEXCOORD },
+            { "position_texcoord"      ,                VERTEX_TEXCOORD },
+        };
+
+        char vs_name[32];
+        char fs_name[32];
+
+        for (int i = 0; i < BX_COUNTOF(programs); i++)
+        {
+            strcpy(vs_name, programs[i].name);
+            strcat(vs_name, "_vs");
+
+            strcpy(fs_name, programs[i].name);
+            strcat(fs_name, "_fs");
+
+            (void)g_ctx.program_cache.add(s_shaders, type, vs_name, fs_name, programs[i].attribs);
+        }
+    }
 
     g_ctx.mouse.update_position(g_ctx.window);
 
