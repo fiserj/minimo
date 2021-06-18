@@ -260,31 +260,22 @@ private:
 // PROGRAM CACHE
 // -----------------------------------------------------------------------------
 
-// struct Program
-// {
-//     bgfx::ProgramHandle                              handle = BGFX_INVALID_HANDLE;
-//     Array<bgfx::UniformHandle, MAX_PROGRAM_UNIFORMS> uniforms;
-
-//     Program()
-//     {
-//         uniforms.fill(BGFX_INVALID_HANDLE);
-//     }
-// };
-
-// class ProgramCache2
-// {
-// public:
-
-
-// private:
-
-// };
-
 class ProgramCache
 {
 public:
+    void clear()
+    {
+        for (bgfx::ProgramHandle handle : m_handles)
+        {
+            bgfx::destroy(handle);
+        }
+
+        m_handles       .clear();
+        m_attribs_to_ids.clear();
+    }
+
     // NOTE : attribs here aren't shifted!
-    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
+    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
     {
         if (m_handles.size() >= UINT8_MAX)
         {
@@ -308,9 +299,8 @@ public:
 
         const uint8_t idx = static_cast<uint8_t>(m_handles.size());
 
-        if (attribs != UINT32_MAX)
+        if (attribs != UINT16_MAX)
         {
-            // ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT)));
             ASSERT(attribs <  UINT8_MAX);
 
             if (attribs >= m_attribs_to_ids.size())
@@ -339,7 +329,7 @@ public:
         bgfx::RendererType::Enum    renderer,
         const char*                 vertex_name,
         const char*                 fragment_name,
-        uint32_t                    attribs = UINT32_MAX
+        uint16_t                    attribs = UINT16_MAX
     )
     {
         return add(
@@ -357,10 +347,9 @@ public:
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle program_handle_from_flags(uint32_t flags) const
+    inline bgfx::ProgramHandle program_handle_from_flags(uint16_t flags) const
     {
-        // const uint32_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
-        const uint32_t attribs = flags & VERTEX_ATTRIB_MASK;
+        const uint16_t attribs = flags & VERTEX_ATTRIB_MASK;
 
         ASSERT(attribs < m_attribs_to_ids.size());
         ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
@@ -1840,8 +1829,6 @@ struct GlobalContext
 
 struct LocalContext
 {
-    //GeometryRecorder            transient_recorder;
-    //GeometryRecorder            persistent_recorder;
     GeometryRecorder            recorder;
 
     DrawList                    draw_list;
@@ -2065,8 +2052,6 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         if (g_ctx.frame_number > 0)
         {
             // TODO : This needs to be done for all contexts across all threads.
-            //t_ctx.transient_recorder .clear();
-            //t_ctx.persistent_recorder.clear();
             t_ctx.draw_list.clear();
         }
 
@@ -2085,20 +2070,10 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         bgfx::setViewTransform(0, &t_ctx.view_matrix_stack.top(), &t_ctx.proj_matrix_stack.top());
 
         // TODO : This needs to be done for all contexts across all threads.
-        {
-            // TODO : We should check the return value.
-            //(void)t_ctx.transient_buffers.update_from_recorder(t_ctx.transient_recorder);
-
-            //(void)g_ctx.mesh_cache.update_persistent_meshes(t_ctx.persistent_recorder, g_ctx.vertex_layout_cache);
-
-            //submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, t_ctx.transient_buffers, g_ctx.vertex_layout_cache, t_ctx.is_main_thread);
-            submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.vertex_layout_cache, t_ctx.is_main_thread);
-        }
+        submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.vertex_layout_cache, t_ctx.is_main_thread);
 
         if (t_ctx.is_main_thread)
         {
-            //g_ctx.mesh_cache.clear_abandoned_persistent_buffers();
-            //g_ctx.mesh_cache.unregister_transient_meshes();
             g_ctx.mesh_cache.clear_transient_meshes();
         }
 
@@ -2116,7 +2091,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
     g_ctx.vertex_layout_cache.clear();
     g_ctx.texture_cache      .clear();
-    // g_ctx.program_cache      .clear();
+    g_ctx.program_cache      .clear();
     g_ctx.mesh_cache         .clear_persistent_meshes();
 
     bgfx::shutdown();
