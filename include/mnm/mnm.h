@@ -326,36 +326,36 @@ void mesh(int id);
 // TEXTURING
 // -----------------------------------------------------------------------------
 
-/// Texture mode flags.
+/// Texture flags.
 ///
 enum
 {
-    TEXTURE_LINEAR  = 1 << 0,
-    TEXTURE_NEAREST = 1 << 1,
-    TEXTURE_REPEAT  = 1 << 2,
-    TEXTURE_MIRROR  = 1 << 3,
-    TEXTURE_CLAMP   = 1 << 4,
+    // Linear sampling, repeat border mode, RGBA8 format.
+    TEXTURE_DEFAULT = 0,
+
+    // Sampling. Linear if no flag provided.
+    TEXTURE_NEAREST = 1 << 0,
+
+    // Border mode. Repeat if no flag provided.
+    TEXTURE_MIRROR  = 1 << 1,
+    TEXTURE_CLAMP   = 1 << 2,
+
+    // Format. RGBA8 if no flag provided.
+    TEXTURE_R8      = 1 << 3,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
 /// be used repeatedly to overwrite existing content, but only the last content
 /// is retained. Use the `texture` function to submit loaded texture.
 ///
-/// @param[in] id Texture identifier. Must be non-zero.
+/// @param[in] id Texture identifier.
+/// @param[in] flags Texture properties' flags.
 /// @param[in] width Image width in pixels.
-/// @param[in] width Image height in pixels.
-/// @param[in] stride Image stride in bytes. If zero, `width * 4` is assumed.
-/// @param[in] rgba RGBA pixels.
+/// @param[in] height Image height in pixels.
+/// @param[in] stride Image stride in bytes. Pass zero to auto-compute.
+/// @param[in] data Pixel data or `NULL`.
 ///
-void load_texture(int id, int width, int height, int stride, const void* rgba);
-
-/// Sets the current texture mode properties. Default properties are
-/// `TEXTURE_LINEAR | TEXTURE_REPEAT`. Properties are reset after the next
-/// `mesh` call.
-///
-/// @param[in] flags Texture mode properties.
-///
-void texture_mode(int flags);
+void load_texture(int id, int flags, int width, int height, int stride, const void* data);
 
 /// Sets the active texture which is used with following `begin` and `mesh`
 /// calls, until a new identifier is provided.

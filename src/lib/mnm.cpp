@@ -205,6 +205,22 @@ constexpr bool is_pod()
     return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
 }
 
+template <typename HandleT>
+inline void destroy_if_valid(uint16_t& handle_idx)
+{
+    if (bgfx::isValid(HandleT { handle_idx }))
+    {
+        bgfx::destroy(HandleT { handle_idx });
+        handle_idx = bgfx::kInvalidHandle;
+    }
+}
+
+template <typename HandleT>
+inline void destroy_if_valid(HandleT& handle)
+{
+    destroy_if_valid<HandleT>(handle.idx);
+}
+
 
 // -----------------------------------------------------------------------------
 // DRAW SUBMISSION
@@ -217,8 +233,8 @@ struct DrawItem
     uint16_t                 mesh          = UINT16_MAX;
     bgfx::ViewId             pass          = UINT16_MAX;
     bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE;
-    uint16_t                 texture_flags = BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE;
+    bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
+    bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
 };
 
 class DrawList
@@ -360,6 +376,21 @@ public:
 private:
     Vector<bgfx::ProgramHandle> m_handles;
     Vector<uint8_t>             m_attribs_to_ids;
+};
+
+struct DefaultUniforms
+{
+    bgfx::UniformHandle color_texture = BGFX_INVALID_HANDLE;
+
+    void init()
+    {
+        color_texture = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
+    }
+
+    void clear()
+    {
+        destroy_if_valid(color_texture);
+    }
 };
 
 
@@ -875,22 +906,6 @@ struct Mesh
 // MESH CACHE
 // -----------------------------------------------------------------------------
 
-template <typename HandleT>
-inline void destroy_if_valid(uint16_t& handle_idx)
-{
-    if (bgfx::isValid(HandleT { handle_idx }))
-    {
-        bgfx::destroy(HandleT { handle_idx });
-        handle_idx = bgfx::kInvalidHandle;
-    }
-}
-
-template <typename HandleT>
-inline void destroy_if_valid(HandleT& handle)
-{
-    destroy_if_valid<HandleT>(handle.idx);
-}
-
 struct MeshCache
 {
 public:
@@ -1324,11 +1339,10 @@ static void submit_draw_list
             break;
         }
 
-        // if (bgfx::isValid(item.texture))
-        // {
-        //     ASSERT(false && "Not implemented yet.");
-        //     encoder->setTexture(0, BGFX_INVALID_HANDLE /* TODO : Sampler! */, item.texture);
-        // }
+        if (bgfx::isValid(item.texture) && bgfx::isValid(item.sampler))
+        {
+            encoder->setTexture(0, item.sampler, item.texture);
+        }
 
         bgfx::setTransform(transform_offset + item.transform);
 
@@ -1362,7 +1376,7 @@ public:
         }
     }
 
-    void add_texture(uint16_t id, uint16_t width, uint16_t height, uint16_t stride, const void* rgba)
+    void add_texture(uint16_t id, uint16_t flags, uint16_t width, uint16_t height, uint16_t stride, const void* data)
     {
         ASSERT(id < m_textures.size());
 
@@ -1372,31 +1386,71 @@ public:
 
         destroy_if_valid(texture.handle);
 
+        // TODO : Move elsewhere?
+        constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
+        constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
+
+        constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
+        constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
+
+        constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8;
+        constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
+
+        static const uint64_t sampling_flags[] =
+        {
+            BGFX_SAMPLER_NONE,
+            BGFX_SAMPLER_POINT,
+        };
+
+        static const uint64_t border_flags[] =
+        {
+            BGFX_SAMPLER_NONE,
+            BGFX_SAMPLER_UVW_MIRROR,
+            BGFX_SAMPLER_UVW_CLAMP,
+        };
+
+        static const struct Format
+        {
+            uint32_t                  size;
+            bgfx::TextureFormat::Enum type;
+
+        } formats[] =
+        {
+            { 4, bgfx::TextureFormat::RGBA8 },
+            { 1, bgfx::TextureFormat::R8    },
+        };
+
+        const Format format = formats[(flags & TEXTURE_FORMAT_MASK) >> TEXTURE_FORMAT_SHIFT];
+
         const bgfx::Memory* memory = nullptr;
 
-        if (!stride || stride == width * 4)
+        if (data)
         {
-            memory = bgfx::copy(rgba, width * height * 4);
-        }
-        else
-        {
-            ASSERT(stride > width * 4);
-
-            memory = bgfx::alloc(width * height * 4);
-
-            const uint8_t* src = static_cast<const uint8_t*>(rgba);
-            uint8_t*       dst = memory->data;
-
-            for (uint16_t y = 0; y < height; y++)
+            if (stride == 0 || stride == width * format.size)
             {
-                memcpy(dst, src, width * 4);
+                memory = bgfx::copy(data, width * height * format.size);
+            }
+            else
+            {
+                const uint8_t* src = static_cast<const uint8_t*>(data);
+                uint8_t*       dst = memory->data;
 
-                src += stride;
-                dst += width * 4;
+                for (uint16_t y = 0; y < height; y++)
+                {
+                    memcpy(dst, src, width * format.size);
+
+                    src += stride;
+                    dst += width * format.size;
+                }
             }
         }
 
-        texture.handle = bgfx::createTexture2D(width, height, false, 1, bgfx::TextureFormat::RGBA8, 0, memory);
+        const uint64_t texture_flags =
+            sampling_flags[(flags & TEXTURE_SAMPLING_MASK) >> TEXTURE_SAMPLING_SHIFT] |
+            border_flags  [(flags & TEXTURE_BORDER_MASK  ) >> TEXTURE_BORDER_SHIFT  ] ;
+
+        texture.handle = bgfx::createTexture2D(width, height, false, 1, format.type, texture_flags, memory);
+        ASSERT(bgfx::isValid(texture.handle));
     }
 
     inline Texture& texture(uint16_t id) { return m_textures[id]; }
@@ -1813,6 +1867,7 @@ struct GlobalContext
     MeshCache           mesh_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
+    DefaultUniforms     default_uniforms;
     VertexLayoutCache   vertex_layout_cache;
     bgfx::VertexLayout  dummy_vertex_layout;
 
@@ -1967,6 +2022,8 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
         }
     }
 
+    g_ctx.default_uniforms.init();
+
     g_ctx.mouse.update_position(g_ctx.window);
 
     g_ctx.total_time.tic();
@@ -2092,6 +2149,7 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
     g_ctx.vertex_layout_cache.clear();
     g_ctx.texture_cache      .clear();
     g_ctx.program_cache      .clear();
+    g_ctx.default_uniforms   .clear();
     g_ctx.mesh_cache         .clear_persistent_meshes();
 
     bgfx::shutdown();
@@ -2370,33 +2428,35 @@ void mesh(int id)
 // PUBLIC API IMPLEMENTATION - TEXTURING
 // -----------------------------------------------------------------------------
 
-void load_texture(int id, int width, int height, int stride, const void* rgba)
+void load_texture(int id, int flags, int width, int height, int stride, const void* data)
 {
     ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
     ASSERT(width > 0);
     ASSERT(height > 0);
-    ASSERT(stride == 0 || stride >= width * 4);
-    ASSERT(rgba);
+    ASSERT(stride >= 0);
 
     mnm::g_ctx.texture_cache.add_texture(
         static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags),
         static_cast<uint16_t>(width),
         static_cast<uint16_t>(height),
         static_cast<uint16_t>(stride),
-        rgba
+        data
     );
-}
-
-void texture_mode(int flags)
-{
-    mnm::t_ctx.draw_list.state().texture_flags = static_cast<uint16_t>(flags);
 }
 
 void texture(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    using namespace mnm;
 
-    mnm::t_ctx.draw_list.state().texture = mnm::g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
+    ASSERT(id > 0 && id < MAX_TEXTURES);
+
+    // TODO : Samplers should be set by default state and only overwritten when
+    //        non-default shader is used.
+    DrawItem& state = t_ctx.draw_list.state();
+
+    state.texture = g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
+    state.sampler = g_ctx.default_uniforms.color_texture;
 }
 
 
