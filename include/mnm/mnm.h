@@ -10,7 +10,10 @@ extern "C" {
 
 /// Entry point when running as a library.
 ///
-/// @param[in] setup Function that runs once after the window was created.
+/// @param[in] init Function that runs once *before* the window and context are
+///   created.
+/// @param[in] setup Function that runs once *after* the window and context are
+///   created.
 /// @param[in] draw Function that runs on every frame.
 /// @param[in] cleanup Function that runs once just before the window is
 ///   destroyed.
@@ -23,7 +26,19 @@ extern "C" {
 /// @warning This function must be called from the main thread only (the thread
 ///   that calls `main`).
 ///
-int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
+int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
+
+
+// -----------------------------------------------------------------------------
+// INIT
+// -----------------------------------------------------------------------------
+
+/// Sets the transient geometry per-thread memory budget. 32 MB by default. Must
+/// be called in the `init` callback (otherwise has no effect).
+///
+/// @param[in] megabytes Memory limit in MB.
+///
+void transient_memory(int megabytes);
 
 
 // -----------------------------------------------------------------------------
@@ -526,7 +541,7 @@ namespace mnm
 
 /// Entry point when running as a library. C++ variant of `mnm_run` function. 
 ///
-int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void));
+int run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void));
 
 } // namespace mnm
 
@@ -542,12 +557,12 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void));
 /// Helper macro to instantiate basic main function that just runs either
 /// `mnm_run` (if compiled as C file), or `mnm::run` (if compiled as C++).
 ///
-#define MNM_MAIN(setup, draw, cleanup) \
+#define MNM_MAIN(init, setup, draw, cleanup) \
     int main(int argc, char** argv) \
     { \
         (void)argc; \
         (void)argv; \
-        return MNM_MAIN_NAME(setup, draw, cleanup); \
+        return MNM_MAIN_NAME(init, setup, draw, cleanup); \
     }
 
 // -----------------------------------------------------------------------------

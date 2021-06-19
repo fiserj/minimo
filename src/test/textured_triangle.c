@@ -45,4 +45,4 @@ static void draw(void)
     mesh(MESH_ID);
 }
 
-MNM_MAIN(setup, draw, 0);
+MNM_MAIN(0, setup, draw, 0);
