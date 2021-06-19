@@ -4,7 +4,7 @@
 
 static void setup(void)
 {
-    title("Wireframe Cube Example");
+    title("Wireframe Triangle Example");
 }
 
 static void draw(void)
