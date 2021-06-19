@@ -1918,13 +1918,18 @@ thread_local LocalContext t_ctx;
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
 // -----------------------------------------------------------------------------
 
-int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
+int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 {
     // TODO : Check we're not being called multiple times witohut first terminating.
     // TODO : Reset global context data (thread local as well, if possible, but might not be).
     // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
 
     t_ctx.is_main_thread = true;
+
+    if (init)
+    {
+        (*init);
+    }
 
     if (glfwInit() != GLFW_TRUE)
     {
@@ -1949,14 +1954,16 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 
     gleqTrackWindow(g_ctx.window.handle);
 
-    bgfx::Init init;
-    init.platformData = create_platform_data(g_ctx.window.handle, init.type);
-
-    if (!bgfx::init(init))
     {
-        glfwDestroyWindow(g_ctx.window.handle);
-        glfwTerminate();
-        return 3;
+        bgfx::Init init;
+        init.platformData = create_platform_data(g_ctx.window.handle, init.type);
+
+        if (!bgfx::init(init))
+        {
+            glfwDestroyWindow(g_ctx.window.handle);
+            glfwTerminate();
+            return 3;
+        }
     }
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
@@ -2170,9 +2177,9 @@ int run(void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY FROM C
 // -----------------------------------------------------------------------------
 
-int mnm_run(void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
-    return mnm::run(setup, draw, cleanup);
+    return mnm::run(init, setup, draw, cleanup);
 }
 
 

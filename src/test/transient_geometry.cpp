@@ -92,4 +92,4 @@ static void cube(void)
     vertex( 0.5f, -0.5f, -0.5f);
 }
 
-MNM_MAIN(setup, draw, 0);
+MNM_MAIN(0, setup, draw, 0);
