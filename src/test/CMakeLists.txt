@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    textured_triangle.c
+    wireframe_triangle.c
 )
 
 target_include_directories(${NAME} PRIVATE
