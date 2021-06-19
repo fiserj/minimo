@@ -49,10 +49,10 @@ void transient_memory(int megabytes);
 ///
 enum
 {
-    WINDOW_DEFAULT      = 0,
-    WINDOW_FIXED_SIZE   = 1 << 0,
-    WINDOW_FIXED_ASPECT = 1 << 1,
-    WINDOW_FULL_SCREEN  = 1 << 2,
+    WINDOW_DEFAULT      = 0x00,
+    WINDOW_FIXED_SIZE   = 0x01,
+    WINDOW_FIXED_ASPECT = 0x02,
+    WINDOW_FULL_SCREEN  = 0x04,
 };
 
 /// Changes window's size and attributes. The size is specified in "screen
@@ -250,21 +250,23 @@ double toc(void);
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
-/// Vertex attribute flags. Position 3D by default.
+/// Vertex attribute flags. Position 3D always on.
 ///
 enum
 {
-    VERTEX_COLOR    = 1 << 0,
-    VERTEX_NORMAL   = 1 << 1,
-    VERTEX_TEXCOORD = 1 << 2,
+    VERTEX_COLOR    = 0x01,
+    VERTEX_NORMAL   = 0x02,
+    VERTEX_TEXCOORD = 0x04,
 };
 
-/// Primitive type. Triangle by default.
+/// Primitive type. Triangles by default.
 ///
 enum
 {
-    PRIMITIVE_QUADS = 1 << 3,
-    PRIMITIVE_LINES = 1 << 4,
+    PRIMITIVE_QUADS          = 0x08,
+    PRIMITIVE_TRIANGLE_STRIP = 0x10,
+    PRIMITIVE_LINES          = 0x18,
+    PRIMITIVE_LINE_STRIP     = 0x20,
 };
 
 /// Starts transient geometry recording. Primitive type and recorded per-vertex
@@ -346,17 +348,17 @@ void mesh(int id);
 enum
 {
     // Linear sampling, repeat border mode, RGBA8 format.
-    TEXTURE_DEFAULT = 0,
+    TEXTURE_DEFAULT = 0x00,
 
     // Sampling. Linear if no flag provided.
-    TEXTURE_NEAREST = 1 << 0,
+    TEXTURE_NEAREST = 0x01,
 
     // Border mode. Repeat if no flag provided.
-    TEXTURE_MIRROR  = 1 << 1,
-    TEXTURE_CLAMP   = 1 << 2,
+    TEXTURE_MIRROR  = 0x02,
+    TEXTURE_CLAMP   = 0x04,
 
     // Format. RGBA8 if no flag provided.
-    TEXTURE_R8      = 1 << 3,
+    TEXTURE_R8      = 0x08,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can

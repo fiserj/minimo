@@ -50,17 +50,10 @@ namespace mnm
 
 enum MeshType
 {
-    MESH_INVALID   = 0,
-    MESH_TRANSIENT = 1 << 6,
-    MESH_STATIC    = 1 << 7,
-    MESH_DYNAMIC   = 1 << 8,
-};
-
-enum struct PrimitiveType
-{
-    TRIANGLES = 0,
-    QUADS     = 1,
-    LINES     = 2,
+    MESH_INVALID   = 0x000,
+    MESH_TRANSIENT = 0x040,
+    MESH_STATIC    = 0x080,
+    MESH_DYNAMIC   = 0x100,
 };
 
 enum
@@ -75,15 +68,15 @@ enum
 
 // constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
 
-constexpr uint32_t VERTEX_ATTRIB_MASK    = (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
+constexpr uint32_t VERTEX_ATTRIB_MASK    = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
 
-// constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
+constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
 
-constexpr uint32_t PRIMITIVE_TYPE_MASK   = (PRIMITIVE_QUADS | PRIMITIVE_LINES);
+constexpr uint32_t PRIMITIVE_TYPE_MASK   = PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP | PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP;
 
 // constexpr uint32_t MESH_TYPE_SHIFT       = 5;
 
-constexpr uint32_t MESH_TYPE_MASK        = (MESH_TRANSIENT | MESH_STATIC);
+constexpr uint32_t MESH_TYPE_MASK        = MESH_TRANSIENT | MESH_STATIC;
 
 constexpr uint32_t MAX_MESHES            = 4096;
 
@@ -887,13 +880,11 @@ struct Mesh
     static inline MeshType type(uint16_t flags)
     {
         return static_cast<MeshType>(flags & MESH_TYPE_MASK);
-        // return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
     }
 
     static inline uint16_t attribs(uint16_t flags)
     {
         return flags & VERTEX_ATTRIB_MASK;
-        // return (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
     }
 
     inline MeshType type() const { return type(flags); }
@@ -1304,12 +1295,21 @@ static void submit_draw_list
     }
 
     bgfx::Transform transforms       = { nullptr, 0 };
-    const uint32_t  transform_offset = bgfx::allocTransform(&transforms, static_cast<uint16_t>(draw_list.matrices().size()));
+    const uint32_t  transform_offset = encoder->allocTransform(&transforms, static_cast<uint16_t>(draw_list.matrices().size()));
 
     if (transforms.data)
     {
         memcpy(transforms.data, draw_list.matrices().data(), draw_list.matrices().size() * sizeof(Mat4));
     }
+
+    static const uint64_t primitive_flags[] =
+    {
+        0, // Triangles.
+        0, // Quads (for users, triangles internally).
+        BGFX_STATE_PT_TRISTRIP,
+        BGFX_STATE_PT_LINES,
+        BGFX_STATE_PT_LINESTRIP,
+    };
 
     for (const DrawItem& item : draw_list.items())
     {
@@ -1318,20 +1318,20 @@ static void submit_draw_list
         switch (mesh.type())
         {
         case MESH_TRANSIENT:
-                                bgfx::setVertexBuffer(0, &mesh_cache.transient_vertex_buffers()[mesh.position_buffer]);
-            if (mesh.attribs()) bgfx::setVertexBuffer(1, &mesh_cache.transient_vertex_buffers()[mesh.attrib_buffer  ]);
+                                encoder->setVertexBuffer(0, &mesh_cache.transient_vertex_buffers()[mesh.position_buffer]);
+            if (mesh.attribs()) encoder->setVertexBuffer(1, &mesh_cache.transient_vertex_buffers()[mesh.attrib_buffer  ]);
             break;
 
         case MESH_STATIC:
-                                bgfx::setVertexBuffer(0, bgfx::VertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) bgfx::setVertexBuffer(1, bgfx::VertexBufferHandle { mesh.attrib_buffer   });
-                                bgfx::setIndexBuffer (   bgfx::IndexBufferHandle  { mesh.index_buffer    });
+                                encoder->setVertexBuffer(0, bgfx::VertexBufferHandle { mesh.position_buffer });
+            if (mesh.attribs()) encoder->setVertexBuffer(1, bgfx::VertexBufferHandle { mesh.attrib_buffer   });
+                                encoder->setIndexBuffer (   bgfx::IndexBufferHandle  { mesh.index_buffer    });
             break;
 
         case MESH_DYNAMIC:
-                                bgfx::setVertexBuffer(0, bgfx::DynamicVertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) bgfx::setVertexBuffer(1, bgfx::DynamicVertexBufferHandle { mesh.attrib_buffer   });
-                                bgfx::setIndexBuffer (   bgfx::DynamicIndexBufferHandle  { mesh.index_buffer    });
+                                encoder->setVertexBuffer(0, bgfx::DynamicVertexBufferHandle { mesh.position_buffer });
+            if (mesh.attribs()) encoder->setVertexBuffer(1, bgfx::DynamicVertexBufferHandle { mesh.attrib_buffer   });
+                                encoder->setIndexBuffer (   bgfx::DynamicIndexBufferHandle  { mesh.index_buffer    });
             break;
 
         default:
@@ -1344,7 +1344,12 @@ static void submit_draw_list
             encoder->setTexture(0, item.sampler, item.texture);
         }
 
-        bgfx::setTransform(transform_offset + item.transform);
+        encoder->setTransform(transform_offset + item.transform);
+
+        encoder->setState(
+            BGFX_STATE_DEFAULT |
+            primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
+        );
 
         ASSERT(bgfx::isValid(item.program));
         encoder->submit(item.pass, item.program);
@@ -1928,7 +1933,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     if (init)
     {
-        (*init);
+        (*init)();
     }
 
     if (glfwInit() != GLFW_TRUE)
@@ -2339,11 +2344,6 @@ static inline void begin_recording(int id, int flags, mnm::MeshType type)
     ASSERT(id > 0 && id < mnm::MAX_MESHES);
 
     ASSERT(!mnm::t_ctx.is_recording);
-
-    // TODO : Extract primitive type from flags and insert mesh type instead.
-
-    //flags  = (flags << mnm::VERTEX_ATTRIB_SHIFT) & mnm::VERTEX_ATTRIB_MASK;
-    //flags |= type << mnm::MESH_TYPE_SHIFT;
 
     mnm::t_ctx.recorded_mesh_id    = static_cast<uint16_t>(id);
     mnm::t_ctx.recorded_mesh_flags = static_cast<uint16_t>(flags | static_cast<int>(type));
