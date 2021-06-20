@@ -3,6 +3,8 @@ set(MESHOPT_DIR meshoptimizer/src)
 set(MESHOPT_SOURCE_FILES
     ${MESHOPT_DIR}/indexgenerator.cpp
     ${MESHOPT_DIR}/meshoptimizer.h
+    ${MESHOPT_DIR}/overdrawoptimizer.cpp
+    ${MESHOPT_DIR}/vcacheoptimizer.cpp
 )
 
 add_library(meshoptimizer STATIC
