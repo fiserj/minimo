@@ -359,6 +359,7 @@ enum
 
     // Format. RGBA8 if no flag provided.
     TEXTURE_R8      = 0x08,
+    TEXTURE_D24S8   = 0x10,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
