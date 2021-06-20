@@ -1115,12 +1115,18 @@ private:
             ));
         }
 
+        void* vertex_positions = nullptr;
         update_persistent_vertex_buffer<VertexBufferT>(
-            streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.position_buffer
+            streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.position_buffer, &vertex_positions
         );
 
         update_persistent_index_buffer<IndexBufferT>(
-            mesh.element_count, indexed_vertex_count, remap_table, mesh.index_buffer
+            mesh.element_count,
+            indexed_vertex_count,
+            remap_table,
+            (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+            static_cast<float*>(vertex_positions),
+            mesh.index_buffer
         );
     }
 
@@ -1132,7 +1138,8 @@ private:
         uint32_t                    vertex_count,
         uint32_t                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
-        uint16_t&                   dst_buffer_handle
+        uint16_t&                   dst_buffer_handle,
+        void**                      dst_remapped_memory = nullptr
     )
     {
         static_assert(
@@ -1145,6 +1152,11 @@ private:
         ASSERT(memory && memory->data);
 
         meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data());
+
+        if (dst_remapped_memory)
+        {
+            *dst_remapped_memory = memory->data;
+        }
 
         if constexpr (std::is_same<BufferT, bgfx::VertexBufferHandle>::value)
         {
@@ -1159,12 +1171,35 @@ private:
         ASSERT(dst_buffer_handle != bgfx::kInvalidHandle);
     }
 
+    template <typename T>
+    inline static void remap_index_buffer
+    (
+        uint32_t                    vertex_count,
+        uint32_t                    indexed_vertex_count,
+        const Vector<unsigned int>& remap_table,
+        bool                        optimize,
+        const float*                vertex_positions,
+        T*                          dst_indices
+    )
+    {
+        meshopt_remapIndexBuffer<T>(dst_indices, nullptr, vertex_count, remap_table.data());
+
+        if (optimize && vertex_positions)
+        {
+            meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
+
+            meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
+        }
+    }
+
     template <typename BufferT>
     inline static void update_persistent_index_buffer
     (
         uint32_t                    vertex_count,
         uint32_t                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
+        bool                        optimize,
+        const float*                vertex_positions,
         uint16_t&                   dst_buffer_handle
     )
     {
@@ -1187,12 +1222,12 @@ private:
         ASSERT(memory && memory->data);
 
         type_size == sizeof(uint16_t)
-            ? meshopt_remapIndexBuffer<uint16_t>(reinterpret_cast<uint16_t*>(memory->data), nullptr, vertex_count, remap_table.data())
-            : meshopt_remapIndexBuffer<uint32_t>(reinterpret_cast<uint32_t*>(memory->data), nullptr, vertex_count, remap_table.data());
+            ? remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint16_t*>(memory->data))
+            : remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint32_t*>(memory->data));
 
         if constexpr (std::is_same<BufferT, bgfx::IndexBufferHandle>::value)
         {
-            dst_buffer_handle = bgfx::createIndexBuffer(memory,buffer_flags).idx;
+            dst_buffer_handle = bgfx::createIndexBuffer(memory, buffer_flags).idx;
         }
 
         if constexpr (std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value)
