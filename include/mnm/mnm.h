@@ -375,12 +375,61 @@ enum
 ///
 void load_texture(int id, int flags, int width, int height, int stride, const void* data);
 
-/// Sets the active texture which is used with following `begin` and `mesh`
-/// calls, until a new identifier is provided.
+/// Sets the active texture which is used with next `mesh` call, or, if called
+/// between `begin_framebuffer` and `end_framebuffer` calls, it adds the texture
+/// as the framebuffer's attachment.
 ///
-/// @param[in] id Non-zero texture identifier, or zero to disable texturing.
+/// @param[in] id Texture identifier.
 ///
 void texture(int id);
+
+
+// -----------------------------------------------------------------------------
+// PASSES
+// -----------------------------------------------------------------------------
+
+/// Delimits a section in which all `mesh` calls submit draw calls to the
+/// provided pass. Calls can be nested and the default pass is on implicitly.
+/// Passes directly correspond to BGFX's view concept, so they are primarily
+/// used for sorting draw calls into 
+///
+void begin_pass(int id);
+
+/// Ends the current pass.
+///
+void end_pass(void);
+
+/// Resets clear flags for the active pass.
+///
+void no_clear(void);
+
+/// Sets the clear depth value for the active pass.
+///
+void clear_depth(float value);
+
+/// Sets the clear color value for the active pass.
+///
+void clear_color(unsigned int rgba);
+
+
+// -----------------------------------------------------------------------------
+// FRAMEBUFFERS
+// -----------------------------------------------------------------------------
+
+/// Starts framebuffer building. Framebuffers are comprised of one or more
+/// texture attachments, which can be associated with them by calling `texture`
+/// inside the begin / end pair.
+///
+void begin_framebuffer(int id);
+
+/// Ends framebuffer building.
+///
+void end_framebuffer(void);
+
+/// Sets framebuffer of current pass.
+///
+void framebuffer(int id);
+
 
 
 // -----------------------------------------------------------------------------
