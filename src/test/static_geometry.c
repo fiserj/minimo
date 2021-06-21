@@ -10,6 +10,8 @@ static void setup(void)
 {
     title("Static Geometry Example");
 
+    clear_color(0x333333ff);
+
     begin_static(CUBE_ID, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
     end();

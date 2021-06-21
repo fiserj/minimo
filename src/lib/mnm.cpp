@@ -84,6 +84,8 @@ constexpr uint32_t MAX_TEXTURES          = 4096;
 
 constexpr uint32_t MAX_PROGRAM_UNIFORMS  = 8;
 
+constexpr uint32_t MAX_PASSES            = 128;
+
 constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
@@ -91,6 +93,8 @@ constexpr uint16_t MIN_WINDOW_SIZE       = 240;
 constexpr uint16_t DEFAULT_WINDOW_WIDTH  = 800;
 
 constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
+
+constexpr bgfx::ViewId DEFAULT_PASS      = 0; // Should maybe set to be the last one?
 
 
 // -----------------------------------------------------------------------------
@@ -175,6 +179,22 @@ public:
     inline void multiply_top(const Mat4& matrix)
     {
         m_top = matrix * m_top;
+    }
+};
+
+class PassStack : public Stack<bgfx::ViewId>
+{
+public:
+    inline PassStack()
+        : Stack<bgfx::ViewId>(DEFAULT_PASS)
+    {
+        push();
+    }
+
+    inline void pop()
+    {
+        ASSERT(m_data.size() > 1);
+        Stack<bgfx::ViewId>::pop();
     }
 };
 
@@ -384,6 +404,81 @@ struct DefaultUniforms
     {
         destroy_if_valid(color_texture);
     }
+};
+
+
+// -----------------------------------------------------------------------------
+// PASS CACHE
+// -----------------------------------------------------------------------------
+
+class Pass
+{
+public:
+    inline void update_if_dirty(bgfx::ViewId view)
+    {
+        if (m_dirty)
+        {
+            bgfx::setViewClear(view, m_flags, m_rgba, m_depth, m_stencil);
+            m_dirty = false;
+        }
+    }
+
+    void no_clear()
+    {
+        if (m_flags != BGFX_CLEAR_NONE)
+        {
+            m_flags = BGFX_CLEAR_NONE;
+            m_dirty = true;
+        }
+    }
+
+    void clear_depth(float depth)
+    {
+        if (m_depth != depth)
+        {
+            m_flags |= BGFX_CLEAR_DEPTH;
+            m_depth  = depth;
+            m_dirty  = true;
+        }
+    }
+
+    void clear_color(uint32_t rgba)
+    {
+        if (m_rgba != rgba)
+        {
+            m_flags |= BGFX_CLEAR_COLOR;
+            m_rgba   = rgba;
+            m_dirty  = true;
+        }
+    }
+
+private:
+    float    m_depth   = 1.0f;
+    uint32_t m_rgba    = 0x000000ff;
+    uint16_t m_flags   = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
+    uint8_t  m_stencil = 0;
+    bool     m_dirty   = true;
+};
+
+// Not thread safe, but it seems super silly to attempt changing this from
+// multiple threads.
+class PassCache
+{
+public:
+    void update()
+    {
+        for (bgfx::ViewId i = 0; i < m_passes.size(); i++)
+        {
+            m_passes[i].update_if_dirty(i);
+        }
+    }
+
+    inline Pass& operator[](bgfx::ViewId i) { return m_passes[i]; }
+
+    inline const Pass& operator[](bgfx::ViewId i) const { return m_passes[i]; }
+
+private:
+    Array<Pass, MAX_PASSES> m_passes;
 };
 
 
@@ -1905,6 +2000,7 @@ struct GlobalContext
     enki::TaskScheduler task_scheduler;
     TaskPool            task_pool;
 
+    PassCache           pass_cache;
     MeshCache           mesh_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
@@ -1929,6 +2025,8 @@ struct LocalContext
 
     DrawList                    draw_list;
     TransientBuffers            transient_buffers;
+
+    PassStack                   pass_stack;
 
     MatrixStack                 view_matrix_stack;
     MatrixStack                 proj_matrix_stack;
@@ -2023,9 +2121,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
-
-    // TODO : The clear values should be exposable to the end-user.
-    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x333333ff);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
@@ -2171,7 +2266,12 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
 
-        // TODO : This has to be recorder for all the views (once the begin/end pass API is added).
+        if (t_ctx.is_main_thread)
+        {
+            g_ctx.pass_cache.update();
+        }
+
+        // TODO : This has to be recorded for all the views (once the begin/end pass API is added).
         bgfx::setViewTransform(0, &t_ctx.view_matrix_stack.top(), &t_ctx.proj_matrix_stack.top());
 
         // TODO : This needs to be done for all contexts across all threads.
@@ -2443,27 +2543,25 @@ void end(void)
 
 void mesh(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_MESHES);
-    ASSERT(!mnm::t_ctx.is_recording);
+    using namespace mnm;
+
+    ASSERT(id > 0 && id < MAX_MESHES);
+    ASSERT(!t_ctx.is_recording);
 
     // TODO : This "split data filling" is silly, it should be done either fully
     //        here or in the draw list.
-    mnm::DrawItem& state = mnm::t_ctx.draw_list.state();
+    DrawItem& state = t_ctx.draw_list.state();
 
-    if (state.pass == UINT16_MAX)
-    {
-        // TODO : Assign default pass ID.
-        state.pass = 0;
-    }
+    state.pass = t_ctx.pass_stack.top();
 
     if (!bgfx::isValid(state.program))
     {
-        state.program = mnm::g_ctx.program_cache.program_handle_from_flags(
-            mnm::g_ctx.mesh_cache.mesh(static_cast<uint16_t>(id)).flags
+        state.program = g_ctx.program_cache.program_handle_from_flags(
+            g_ctx.mesh_cache.mesh(static_cast<uint16_t>(id)).flags
         );
     }
 
-    mnm::t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), mnm::t_ctx.model_matrix_stack.top());
+    t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.model_matrix_stack.top());
 }
 
 
@@ -2500,6 +2598,39 @@ void texture(int id)
 
     state.texture = g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
     state.sampler = g_ctx.default_uniforms.color_texture;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - PASSES
+// -----------------------------------------------------------------------------
+
+void begin_pass(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_PASSES);
+
+    mnm::t_ctx.pass_stack.top() = static_cast<bgfx::ViewId>(id);
+    mnm::t_ctx.pass_stack.push();
+}
+
+void end_pass(void)
+{
+    mnm::t_ctx.pass_stack.pop();
+}
+
+void no_clear(void)
+{
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].no_clear();
+}
+
+void clear_depth(float depth)
+{
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].clear_depth(depth);
+}
+
+void clear_color(unsigned int rgba)
+{
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].clear_color(rgba);
 }
 
 
