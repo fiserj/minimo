@@ -399,13 +399,14 @@ void begin_pass(int id);
 ///
 void end_pass(void);
 
-/// Resets clear flags for the active pass.
+/// Resets clear flags for the active pass (so that no clearing is done). By
+/// default both depth (1.0) and color (0x000000ff) are cleared.
 ///
 void no_clear(void);
 
 /// Sets the clear depth value for the active pass.
 ///
-void clear_depth(float value);
+void clear_depth(float depth);
 
 /// Sets the clear color value for the active pass.
 ///
