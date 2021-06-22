@@ -84,7 +84,7 @@ constexpr uint32_t MAX_TEXTURES          = 4096;
 
 constexpr uint32_t MAX_PROGRAM_UNIFORMS  = 8;
 
-constexpr uint32_t MAX_PASSES            = 128;
+constexpr uint32_t MAX_PASSES            = 64;
 
 constexpr uint32_t MAX_TASKS             = 64;
 
@@ -188,6 +188,12 @@ public:
     inline PassStack()
         : Stack<bgfx::ViewId>(DEFAULT_PASS)
     {
+        push();
+    }
+
+    inline void top_and_push(bgfx::ViewId pass)
+    {
+        top() = pass;
         push();
     }
 
@@ -414,21 +420,42 @@ struct DefaultUniforms
 class Pass
 {
 public:
-    inline void update_if_dirty(bgfx::ViewId view)
+    inline void update(bgfx::ViewId view, const Vector<Mat4>& matrices)
     {
-        if (m_dirty)
+        if (m_dirty & DIRTY_CLEAR)
         {
             bgfx::setViewClear(view, m_flags, m_rgba, m_depth, m_stencil);
-            m_dirty = false;
+            m_dirty &= ~DIRTY_CLEAR;
         }
+
+        if (m_dirty & DIRTY_TOUCH)
+        {
+            ASSERT(m_view_idx < matrices.size());
+            ASSERT(m_proj_idx < matrices.size());
+
+            bgfx::setViewTransform(view, &matrices[m_view_idx], &matrices[m_proj_idx]);
+            bgfx::touch(view);
+
+            m_view_idx = UINT16_MAX;
+            m_proj_idx = UINT16_MAX;
+
+            m_dirty &= ~DIRTY_TOUCH;
+        }
+    }
+
+    inline void set_transform_indices(uint16_t view, uint16_t proj)
+    {
+        m_view_idx = view;
+        m_proj_idx = proj;
+        m_dirty   |= DIRTY_TOUCH;
     }
 
     void no_clear()
     {
         if (m_flags != BGFX_CLEAR_NONE)
         {
-            m_flags = BGFX_CLEAR_NONE;
-            m_dirty = true;
+            m_flags  = BGFX_CLEAR_NONE;
+            m_dirty |= DIRTY_CLEAR;
         }
     }
 
@@ -438,7 +465,7 @@ public:
         {
             m_flags |= BGFX_CLEAR_DEPTH;
             m_depth  = depth;
-            m_dirty  = true;
+            m_dirty |= DIRTY_CLEAR;
         }
     }
 
@@ -448,37 +475,68 @@ public:
         {
             m_flags |= BGFX_CLEAR_COLOR;
             m_rgba   = rgba;
-            m_dirty  = true;
+            m_dirty |= DIRTY_CLEAR;
         }
     }
 
 private:
-    float    m_depth   = 1.0f;
-    uint32_t m_rgba    = 0x000000ff;
-    uint16_t m_flags   = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
-    uint8_t  m_stencil = 0;
-    bool     m_dirty   = true;
+    enum : uint8_t
+    {
+        DIRTY_NONE  = 0x0,
+        DIRTY_CLEAR = 0x1,
+        DIRTY_TOUCH = 0x2,
+    };
+
+private:
+    float    m_depth    = 1.0f;
+    uint32_t m_rgba     = 0x000000ff;
+    uint16_t m_flags    = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
+    uint16_t m_view_idx = UINT16_MAX;
+    uint16_t m_proj_idx = UINT16_MAX;
+    uint8_t  m_stencil  = 0;
+    uint8_t  m_dirty    = DIRTY_CLEAR;
 };
 
-// Not thread safe, but it seems super silly to attempt changing this from
-// multiple threads.
 class PassCache
 {
 public:
     void update()
     {
+        MutexScope lock(m_mutex);
+
         for (bgfx::ViewId i = 0; i < m_passes.size(); i++)
         {
-            m_passes[i].update_if_dirty(i);
+            m_passes[i].update(i, m_matrices);
         }
+
+        m_matrices.clear();
     }
+
+    void set_pass_transforms(bgfx::ViewId pass, const Mat4& view, const Mat4& proj)
+    {
+        MutexScope lock(m_mutex);
+
+        ASSERT(m_matrices.size() + 2 < UINT16_MAX);
+
+        const uint16_t i = static_cast<uint16_t>(m_matrices.size());
+
+        m_passes[pass].set_transform_indices(i, i + 1);
+
+        m_matrices.push_back(view);
+        m_matrices.push_back(proj);
+    }
+
+    // Changing pass properties directly is not thread safe, but it seems
+    // super silly to actually attempt to do so from multiple threads.
 
     inline Pass& operator[](bgfx::ViewId i) { return m_passes[i]; }
 
     inline const Pass& operator[](bgfx::ViewId i) const { return m_passes[i]; }
 
 private:
+    Mutex                   m_mutex;
     Array<Pass, MAX_PASSES> m_passes;
+    Vector<Mat4>            m_matrices;
 };
 
 
@@ -2235,7 +2293,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
-            bgfx::setViewRect(0, 0, 0, width, height);
+            bgfx::setViewRect(DEFAULT_PASS, 0, 0, width, height); // TODO : Move the rect to `Pass`.
         }
 
         if (update_cursor_position)
@@ -2244,8 +2302,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
 
         g_ctx.mouse.update_position_delta();
-
-        bgfx::touch(0);
 
         // We don't clear on zero-th frame, since the user may have recorded
         // something in the `setup` callback.
@@ -2268,11 +2324,19 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (t_ctx.is_main_thread)
         {
+            // This means the default pass transforms are governed by the matrix stacks on the main thread.
+            // We could avoid it by having the user explictly specify default pass delimiter, but it seems
+            // fine like this, at least for now, and it's less typing in most cases. Or perhaps just add
+            // explicit function like `default_pass` that would store the current matrices in both stacks
+            // in whichever thread it would be called from.
+            g_ctx.pass_cache.set_pass_transforms(
+                DEFAULT_PASS,
+                t_ctx.view_matrix_stack.top(),
+                t_ctx.proj_matrix_stack.top()
+            );
+
             g_ctx.pass_cache.update();
         }
-
-        // TODO : This has to be recorded for all the views (once the begin/end pass API is added).
-        bgfx::setViewTransform(0, &t_ctx.view_matrix_stack.top(), &t_ctx.proj_matrix_stack.top());
 
         // TODO : This needs to be done for all contexts across all threads.
         submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.vertex_layout_cache, t_ctx.is_main_thread);
@@ -2609,13 +2673,26 @@ void begin_pass(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_PASSES);
 
-    mnm::t_ctx.pass_stack.top() = static_cast<bgfx::ViewId>(id);
-    mnm::t_ctx.pass_stack.push();
+    mnm::t_ctx.pass_stack.top_and_push(static_cast<bgfx::ViewId>(id));
+
+    mnm::t_ctx.view_matrix_stack.push();
+    mnm::t_ctx.proj_matrix_stack.push();
 }
 
 void end_pass(void)
 {
-    mnm::t_ctx.pass_stack.pop();
+    using namespace mnm;
+
+    t_ctx.pass_stack.pop();
+
+    g_ctx.pass_cache.set_pass_transforms(
+        t_ctx.pass_stack       .top(),
+        t_ctx.view_matrix_stack.top(),
+        t_ctx.proj_matrix_stack.top()
+    );
+
+    t_ctx.view_matrix_stack.pop();
+    t_ctx.proj_matrix_stack.pop();
 }
 
 void no_clear(void)
@@ -2746,14 +2823,4 @@ int task(void (* func)(void* data), void* data)
 int frame(void)
 {
     return static_cast<int>(mnm::g_ctx.frame_number);
-}
-
-
-// -----------------------------------------------------------------------------
-// !!! TEST
-// -----------------------------------------------------------------------------
-
-void TEST(void)
-{
-    // ...
 }
