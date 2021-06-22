@@ -86,6 +86,8 @@ constexpr uint32_t MAX_PROGRAM_UNIFORMS  = 8;
 
 constexpr uint32_t MAX_PASSES            = 64;
 
+constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
+
 constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
@@ -251,6 +253,7 @@ struct DrawItem
     uint16_t                 transform     = UINT16_MAX;
     uint16_t                 mesh          = UINT16_MAX;
     bgfx::ViewId             pass          = UINT16_MAX;
+    bgfx::FrameBufferHandle  framebuffer   = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
@@ -410,6 +413,57 @@ struct DefaultUniforms
     {
         destroy_if_valid(color_texture);
     }
+};
+
+
+// -----------------------------------------------------------------------------
+// FRAMEBUFFERS
+// -----------------------------------------------------------------------------
+
+struct Framebuffer
+{
+    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+};
+
+class FramebufferCache
+{
+public:
+    void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        for (Framebuffer& framebuffer : m_framebuffers)
+        {
+            destroy_if_valid(framebuffer.handle);
+        }
+    }
+
+    void add_framebuffer(uint16_t id, const Vector<bgfx::TextureHandle>& textures)
+    {
+        ASSERT(id < m_framebuffers.size());
+        ASSERT(!textures.empty());
+
+        MutexScope lock(m_mutex);
+
+        Framebuffer& framebuffer = m_framebuffers[id];
+
+        destroy_if_valid(framebuffer.handle);
+
+        if (!textures.empty())
+        {
+            framebuffer.handle = bgfx::createFrameBuffer(
+                static_cast<uint8_t>(textures.size()),
+                textures.data(),
+                false
+            );
+        }
+    }
+
+    inline Framebuffer framebuffer(uint16_t id) const { return m_framebuffers[id]; }
+
+private:
+    Mutex                                m_mutex;
+    Array<Framebuffer, MAX_FRAMEBUFFERS> m_framebuffers;
 };
 
 
@@ -1647,9 +1701,7 @@ public:
         ASSERT(bgfx::isValid(texture.handle));
     }
 
-    inline Texture& texture(uint16_t id) { return m_textures[id]; }
-
-    inline const Texture& texture(uint16_t id) const { return m_textures[id]; }
+    inline Texture texture(uint16_t id) const { return m_textures[id]; }
 
 private:
     Mutex                        m_mutex;
@@ -2060,6 +2112,7 @@ struct GlobalContext
 
     PassCache           pass_cache;
     MeshCache           mesh_cache;
+    FramebufferCache    framebuffer_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
     DefaultUniforms     default_uniforms;
@@ -2081,6 +2134,8 @@ struct LocalContext
 {
     GeometryRecorder            recorder;
 
+    Vector<bgfx::TextureHandle> framebuffer_recorder;
+
     DrawList                    draw_list;
     TransientBuffers            transient_buffers;
 
@@ -2093,14 +2148,15 @@ struct LocalContext
     Timer                       stop_watch;
     Timer                       frame_time;
 
-    //GeometryRecorder*           active_recorder     = &transient_recorder;
-    MatrixStack*                active_matrix_stack = &model_matrix_stack;
+    MatrixStack*                active_matrix_stack     = &model_matrix_stack;
 
-    uint16_t                    recorded_mesh_id    = UINT16_MAX;
-    uint16_t                    recorded_mesh_flags = 0;
+    uint16_t                    recorded_mesh_id        = UINT16_MAX;
+    uint16_t                    recorded_mesh_flags     = 0;
 
-    bool                        is_recording        = false;
-    bool                        is_main_thread      = false;
+    uint16_t                    recorded_framebuffer_id = UINT16_MAX;
+
+    bool                        is_recording            = false;
+    bool                        is_main_thread          = false;
 };
 
 static GlobalContext g_ctx;
@@ -2656,12 +2712,19 @@ void texture(int id)
 
     ASSERT(id > 0 && id < MAX_TEXTURES);
 
-    // TODO : Samplers should be set by default state and only overwritten when
-    //        non-default shader is used.
-    DrawItem& state = t_ctx.draw_list.state();
+    if (t_ctx.recorded_framebuffer_id == UINT16_MAX)
+    {
+        // TODO : Samplers should be set by default state and only overwritten when
+        //        non-default shader is used.
+        DrawItem& state = t_ctx.draw_list.state();
 
-    state.texture = g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
-    state.sampler = g_ctx.default_uniforms.color_texture;
+        state.texture = g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
+        state.sampler = g_ctx.default_uniforms.color_texture;
+    }
+    else
+    {
+        t_ctx.framebuffer_recorder.push_back(g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle);
+    }
 }
 
 
@@ -2708,6 +2771,36 @@ void clear_depth(float depth)
 void clear_color(unsigned int rgba)
 {
     mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].clear_color(rgba);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - FRAMEBUFFERS
+// -----------------------------------------------------------------------------
+
+void begin_framebuffer(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+
+    mnm::t_ctx.framebuffer_recorder.clear();
+    mnm::t_ctx.recorded_framebuffer_id = static_cast<uint16_t>(id);
+}
+
+void end_framebuffer(void)
+{
+    mnm::g_ctx.framebuffer_cache.add_framebuffer(
+        mnm::t_ctx.recorded_framebuffer_id,
+        mnm::t_ctx.framebuffer_recorder
+    );
+
+    mnm::t_ctx.recorded_framebuffer_id = UINT16_MAX;
+}
+
+void framebuffer(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+
+    mnm::t_ctx.draw_list.state().framebuffer = mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id)).handle;
 }
 
 
