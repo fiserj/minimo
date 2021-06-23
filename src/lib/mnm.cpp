@@ -417,119 +417,90 @@ struct DefaultUniforms
 
 
 // -----------------------------------------------------------------------------
-// FRAMEBUFFERS
-// -----------------------------------------------------------------------------
-
-struct Framebuffer
-{
-    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-};
-
-class FramebufferCache
-{
-public:
-    void clear()
-    {
-        MutexScope lock(m_mutex);
-
-        for (Framebuffer& framebuffer : m_framebuffers)
-        {
-            destroy_if_valid(framebuffer.handle);
-        }
-    }
-
-    void add_framebuffer(uint16_t id, const Vector<bgfx::TextureHandle>& textures)
-    {
-        ASSERT(id < m_framebuffers.size());
-        ASSERT(!textures.empty());
-
-        MutexScope lock(m_mutex);
-
-        Framebuffer& framebuffer = m_framebuffers[id];
-
-        destroy_if_valid(framebuffer.handle);
-
-        if (!textures.empty())
-        {
-            framebuffer.handle = bgfx::createFrameBuffer(
-                static_cast<uint8_t>(textures.size()),
-                textures.data(),
-                false
-            );
-        }
-    }
-
-    inline Framebuffer framebuffer(uint16_t id) const { return m_framebuffers[id]; }
-
-private:
-    Mutex                                m_mutex;
-    Array<Framebuffer, MAX_FRAMEBUFFERS> m_framebuffers;
-};
-
-
-// -----------------------------------------------------------------------------
 // PASS CACHE
 // -----------------------------------------------------------------------------
 
 class Pass
 {
 public:
-    inline void update(bgfx::ViewId view, const Vector<Mat4>& matrices)
+    inline void update_view(bgfx::ViewId id, const Vector<Mat4>& matrices)
     {
-        if (m_dirty & DIRTY_CLEAR)
+        if (m_dirty_flags & DIRTY_CLEAR)
         {
-            bgfx::setViewClear(view, m_flags, m_rgba, m_depth, m_stencil);
-            m_dirty &= ~DIRTY_CLEAR;
+            bgfx::setViewClear(id, m_clear_flags, m_clear_rgba, m_clear_depth, m_clear_stencil);
         }
 
-        if (m_dirty & DIRTY_TOUCH)
+        if (m_dirty_flags & DIRTY_TOUCH)
         {
-            ASSERT(m_view_idx < matrices.size());
-            ASSERT(m_proj_idx < matrices.size());
+            ASSERT(m_view_matrix_idx < matrices.size());
+            ASSERT(m_proj_matrix_idx < matrices.size());
 
-            bgfx::setViewTransform(view, &matrices[m_view_idx], &matrices[m_proj_idx]);
-            bgfx::touch(view);
+            bgfx::setViewTransform(id, &matrices[m_view_matrix_idx], &matrices[m_proj_matrix_idx]);
+            bgfx::touch(id);
 
-            m_view_idx = UINT16_MAX;
-            m_proj_idx = UINT16_MAX;
-
-            m_dirty &= ~DIRTY_TOUCH;
+            m_view_matrix_idx = UINT16_MAX;
+            m_proj_matrix_idx = UINT16_MAX;
         }
+
+        if (m_dirty_flags & DIRTY_RECT)
+        {
+            ASSERT(m_viewport_width  != UINT16_MAX);
+            ASSERT(m_viewport_height != UINT16_MAX);
+
+            bgfx::setViewRect(id, m_viewport_x, m_viewport_y, m_viewport_width, m_viewport_height);
+        }
+
+        m_dirty_flags = DIRTY_NONE;
     }
 
     inline void set_transform_indices(uint16_t view, uint16_t proj)
     {
-        m_view_idx = view;
-        m_proj_idx = proj;
-        m_dirty   |= DIRTY_TOUCH;
+        m_view_matrix_idx = view;
+        m_proj_matrix_idx = proj;
+        m_dirty_flags    |= DIRTY_TOUCH;
     }
 
-    void no_clear()
+    void set_no_clear()
     {
-        if (m_flags != BGFX_CLEAR_NONE)
+        if (m_clear_flags != BGFX_CLEAR_NONE)
         {
-            m_flags  = BGFX_CLEAR_NONE;
-            m_dirty |= DIRTY_CLEAR;
+            m_clear_flags  = BGFX_CLEAR_NONE;
+            m_dirty_flags |= DIRTY_CLEAR;
         }
     }
 
-    void clear_depth(float depth)
+    void set_clear_depth(float depth)
     {
-        if (m_depth != depth)
+        if (m_clear_depth != depth)
         {
-            m_flags |= BGFX_CLEAR_DEPTH;
-            m_depth  = depth;
-            m_dirty |= DIRTY_CLEAR;
+            m_clear_flags |= BGFX_CLEAR_DEPTH;
+            m_clear_depth  = depth;
+            m_dirty_flags |= DIRTY_CLEAR;
         }
     }
 
-    void clear_color(uint32_t rgba)
+    void set_clear_color(uint32_t rgba)
     {
-        if (m_rgba != rgba)
+        if (m_clear_rgba != rgba)
         {
-            m_flags |= BGFX_CLEAR_COLOR;
-            m_rgba   = rgba;
-            m_dirty |= DIRTY_CLEAR;
+            m_clear_flags |= BGFX_CLEAR_COLOR;
+            m_clear_rgba   = rgba;
+            m_dirty_flags |= DIRTY_CLEAR;
+        }
+    }
+
+    inline void set_viewport(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
+    {
+        if (m_viewport_x      != x     ||
+            m_viewport_y      != y     ||
+            m_viewport_width  != width ||
+            m_viewport_height != height)
+        {
+            m_viewport_x      = x;
+            m_viewport_y      = y;
+            m_viewport_width  = width;
+            m_viewport_height = height;
+            m_dirty_flags    |= DIRTY_RECT;
         }
     }
 
@@ -539,16 +510,24 @@ private:
         DIRTY_NONE  = 0x0,
         DIRTY_CLEAR = 0x1,
         DIRTY_TOUCH = 0x2,
+        DIRTY_RECT  = 0x4,
     };
 
 private:
-    float    m_depth    = 1.0f;
-    uint32_t m_rgba     = 0x000000ff;
-    uint16_t m_flags    = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
-    uint16_t m_view_idx = UINT16_MAX;
-    uint16_t m_proj_idx = UINT16_MAX;
-    uint8_t  m_stencil  = 0;
-    uint8_t  m_dirty    = DIRTY_CLEAR;
+    uint16_t m_view_matrix_idx = UINT16_MAX;
+    uint16_t m_proj_matrix_idx = UINT16_MAX;
+
+    uint16_t m_viewport_x      = 0;
+    uint16_t m_viewport_y      = 0;
+    uint16_t m_viewport_width  = UINT16_MAX;
+    uint16_t m_viewport_height = UINT16_MAX;
+
+    float    m_clear_depth     = 1.0f;
+    uint32_t m_clear_rgba      = 0x000000ff;
+    uint16_t m_clear_flags     = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
+    uint8_t  m_clear_stencil   = 0;
+
+    uint8_t  m_dirty_flags     = DIRTY_CLEAR;
 };
 
 class PassCache
@@ -558,23 +537,23 @@ public:
     {
         MutexScope lock(m_mutex);
 
-        for (bgfx::ViewId i = 0; i < m_passes.size(); i++)
+        for (bgfx::ViewId id = 0; id < m_passes.size(); id++)
         {
-            m_passes[i].update(i, m_matrices);
+            m_passes[id].update_view(id, m_matrices);
         }
 
         m_matrices.clear();
     }
 
-    void set_pass_transforms(bgfx::ViewId pass, const Mat4& view, const Mat4& proj)
+    void set_pass_transforms(bgfx::ViewId id, const Mat4& view, const Mat4& proj)
     {
         MutexScope lock(m_mutex);
 
         ASSERT(m_matrices.size() + 2 < UINT16_MAX);
 
-        const uint16_t i = static_cast<uint16_t>(m_matrices.size());
+        const uint16_t idx = static_cast<uint16_t>(m_matrices.size());
 
-        m_passes[pass].set_transform_indices(i, i + 1);
+        m_passes[id].set_transform_indices(idx, idx + 1);
 
         m_matrices.push_back(view);
         m_matrices.push_back(proj);
@@ -1608,6 +1587,17 @@ static void submit_draw_list
 struct Texture
 {
     bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+    uint16_t            width  = 0;
+    uint16_t            height = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            *this = {};
+        }
+    }
 };
 
 class TextureCache
@@ -1619,7 +1609,7 @@ public:
 
         for (Texture& texture : m_textures)
         {
-            destroy_if_valid(texture.handle);
+            texture.destroy();
         }
     }
 
@@ -1630,8 +1620,7 @@ public:
         MutexScope lock(m_mutex);
 
         Texture& texture = m_textures[id];
-
-        destroy_if_valid(texture.handle);
+        texture.destroy();
 
         // TODO : Move elsewhere?
         constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
@@ -1699,13 +1688,131 @@ public:
 
         texture.handle = bgfx::createTexture2D(width, height, false, 1, format.type, texture_flags, memory);
         ASSERT(bgfx::isValid(texture.handle));
+
+        texture.width  = width;
+        texture.height = height;
     }
 
-    inline Texture texture(uint16_t id) const { return m_textures[id]; }
+    inline const Texture& texture(uint16_t id) const { return m_textures[id]; }
 
 private:
     Mutex                        m_mutex;
     Array<Texture, MAX_TEXTURES> m_textures;
+};
+
+
+// -----------------------------------------------------------------------------
+// FRAMEBUFFERS
+// -----------------------------------------------------------------------------
+
+struct Framebuffer
+{
+    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+    uint16_t                width  = 0;
+    uint16_t                height = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            *this = {};
+        }
+    }
+};
+
+class FramebufferRecorder
+{
+public:
+    inline void begin(uint16_t id)
+    {
+        ASSERT(!is_recording());
+
+        m_id     = id;
+        m_width  = 0;
+        m_height = 0;
+        m_textures.clear();
+    }
+
+    inline void add_texture(const Texture& texture)
+    {
+        ASSERT(is_recording());
+
+        if (m_textures.empty())
+        {
+            ASSERT(texture.width  > 0);
+            ASSERT(texture.height > 0);
+
+            m_width  = texture.width;
+            m_height = texture.height;
+        }
+
+        m_textures.push_back(texture.handle);
+    }
+
+    inline void end()
+    {
+        ASSERT(is_recording());
+
+        begin(UINT16_MAX);
+    }
+
+    Framebuffer create_framebuffer() const
+    {
+        ASSERT(is_recording());
+
+        Framebuffer framebuffer;
+
+        if (!m_textures.empty())
+        {
+            framebuffer.handle = bgfx::createFrameBuffer(static_cast<uint8_t>(m_textures.size()), m_textures.data(), false);
+            ASSERT(bgfx::isValid(framebuffer.handle));
+
+            framebuffer.width  = m_width;
+            framebuffer.height = m_height;
+        }
+
+        return framebuffer;
+    }
+
+    inline bool is_recording() const { return m_id != UINT16_MAX; }
+
+    inline uint16_t id() const { return m_id; }
+
+private:
+    Vector<bgfx::TextureHandle> m_textures;
+    uint16_t                    m_id     = UINT16_MAX;
+    uint16_t                    m_width  = 0;
+    uint16_t                    m_height = 0;
+};
+
+class FramebufferCache
+{
+public:
+    void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        for (Framebuffer& framebuffer : m_framebuffers)
+        {
+            framebuffer.destroy();
+        }
+    }
+
+    void add_framebuffer(const FramebufferRecorder& recorder)
+    {
+        MutexScope lock(m_mutex);
+
+        Framebuffer& framebuffer = m_framebuffers[recorder.id()];
+        framebuffer.destroy();
+        framebuffer = recorder.create_framebuffer();
+    }
+
+    inline const Framebuffer& framebuffer(uint16_t id) const { return m_framebuffers[id]; }
+
+private:
+    Mutex                                m_mutex;
+    Array<Framebuffer, MAX_FRAMEBUFFERS> m_framebuffers;
 };
 
 
@@ -2132,31 +2239,29 @@ struct GlobalContext
 
 struct LocalContext
 {
-    GeometryRecorder            recorder;
+    GeometryRecorder    recorder;
 
-    Vector<bgfx::TextureHandle> framebuffer_recorder;
+    FramebufferRecorder framebuffer_recorder;
 
-    DrawList                    draw_list;
-    TransientBuffers            transient_buffers;
+    DrawList            draw_list;
+    TransientBuffers    transient_buffers;
 
-    PassStack                   pass_stack;
+    PassStack           pass_stack;
 
-    MatrixStack                 view_matrix_stack;
-    MatrixStack                 proj_matrix_stack;
-    MatrixStack                 model_matrix_stack;
+    MatrixStack         view_matrix_stack;
+    MatrixStack         proj_matrix_stack;
+    MatrixStack         model_matrix_stack;
 
-    Timer                       stop_watch;
-    Timer                       frame_time;
+    Timer               stop_watch;
+    Timer               frame_time;
 
-    MatrixStack*                active_matrix_stack     = &model_matrix_stack;
+    MatrixStack*        active_matrix_stack = &model_matrix_stack;
 
-    uint16_t                    recorded_mesh_id        = UINT16_MAX;
-    uint16_t                    recorded_mesh_flags     = 0;
+    uint16_t            recorded_mesh_id    = UINT16_MAX;
+    uint16_t            recorded_mesh_flags = 0;
 
-    uint16_t                    recorded_framebuffer_id = UINT16_MAX;
-
-    bool                        is_recording            = false;
-    bool                        is_main_thread          = false;
+    bool                is_recording        = false;
+    bool                is_main_thread      = false;
 };
 
 static GlobalContext g_ctx;
@@ -2349,7 +2454,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
-            bgfx::setViewRect(DEFAULT_PASS, 0, 0, width, height); // TODO : Move the rect to `Pass`.
+
+            g_ctx.pass_cache[DEFAULT_PASS].set_viewport(0, 0, width, height);
         }
 
         if (update_cursor_position)
@@ -2712,7 +2818,7 @@ void texture(int id)
 
     ASSERT(id > 0 && id < MAX_TEXTURES);
 
-    if (t_ctx.recorded_framebuffer_id == UINT16_MAX)
+    if (!t_ctx.framebuffer_recorder.is_recording())
     {
         // TODO : Samplers should be set by default state and only overwritten when
         //        non-default shader is used.
@@ -2723,7 +2829,7 @@ void texture(int id)
     }
     else
     {
-        t_ctx.framebuffer_recorder.push_back(g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle);
+        t_ctx.framebuffer_recorder.add_texture(g_ctx.texture_cache.texture(static_cast<uint16_t>(id)));
     }
 }
 
@@ -2760,17 +2866,32 @@ void end_pass(void)
 
 void no_clear(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].no_clear();
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_no_clear();
 }
 
 void clear_depth(float depth)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].clear_depth(depth);
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_clear_depth(depth);
 }
 
 void clear_color(unsigned int rgba)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].clear_color(rgba);
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_clear_color(rgba);
+}
+
+void viewport(int x, int y, int width, int height)
+{
+    ASSERT(x      >= 0);
+    ASSERT(y      >= 0);
+    ASSERT(width  >  0);
+    ASSERT(height >  0);
+
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_viewport(
+        static_cast<uint16_t>(x),
+        static_cast<uint16_t>(y),
+        static_cast<uint16_t>(width),
+        static_cast<uint16_t>(height)
+    );
 }
 
 
@@ -2782,25 +2903,21 @@ void begin_framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
 
-    mnm::t_ctx.framebuffer_recorder.clear();
-    mnm::t_ctx.recorded_framebuffer_id = static_cast<uint16_t>(id);
+    mnm::t_ctx.framebuffer_recorder.begin(static_cast<uint16_t>(id));
 }
 
 void end_framebuffer(void)
 {
-    mnm::g_ctx.framebuffer_cache.add_framebuffer(
-        mnm::t_ctx.recorded_framebuffer_id,
-        mnm::t_ctx.framebuffer_recorder
-    );
-
-    mnm::t_ctx.recorded_framebuffer_id = UINT16_MAX;
+    mnm::g_ctx.framebuffer_cache.add_framebuffer(mnm::t_ctx.framebuffer_recorder);
+    mnm::t_ctx.framebuffer_recorder.end();
 }
 
 void framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
 
-    mnm::t_ctx.draw_list.state().framebuffer = mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id)).handle;
+    // TODO : We need to keep track of the framebuffer--pass association.
+    // mnm::t_ctx.draw_list.state().framebuffer = mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id)).handle;
 }
 
 
