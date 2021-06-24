@@ -343,7 +343,7 @@ void mesh(int id);
 // TEXTURING
 // -----------------------------------------------------------------------------
 
-/// Texture flags.
+/// Texture attribute flags.
 ///
 enum
 {
@@ -360,6 +360,19 @@ enum
     // Format. RGBA8 if no flag provided.
     TEXTURE_R8      = 0x08,
     TEXTURE_D24S8   = 0x10,
+    TEXTURE_D32F    = 0x18,
+};
+
+/// Automatic texture size related to backbuffer size.
+///
+enum
+{
+    SIZE_DOUBLE    = -1,
+    SIZE_EQUAL     = -2,
+    SIZE_HALF      = -3,
+    SIZE_QUARTER   = -4,
+    SIZE_EIGHTH    = -5,
+    SIZE_SIXTEENTH = -6,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
@@ -374,6 +387,11 @@ enum
 /// @param[in] data Pixel data or `NULL`.
 ///
 void load_texture(int id, int flags, int width, int height, int stride, const void* data);
+
+/// Like `load_texture`, but no existing content is provided. Also supports
+/// automatic backbuffer-size-related scaling.
+///
+void create_texture(int id, int flags, int width, int height);
 
 /// Sets the active texture which is used with next `mesh` call, or, if called
 /// between `begin_framebuffer` and `end_framebuffer` calls, it adds the texture
@@ -439,7 +457,6 @@ void end_framebuffer(void);
 /// Sets framebuffer of current pass.
 ///
 void framebuffer(int id);
-
 
 
 // -----------------------------------------------------------------------------

@@ -1629,7 +1629,7 @@ public:
         constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
         constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
 
-        constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8;
+        constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
         constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
 
         static const uint64_t sampling_flags[] =
@@ -1655,6 +1655,7 @@ public:
             { 4, bgfx::TextureFormat::RGBA8 },
             { 1, bgfx::TextureFormat::R8    },
             { 0, bgfx::TextureFormat::D24S8 },
+            { 0, bgfx::TextureFormat::D32F  },
         };
 
         const Format format = formats[(flags & TEXTURE_FORMAT_MASK) >> TEXTURE_FORMAT_SHIFT];
