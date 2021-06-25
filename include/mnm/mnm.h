@@ -361,18 +361,21 @@ enum
     TEXTURE_R8      = 0x08,
     TEXTURE_D24S8   = 0x10,
     TEXTURE_D32F    = 0x18,
+
+    // Render target properties. Nothing if no flag provided.
+    TEXTURE_TARGET  = 0x40,
 };
 
 /// Automatic texture size related to backbuffer size.
 ///
 enum
 {
-    SIZE_DOUBLE    = -1,
-    SIZE_EQUAL     = -2,
-    SIZE_HALF      = -3,
-    SIZE_QUARTER   = -4,
-    SIZE_EIGHTH    = -5,
-    SIZE_SIXTEENTH = -6,
+    SIZE_DOUBLE = 0xffff,
+    SIZE_EQUAL  = 0xfffa,
+    SIZE_HALF,
+    SIZE_QUARTER,
+    SIZE_EIGHTH,
+    SIZE_SIXTEENTH,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
