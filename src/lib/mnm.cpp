@@ -420,6 +420,22 @@ struct DefaultUniforms
 // PASS CACHE
 // -----------------------------------------------------------------------------
 
+struct Framebuffer
+{
+    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+    uint16_t                width  = 0;
+    uint16_t                height = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            *this = {};
+        }
+    }
+};
+
 class Pass
 {
 public:
@@ -458,6 +474,12 @@ public:
         m_view_matrix_idx = view;
         m_proj_matrix_idx = proj;
         m_dirty_flags    |= DIRTY_TOUCH;
+    }
+
+    inline void set_framebuffer(const Framebuffer& framebuffer)
+    {
+        m_framebuffer  = framebuffer.handle;
+        m_dirty_flags |= DIRTY_FRAMEBUFFER;
     }
 
     void set_no_clear()
@@ -504,13 +526,19 @@ public:
         }
     }
 
+    inline bgfx::FrameBufferHandle framebuffer() const
+    {
+        return m_framebuffer;
+    }
+
 private:
     enum : uint8_t
     {
-        DIRTY_NONE  = 0x0,
-        DIRTY_CLEAR = 0x1,
-        DIRTY_TOUCH = 0x2,
-        DIRTY_RECT  = 0x4,
+        DIRTY_NONE        = 0x0,
+        DIRTY_CLEAR       = 0x1,
+        DIRTY_TOUCH       = 0x2,
+        DIRTY_RECT        = 0x4,
+        DIRTY_FRAMEBUFFER = 0x8,
     };
 
 private:
@@ -521,6 +549,8 @@ private:
     uint16_t m_viewport_y      = 0;
     uint16_t m_viewport_width  = UINT16_MAX;
     uint16_t m_viewport_height = UINT16_MAX;
+
+    bgfx::FrameBufferHandle m_framebuffer = BGFX_INVALID_HANDLE;
 
     float    m_clear_depth     = 1.0f;
     uint32_t m_clear_rgba      = 0x000000ff;
@@ -1632,6 +1662,9 @@ public:
         constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
         constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
 
+        constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
+        constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
+
         static const uint64_t sampling_flags[] =
         {
             BGFX_SAMPLER_NONE,
@@ -1643,6 +1676,12 @@ public:
             BGFX_SAMPLER_NONE,
             BGFX_SAMPLER_UVW_MIRROR,
             BGFX_SAMPLER_UVW_CLAMP,
+        };
+
+        static const uint64_t target_flags[] =
+        {
+            0,
+            BGFX_TEXTURE_RT, // TEXTURE_TARGET
         };
 
         static const struct Format
@@ -1660,9 +1699,16 @@ public:
 
         const Format format = formats[(flags & TEXTURE_FORMAT_MASK) >> TEXTURE_FORMAT_SHIFT];
 
+        bgfx::BackbufferRatio::Enum ratio = bgfx::BackbufferRatio::Count;
+
+        if (width >= SIZE_EQUAL && width <= SIZE_DOUBLE && width == height)
+        {
+            ratio = static_cast<bgfx::BackbufferRatio::Enum>(width - SIZE_EQUAL);
+        }
+
         const bgfx::Memory* memory = nullptr;
 
-        if (data && format.size > 0)
+        if (data && format.size > 0 && ratio == bgfx::BackbufferRatio::Count)
         {
             if (stride == 0 || stride == width * format.size)
             {
@@ -1685,9 +1731,18 @@ public:
 
         const uint64_t texture_flags =
             sampling_flags[(flags & TEXTURE_SAMPLING_MASK) >> TEXTURE_SAMPLING_SHIFT] |
-            border_flags  [(flags & TEXTURE_BORDER_MASK  ) >> TEXTURE_BORDER_SHIFT  ] ;
+            border_flags  [(flags & TEXTURE_BORDER_MASK  ) >> TEXTURE_BORDER_SHIFT  ] |
+            target_flags  [(flags & TEXTURE_TARGET_MASK  ) >> TEXTURE_TARGET_SHIFT  ] ;
 
-        texture.handle = bgfx::createTexture2D(width, height, false, 1, format.type, texture_flags, memory);
+        if (ratio == bgfx::BackbufferRatio::Count)
+        {
+            texture.handle = bgfx::createTexture2D(width, height, false, 1, format.type, texture_flags, memory);
+        }
+        else
+        {
+            ASSERT(!memory);
+            texture.handle = bgfx::createTexture2D(ratio, false, 1, format.type, texture_flags);
+        }
         ASSERT(bgfx::isValid(texture.handle));
 
         texture.width  = width;
@@ -1706,28 +1761,12 @@ private:
 // FRAMEBUFFERS
 // -----------------------------------------------------------------------------
 
-struct Framebuffer
-{
-    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-    uint16_t                width  = 0;
-    uint16_t                height = 0;
-
-    void destroy()
-    {
-        if (bgfx::isValid(handle))
-        {
-            bgfx::destroy(handle);
-            *this = {};
-        }
-    }
-};
-
 class FramebufferRecorder
 {
 public:
     inline void begin(uint16_t id)
     {
-        ASSERT(!is_recording());
+        ASSERT(!is_recording() || id == UINT16_MAX);
 
         m_id     = id;
         m_width  = 0;
@@ -2781,6 +2820,8 @@ void mesh(int id)
 
     state.pass = t_ctx.pass_stack.top();
 
+    state.framebuffer = g_ctx.pass_cache[t_ctx.pass_stack.top()].framebuffer();
+
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.program_handle_from_flags(
@@ -2801,6 +2842,7 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
     ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
     ASSERT(width > 0);
     ASSERT(height > 0);
+    ASSERT((width < SIZE_EQUAL && height < SIZE_EQUAL) || (width <= SIZE_DOUBLE && width == height));
     ASSERT(stride >= 0);
 
     mnm::g_ctx.texture_cache.add_texture(
@@ -2811,6 +2853,11 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
         static_cast<uint16_t>(stride),
         data
     );
+}
+
+void create_texture(int id, int flags, int width, int height)
+{
+    load_texture(id, flags, width, height, 0, 0);
 }
 
 void texture(int id)
@@ -2916,6 +2963,10 @@ void end_framebuffer(void)
 void framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_framebuffer(
+        mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id))
+    );
 
     // TODO : We need to keep track of the framebuffer--pass association.
     // mnm::t_ctx.draw_list.state().framebuffer = mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id)).handle;
