@@ -1,8 +1,8 @@
 #include <mnm/mnm.h>
 
-#define MESH_ID 1
+#define TRIANGLE_ID 1
 
-static void init(void)
+static void setup(void)
 {
     title("Hello Triangle Example");
 
@@ -23,7 +23,7 @@ static void draw(void)
     identity();
     rotate_z((float)elapsed() * -50.0f);
 
-    begin_transient(MESH_ID, VERTEX_COLOR);
+    begin_mesh(TRIANGLE_ID, MESH_TRANSIENT | VERTEX_COLOR);
     {
         color(0xff0000ff);
         vertex(-0.6f, -0.4f, 0.0f);
@@ -34,9 +34,9 @@ static void draw(void)
         color(0x0000ffff);
         vertex(0.0f, 0.6f, 0.0f);
     }
-    end();
+    end_mesh();
 
-    mesh(MESH_ID);
+    mesh(TRIANGLE_ID);
 }
 
-MNM_MAIN(init, 0, draw, 0);
+MNM_MAIN(0, setup, draw, 0);

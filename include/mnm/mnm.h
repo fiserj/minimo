@@ -250,6 +250,14 @@ double toc(void);
 // GEOMETRY
 // -----------------------------------------------------------------------------
 
+/// Mesh type. Static by default.
+///
+enum
+{
+    MESH_TRANSIENT = 0x40,
+    MESH_DYNAMIC   = 0x80,
+};
+
 /// Vertex attribute flags. Position 3D always on.
 ///
 enum
@@ -269,32 +277,12 @@ enum
     PRIMITIVE_LINE_STRIP     = 0x20,
 };
 
-/// Starts transient geometry recording. Primitive type and recorded per-vertex
-/// attributes can be specified via flags. Transient mesh ID is only valid for
-/// the duration of the frame. The amount of transient geometry that can be
-/// recorded in each frame is limited and can be specified in the setup phase
-/// via `TODO`.
+/// Starts mesh geometry recording. Mesh type, primitive type and attributes
+/// recorded per-vertex are specified via flags. Transient meshes are only valid
+/// in the current frame. The amount of transient geometry in a single frame is
+/// limited and can be specified in the init phase via `transient_memory` call.
 ///
-/// @param[in] id Mesh identifier.
-/// @param[in] flags Recording flags.
-///
-void begin_transient(int id, int flags);
-
-/// Starts static geometry recording. Primitive type and recorded per-vertex
-/// attributes can be specified via flags.
-///
-/// @param[in] id Mesh identifier.
-/// @param[in] flags Recording flags.
-///
-void begin_static(int id, int flags);
-
-/// Starts dynamic geometry. Primitive type and recorded per-vertex attributes
-/// can be specified via flags.
-///
-/// @param[in] id Mesh identifier.
-/// @param[in] flags Recording flags.
-///
-void begin_dynamic(int id, int flags);
+void begin_mesh(int id, int flags);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
 /// vertex position is multiplied by the current model matrix.
@@ -329,10 +317,9 @@ void texcoord(float u, float v);
 
 /// Ends the current geometry recording.
 ///
-void end(void);
+void end_mesh(void);
 
-/// Submits recorded mesh geometry created previously with `begin_*`, using
-/// the same identifier.
+/// Submits recorded mesh geometry, using the same identifier.
 ///
 /// @param[in] id Mesh identifier.
 ///
@@ -433,6 +420,14 @@ void clear_depth(float depth);
 ///
 void clear_color(unsigned int rgba);
 
+/// Resets current pass' framebuffer. By default, no framebuffer is set.
+///
+void no_framebuffer(void);
+
+/// Sets framebuffer of current pass.
+///
+void framebuffer(int id);
+
 /// Sets the viewport value for the active pass. Primitives drawn outside will
 /// be clipped. If not provided, the full size is used. If the pass does not
 /// have a framebuffer attached, the full size is window size, otherwise the
@@ -456,10 +451,6 @@ void begin_framebuffer(int id);
 /// Ends framebuffer building.
 ///
 void end_framebuffer(void);
-
-/// Sets framebuffer of current pass.
-///
-void framebuffer(int id);
 
 
 // -----------------------------------------------------------------------------

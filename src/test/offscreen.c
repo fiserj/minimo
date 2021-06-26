@@ -68,7 +68,6 @@ void offscreen_pass(void)
 
     rotate_x(((float)elapsed() + 1.0f) * 57.2958f);
     rotate_y(((float)elapsed() + 2.0f) * 57.2958f);
-    cube();
 
     mesh(MESH_CUBE);
 }

@@ -466,6 +466,14 @@ public:
             bgfx::setViewRect(id, m_viewport_x, m_viewport_y, m_viewport_width, m_viewport_height);
         }
 
+        if (m_dirty_flags & DIRTY_FRAMEBUFFER)
+        {
+            // Having `BGFX_INVALID_HANDLE` here is OK.
+            bgfx::setViewFrameBuffer(id, m_framebuffer);
+
+            m_framebuffer = BGFX_INVALID_HANDLE;
+        }
+
         m_dirty_flags = DIRTY_NONE;
     }
 
@@ -2960,6 +2968,11 @@ void end_framebuffer(void)
     mnm::t_ctx.framebuffer_recorder.end();
 }
 
+void no_framebuffer(void)
+{
+    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_framebuffer({ BGFX_INVALID_HANDLE });
+}
+
 void framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
@@ -2967,9 +2980,6 @@ void framebuffer(int id)
     mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_framebuffer(
         mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id))
     );
-
-    // TODO : We need to keep track of the framebuffer--pass association.
-    // mnm::t_ctx.draw_list.state().framebuffer = mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id)).handle;
 }
 
 
