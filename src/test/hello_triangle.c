@@ -2,9 +2,11 @@
 
 #define MESH_ID 1
 
-static void setup(void)
+static void init(void)
 {
     title("Hello Triangle Example");
+
+    clear_color(0x333333ff);
 }
 
 static void draw(void)
@@ -14,11 +16,10 @@ static void draw(void)
         quit();
     }
 
-    projection();
     identity();
     ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+    projection();
 
-    model();
     identity();
     rotate_z((float)elapsed() * -50.0f);
 
@@ -38,4 +39,4 @@ static void draw(void)
     mesh(MESH_ID);
 }
 
-MNM_MAIN(0, setup, draw, 0);
+MNM_MAIN(init, 0, draw, 0);
