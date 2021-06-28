@@ -216,34 +216,52 @@ double toc(void);
 // -----------------------------------------------------------------------------
 /// @section GEOMETRY
 ///
-/// ...
+/// Meshes are made out of one or two vertex buffers and optionally also one
+/// index buffer. The vertex data are split into position-only buffer / stream,
+/// and attributes-only one. Mesh types (static / transient / dynamic)
+/// correspond to BGFX notation.
+///
+/// Transient meshes do not have index buffers, while index buffer of static and
+/// dynamic meshes is automatically created from the list of submitted vertices,
+/// using the meshoptimizer library to optimize for vertex cache and overdraw.
+///
+/// Internally, \a MiNiMo uses
 
 /// Mesh flags.
 ///
 enum
 {
     // Mesh type. Static by default.
-    MESH_TRANSIENT           = 0x0040,
-
-    // Vertex attribute flags. 3D position always on.
-    VERTEX_COLOR             = 0x0001,
-    VERTEX_NORMAL            = 0x0002,
-    VERTEX_TEXCOORD          = 0x0004, 
+    MESH_TRANSIENT           = 0x0001,
+    MESH_DYNAMIC             = 0x0002, // Not yet supported.
 
     // Primitive type. Triangles by default.
-    PRIMITIVE_QUADS          = 0x0008,
-    PRIMITIVE_TRIANGLE_STRIP = 0x0010,
-    PRIMITIVE_LINES          = 0x0018,
-    PRIMITIVE_LINE_STRIP     = 0x0020,
-    PRIMITIVE_POINTS         = 0x0028,
+    PRIMITIVE_QUADS          = 0x0004,
+    PRIMITIVE_TRIANGLE_STRIP = 0x0005,
+    PRIMITIVE_LINES          = 0x0006,
+    PRIMITIVE_LINE_STRIP     = 0x0007,
+    PRIMITIVE_POINTS         = 0x0008,
+
+    // Vertex attribute flags. 3D position always on.
+    VERTEX_COLOR             = 0x0010,
+    VERTEX_NORMAL            = 0x0020,
+    VERTEX_TEXCOORD          = 0x0040,
 };
 
 /// Starts mesh geometry recording. Mesh type, primitive type and attributes
-/// recorded per-vertex are specified via flags.
+/// recorded per-vertex are specified via flags. Once recorded, a mesh can be
+/// submitted arbitrary number of times, but transient meshes (and their IDs)
+/// are only valid in the current frame.
 ///
-/// Transient meshes are only valid in the current frame. The amount of
-/// transient geometry in a single frame is limited and can be specified in the
-/// init phase via `transient_memory` call.
+/// The amount of transient geometry in a single frame is limited and can be
+/// specified in the init phase via `transient_memory` call.
+///
+/// Only the attributes specified via flags are stored, so that the same
+/// code can possibly be used to generate meshes with different attributes (the
+/// unlisted attributes's functions will be empty).
+///
+/// Using existing ID is legal, but results in destruction of the previously
+/// submitted data.
 ///
 void begin_mesh(int id, int flags);
 
@@ -282,7 +300,7 @@ void normal(float nx, float ny, float nz);
 ///
 void texcoord(float u, float v);
 
-/// Submits recorded mesh geometry, using the same identifier.
+/// Submits recorded mesh geometry.
 ///
 /// @param[in] id Mesh identifier.
 ///
@@ -326,24 +344,26 @@ enum
 ///
 enum
 {
-    SIZE_DOUBLE = 0xffff,
-    SIZE_EQUAL  = 0xfffa,
-    SIZE_HALF,
-    SIZE_QUARTER,
-    SIZE_EIGHTH,
-    SIZE_SIXTEENTH,
+    SIZE_DOUBLE    = 0xffff,
+    SIZE_EQUAL     = 0xfffa,
+    SIZE_HALF      = 0xfffb,
+    SIZE_QUARTER   = 0xfffc,
+    SIZE_EIGHTH    = 0xfffd,
+    SIZE_SIXTEENTH = 0xfffe,
 };
 
 /// Loads an RGBA texture from raw pixel data. The user-defined identifier can
 /// be used repeatedly to overwrite existing content, but only the last content
 /// is retained. Use the `texture` function to submit loaded texture.
 ///
+/// Using existing ID will result in destruction of the previously created data.
+///
 /// @param[in] id Texture identifier.
 /// @param[in] flags Texture properties' flags.
 /// @param[in] width Image width in pixels.
 /// @param[in] height Image height in pixels.
 /// @param[in] stride Image stride in bytes. Pass zero to auto-compute.
-/// @param[in] data Pixel data or `NULL`.
+/// @param[in] data Pixel data or `NULL`. If provided, the texture is immutable.
 ///
 void load_texture(int id, int flags, int width, int height, int stride, const void* data);
 
@@ -377,7 +397,7 @@ void texture(int id);
 
 /// Sets the active pass (thread-local). The pass stays active until next call
 /// of the function, and is persistent across multiple frame. By default, pass
-/// zero is active.
+/// with ID `0` is active.
 ///
 /// @param[in] id Pass identifier.
 ///
@@ -388,11 +408,15 @@ void pass(int id);
 ///
 void no_clear(void);
 
-/// Sets the clear depth value for the active pass.
+/// Sets the depth buffer clear value for the active pass.
+///
+/// @param[in] depth Depth buffer clear value.
 ///
 void clear_depth(float depth);
 
-/// Sets the clear color value for the active pass.
+/// Sets the color buffer clear value for the active pass.
+///
+/// @param[in] rgba Color buffer clear value.
 ///
 void clear_color(unsigned int rgba);
 
@@ -400,16 +424,28 @@ void clear_color(unsigned int rgba);
 ///
 void no_framebuffer(void);
 
-/// Sets framebuffer of current pass.
+/// Associates a framebuffer with the current pass.
+///
+/// @param[in] id Framebuffer identifier.
 ///
 void framebuffer(int id);
 
-/// Sets the viewport value for the active pass. Primitives drawn outside will
-/// be clipped. If not provided, the full size is used. If the pass does not
-/// have a framebuffer attached, the full size is window size, otherwise the
-/// size of the first attached texture is used. Default pass' viewport is
-/// automatically reset to window's full size, when the window is resized.
-/// Viewport origin is at the window top-left corner.
+/// Sets the viewport value for the current pass. Primitives drawn outside will
+/// be clipped.
+///
+/// If not provided, the full size is used. If the pass does not have a
+/// framebuffer attached, the full size is window size, otherwise the size of
+/// the first attached texture is used. Default pass' viewport is automatically
+/// reset to window's full size, when the window is resized.
+///
+/// Viewport origin is at the window's top-left corner.
+///
+/// TODO : Decide behavior on the high-DPI displays.
+///
+/// @param[in] x Horizontal offset from the window's top-left corner.
+/// @param[in] y Vertical offset from the window's top-left corner.
+/// @param[in] width Viewport width, in pixels.
+/// @param[in] height Viewport height, in pixels.
 ///
 void viewport(int x, int y, int width, int height);
 
@@ -441,14 +477,14 @@ void end_framebuffer(void);
 /// @section TRANSFORMATIONS
 ///
 /// Each thread has an implicit matrix stack, that works similarly to how stack
-/// worked in the old OpenGL, but \a MiNiMo only has a single stack.
+/// used to work in the old OpenGL, but \a MiNiMo only has a single stack.
 ///
 /// Each submitted mesh's model matrix is implicitly assigned by using the
 /// stack's top matrix when `mesh` function is called.
 ///
 /// View and projection matrices of each pass are explicitly copied from the top
 /// matrix when `view` and `projection` functions are called. This explicitness
-/// is needed since multiple threads can submit draws to the same pass.
+/// is needed since multiple threads can submit draws to the same pass at once.
 
 /// Copies the curent matrix stack's top to the active pass' view matrix.
 ///
