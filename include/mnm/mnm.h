@@ -233,7 +233,7 @@ enum
 {
     // Mesh type. Static by default.
     MESH_TRANSIENT           = 0x0001,
-    MESH_DYNAMIC             = 0x0002, // Not yet supported.
+    MESH_DYNAMIC             = 0x0002,
 
     // Primitive type. Triangles by default.
     PRIMITIVE_QUADS          = 0x0004,
