@@ -11,10 +11,11 @@ static void setup(void)
     title("Static Geometry Example");
 
     clear_color(0x333333ff);
+    clear_depth(1.0f);
 
     begin_mesh(CUBE_MESH, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
-    end();
+    end_mesh();
 }
 
 static void draw(void)
