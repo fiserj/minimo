@@ -1193,7 +1193,8 @@ public:
         switch (new_type)
         {
         case MeshType::STATIC:
-            // add_persistent_mesh<MESH_STATIC>(mesh, mesh_recorder, vertex_layout_cache);
+        case MeshType::DYNAMIC:
+            add_persistent_mesh(mesh, recorder, layouts);
             break;
 
         case MeshType::TRANSIENT:
@@ -1201,10 +1202,6 @@ public:
             {
                 m_transient_idxs.push_back(recorder.id());
             }
-            break;
-
-        case MeshType::DYNAMIC:
-            // add_persistent_mesh<MESH_DYNAMIC>(mesh, mesh_recorder, vertex_layout_cache);
             break;
 
         default:
@@ -1303,170 +1300,197 @@ private:
         return !m_transient_exhausted;
     }
 
-    // template <MeshType MeshType>
-    // void add_persistent_mesh(Mesh& mesh, const MeshRecorder& mesh_recorder, const VertexLayoutCache& vertex_layout_cache)
-    // {
-    //     static_assert(MeshType == MESH_STATIC || MeshType == MESH_DYNAMIC, "Unsupported mesh type for destruction.");
+    void add_persistent_mesh(Mesh& mesh, const MeshRecorder& recorder, const VertexLayoutCache& layout_cache)
+    {
+        ASSERT(mesh.type() == MeshType::STATIC || mesh.type() == MeshType::DYNAMIC);
 
-    //     using VertexBufferT = typename std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
-    //     using IndexBufferT  = typename std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
+        meshopt_Stream            streams[2];
+        const bgfx::VertexLayout* layouts[2];
 
-    //     meshopt_Stream            streams[2];
-    //     const bgfx::VertexLayout* layouts[2];
+        layouts[0] = &layout_cache[VERTEX_POSITION]; // TODO : Eventually add support for 2D position.
+        streams[0] = { recorder.position_buffer().data(), layouts[0]->getStride(), layouts[0]->getStride() };
 
-    //     layouts[0] = &vertex_layout_cache[VERTEX_POSITION]; // TODO : Eventually add support for 2D position.
-    //     streams[0] = { mesh_recorder.position_buffer().data(), layouts[0]->getStride(), layouts[0]->getStride() };
+        const bool has_attribs = (mesh_attribs(mesh.flags) & VERTEX_ATTRIB_MASK);
 
-    //     const bool has_attribs = (mesh.attribs() & VERTEX_ATTRIB_MASK);
+        if (has_attribs)
+        {
+            layouts[1] = &layout_cache[mesh_attribs(mesh.flags)];
+            streams[1] = { recorder.attrib_buffer().data(), layouts[1]->getStride(), layouts[1]->getStride() };
+        }
 
-    //     if (has_attribs)
-    //     {
-    //         layouts[1] = &vertex_layout_cache[mesh.attribs()];
-    //         streams[1] = { mesh_recorder.attrib_buffer().data(), layouts[1]->getStride(), layouts[1]->getStride() };
-    //     }
+        Vector<unsigned int> remap_table(mesh.element_count);
+        uint32_t             indexed_vertex_count = 0;
 
-    //     Vector<unsigned int> remap_table(mesh.element_count);
-    //     uint32_t             indexed_vertex_count = 0;
+        if (has_attribs)
+        {
+            indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemapMulti(
+                remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
+            ));
 
-    //     if (has_attribs)
-    //     {
-    //         indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemapMulti(
-    //             remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
-    //         ));
+            if (mesh.type() == MeshType::STATIC)
+            {
+                update_persistent_vertex_buffer(
+                    streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attribs.static_buffer
+                );
+            }
+            else
+            {
+                update_persistent_vertex_buffer(
+                    streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attribs.dynamic_buffer
+                );
+            }
+        }
+        else
+        {
+            indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemap(
+                remap_table.data(), nullptr, mesh.element_count, streams[0].data, mesh.element_count, streams[0].size
+            ));
+        }
 
-    //         update_persistent_vertex_buffer<VertexBufferT>(
-    //             streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attrib_buffer
-    //         );
-    //     }
-    //     else
-    //     {
-    //         indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemap(
-    //             remap_table.data(), nullptr, mesh.element_count, streams[0].data, mesh.element_count, streams[0].size
-    //         ));
-    //     }
+        void* vertex_positions = nullptr;
+        if (mesh.type() == MeshType::STATIC)
+        {
+            update_persistent_vertex_buffer(
+                streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.positions.static_buffer, &vertex_positions
+            );
+        }
+        else
+        {
+            update_persistent_vertex_buffer(
+                streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.positions.dynamic_buffer, &vertex_positions
+            );
+        }
 
-    //     void* vertex_positions = nullptr;
-    //     update_persistent_vertex_buffer<VertexBufferT>(
-    //         streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.position_buffer, &vertex_positions
-    //     );
+        if (mesh.type() == MeshType::STATIC)
+        {
+            update_persistent_index_buffer(
+                mesh.element_count,
+                indexed_vertex_count,
+                remap_table,
+                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                static_cast<float*>(vertex_positions),
+                mesh.indices.static_buffer
+            );
+        }
+        {
+            update_persistent_index_buffer(
+                mesh.element_count,
+                indexed_vertex_count,
+                remap_table,
+                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                static_cast<float*>(vertex_positions),
+                mesh.indices.dynamic_buffer
+            );
+        }
+    }
 
-    //     update_persistent_index_buffer<IndexBufferT>(
-    //         mesh.element_count,
-    //         indexed_vertex_count,
-    //         remap_table,
-    //         (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
-    //         static_cast<float*>(vertex_positions),
-    //         mesh.index_buffer
-    //     );
-    // }
+    template <typename BufferT>
+    inline static void update_persistent_vertex_buffer
+    (
+        const meshopt_Stream&       stream,
+        const bgfx::VertexLayout&   layout,
+        uint32_t                    vertex_count,
+        uint32_t                    indexed_vertex_count,
+        const Vector<unsigned int>& remap_table,
+        BufferT&                    dst_buffer_handle,
+        void**                      dst_remapped_memory = nullptr
+    )
+    {
+        static_assert(
+            std::is_same<BufferT, bgfx::       VertexBufferHandle>::value ||
+            std::is_same<BufferT, bgfx::DynamicVertexBufferHandle>::value,
+            "Unsupported vertex buffer type for update."
+        );
 
-    // template <typename BufferT>
-    // inline static void update_persistent_vertex_buffer
-    // (
-    //     const meshopt_Stream&       stream,
-    //     const bgfx::VertexLayout&   layout,
-    //     uint32_t                    vertex_count,
-    //     uint32_t                    indexed_vertex_count,
-    //     const Vector<unsigned int>& remap_table,
-    //     uint16_t&                   dst_buffer_handle,
-    //     void**                      dst_remapped_memory = nullptr
-    // )
-    // {
-    //     static_assert(
-    //         std::is_same<BufferT, bgfx::       VertexBufferHandle>::value ||
-    //         std::is_same<BufferT, bgfx::DynamicVertexBufferHandle>::value,
-    //         "Unsupported vertex buffer type for update."
-    //     );
+        const bgfx::Memory* memory = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * stream.size));
+        ASSERT(memory && memory->data);
 
-    //     const bgfx::Memory* memory = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * stream.size));
-    //     ASSERT(memory && memory->data);
+        meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data());
 
-    //     meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data());
+        if (dst_remapped_memory)
+        {
+            *dst_remapped_memory = memory->data;
+        }
 
-    //     if (dst_remapped_memory)
-    //     {
-    //         *dst_remapped_memory = memory->data;
-    //     }
+        if constexpr (std::is_same<BufferT, bgfx::VertexBufferHandle>::value)
+        {
+            dst_buffer_handle = bgfx::createVertexBuffer(memory, layout);
+        }
 
-    //     if constexpr (std::is_same<BufferT, bgfx::VertexBufferHandle>::value)
-    //     {
-    //         dst_buffer_handle = bgfx::createVertexBuffer(memory, layout).idx;
-    //     }
+        if constexpr (std::is_same<BufferT, bgfx::DynamicVertexBufferHandle>::value)
+        {
+            dst_buffer_handle = bgfx::createDynamicVertexBuffer(memory, layout);
+        }
 
-    //     if constexpr (std::is_same<BufferT, bgfx::DynamicVertexBufferHandle>::value)
-    //     {
-    //         dst_buffer_handle = bgfx::createDynamicVertexBuffer(memory, layout).idx;
-    //     }
+        ASSERT(bgfx::isValid(dst_buffer_handle));
+    }
 
-    //     ASSERT(dst_buffer_handle != bgfx::kInvalidHandle);
-    // }
+    template <typename T>
+    inline static void remap_index_buffer
+    (
+        uint32_t                    vertex_count,
+        uint32_t                    indexed_vertex_count,
+        const Vector<unsigned int>& remap_table,
+        bool                        optimize,
+        const float*                vertex_positions,
+        T*                          dst_indices
+    )
+    {
+        meshopt_remapIndexBuffer<T>(dst_indices, nullptr, vertex_count, remap_table.data());
 
-    // template <typename T>
-    // inline static void remap_index_buffer
-    // (
-    //     uint32_t                    vertex_count,
-    //     uint32_t                    indexed_vertex_count,
-    //     const Vector<unsigned int>& remap_table,
-    //     bool                        optimize,
-    //     const float*                vertex_positions,
-    //     T*                          dst_indices
-    // )
-    // {
-    //     meshopt_remapIndexBuffer<T>(dst_indices, nullptr, vertex_count, remap_table.data());
+        if (optimize && vertex_positions)
+        {
+            meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
 
-    //     if (optimize && vertex_positions)
-    //     {
-    //         meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
+            meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
+        }
+    }
 
-    //         meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
-    //     }
-    // }
+    template <typename BufferT>
+    inline static void update_persistent_index_buffer
+    (
+        uint32_t                    vertex_count,
+        uint32_t                    indexed_vertex_count,
+        const Vector<unsigned int>& remap_table,
+        bool                        optimize,
+        const float*                vertex_positions,
+        BufferT&                    dst_buffer_handle
+    )
+    {
+        static_assert(
+            std::is_same<BufferT, bgfx::       IndexBufferHandle>::value ||
+            std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value,
+            "Unsupported index buffer type for update."
+        );
 
-    // template <typename BufferT>
-    // inline static void update_persistent_index_buffer
-    // (
-    //     uint32_t                    vertex_count,
-    //     uint32_t                    indexed_vertex_count,
-    //     const Vector<unsigned int>& remap_table,
-    //     bool                        optimize,
-    //     const float*                vertex_positions,
-    //     uint16_t&                   dst_buffer_handle
-    // )
-    // {
-    //     static_assert(
-    //         std::is_same<BufferT, bgfx::       IndexBufferHandle>::value ||
-    //         std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value,
-    //         "Unsupported index buffer type for update."
-    //     );
+        uint16_t buffer_flags = BGFX_BUFFER_NONE;
+        uint32_t type_size    = sizeof(uint16_t);
 
-    //     uint16_t buffer_flags = BGFX_BUFFER_NONE;
-    //     uint32_t type_size    = sizeof(uint16_t);
+        if (indexed_vertex_count > UINT16_MAX)
+        {
+            buffer_flags = BGFX_BUFFER_INDEX32;
+            type_size    = sizeof(uint32_t);
+        }
 
-    //     if (indexed_vertex_count > UINT16_MAX)
-    //     {
-    //         buffer_flags = BGFX_BUFFER_INDEX32;
-    //         type_size    = sizeof(uint32_t);
-    //     }
+        const bgfx::Memory* memory = bgfx::alloc(vertex_count * type_size);
+        ASSERT(memory && memory->data);
 
-    //     const bgfx::Memory* memory = bgfx::alloc(vertex_count * type_size);
-    //     ASSERT(memory && memory->data);
+        type_size == sizeof(uint16_t)
+            ? remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint16_t*>(memory->data))
+            : remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint32_t*>(memory->data));
 
-    //     type_size == sizeof(uint16_t)
-    //         ? remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint16_t*>(memory->data))
-    //         : remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint32_t*>(memory->data));
+        if constexpr (std::is_same<BufferT, bgfx::IndexBufferHandle>::value)
+        {
+            dst_buffer_handle = bgfx::createIndexBuffer(memory, buffer_flags);
+        }
 
-    //     if constexpr (std::is_same<BufferT, bgfx::IndexBufferHandle>::value)
-    //     {
-    //         dst_buffer_handle = bgfx::createIndexBuffer(memory, buffer_flags).idx;
-    //     }
+        if constexpr (std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value)
+        {
+            dst_buffer_handle = bgfx::createDynamicIndexBuffer(memory, buffer_flags);
+        }
 
-    //     if constexpr (std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value)
-    //     {
-    //         dst_buffer_handle = bgfx::createDynamicIndexBuffer(memory, buffer_flags).idx;
-    //     }
-
-    //     ASSERT(dst_buffer_handle != bgfx::kInvalidHandle);
-    // }
+        ASSERT(bgfx::isValid(dst_buffer_handle));
+    }
 
 private:
     Mutex                               m_mutex;
