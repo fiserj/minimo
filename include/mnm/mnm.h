@@ -433,10 +433,9 @@ void framebuffer(int id);
 /// Sets the viewport value for the current pass. Primitives drawn outside will
 /// be clipped.
 ///
-/// If not provided, the full size is used. If the pass does not have a
-/// framebuffer attached, the full size is window size, otherwise the size of
-/// the first attached texture is used. Default pass' viewport is automatically
-/// reset to window's full size, when the window is resized.
+/// Width and height are specified in actual pixels, not in screen coordinates.
+/// Symbolic constant `SIZE_*` can be used, but must be the same for both width
+/// and height.
 ///
 /// Viewport origin is at the window's top-left corner.
 ///
@@ -448,6 +447,10 @@ void framebuffer(int id);
 /// @param[in] height Viewport height, in pixels.
 ///
 void viewport(int x, int y, int width, int height);
+
+/// Shortcut for `viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL)`.
+///
+void full_viewport();
 
 
 // -----------------------------------------------------------------------------

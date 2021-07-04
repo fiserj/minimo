@@ -7,6 +7,7 @@ static void setup(void)
     title("Hello Triangle Example");
 
     clear_color(0x333333ff);
+    clear_depth(1.0f);
 }
 
 static void draw(void)
@@ -36,6 +37,7 @@ static void draw(void)
     }
     end_mesh();
 
+    identity();
     mesh(TRIANGLE_ID);
 }
 
