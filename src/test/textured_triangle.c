@@ -9,6 +9,7 @@ static void setup(void)
     title("Hello Triangle Example");
 
     clear_color(0x333333ff);
+    clear_depth(1.0f);
 
     const unsigned int abgr[] =
     {
@@ -29,6 +30,8 @@ static void draw(void)
     identity();
     ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
     projection();
+
+    identity();
 
     begin_mesh(TRIANGLE_ID, MESH_TRANSIENT | VERTEX_TEXCOORD);
     {
