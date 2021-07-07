@@ -40,55 +40,13 @@
 
 #include <mnm_shaders.h>          // *_fs, *_vs
 
-
 namespace mnm
 {
+
 
 // -----------------------------------------------------------------------------
 // CONSTANTS
 // -----------------------------------------------------------------------------
-
-enum MeshType
-{
-    MESH_INVALID   = 0x000,
-    MESH_TRANSIENT = 0x040,
-    MESH_STATIC    = 0x080,
-    MESH_DYNAMIC   = 0x100,
-};
-
-enum
-{
-    VERTEX_POSITION = 0,
-};
-
-enum
-{
-    PRIMITIVE_TRIANGLES = 0,
-};
-
-// constexpr uint32_t VERTEX_ATTRIB_SHIFT   = 0;
-
-constexpr uint32_t VERTEX_ATTRIB_MASK    = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
-
-constexpr uint32_t PRIMITIVE_TYPE_SHIFT  = 3;
-
-constexpr uint32_t PRIMITIVE_TYPE_MASK   = PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP | PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP;
-
-// constexpr uint32_t MESH_TYPE_SHIFT       = 5;
-
-constexpr uint32_t MESH_TYPE_MASK        = MESH_TRANSIENT | MESH_STATIC;
-
-constexpr uint32_t MAX_MESHES            = 4096;
-
-constexpr uint32_t MAX_TEXTURES          = 4096;
-
-constexpr uint32_t MAX_PROGRAM_UNIFORMS  = 8;
-
-constexpr uint32_t MAX_PASSES            = 64;
-
-constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
-
-constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint16_t MIN_WINDOW_SIZE       = 240;
 
@@ -96,13 +54,70 @@ constexpr uint16_t DEFAULT_WINDOW_WIDTH  = 800;
 
 constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
-constexpr bgfx::ViewId DEFAULT_PASS      = 0; // Should maybe set to be the last one?
+enum
+{
+                   MESH_STATIC           = 0,
+
+                   MESH_INVALID          = 3,
+
+                   PRIMITIVE_TRIANGLES   = 0,
+
+                   VERTEX_POSITION       = 0,
+};
+
+// -----------------------------------------------------------------------------
+// FLAG MASKS AND SHIFTS
+// -----------------------------------------------------------------------------
+
+constexpr uint16_t MESH_TYPE_MASK         = MESH_TRANSIENT | MESH_DYNAMIC;
+
+constexpr uint16_t MESH_TYPE_SHIFT        = 0;
+
+constexpr uint16_t PRIMITIVE_TYPE_MASK    = PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP | PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
+
+constexpr uint16_t PRIMITIVE_TYPE_SHIFT   = 2;
+
+constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
+
+constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
+
+constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
+
+constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
+
+constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
+
+constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
+
+constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
+
+constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
+
+constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
+
+constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
+
+
+// -----------------------------------------------------------------------------
+// RESOURCE LIMITS
+// -----------------------------------------------------------------------------
+
+constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
+
+constexpr uint32_t MAX_MESHES            = 4096;
+
+constexpr uint32_t MAX_PASSES            = 64;
+
+constexpr uint32_t MAX_TASKS             = 64;
+
+constexpr uint32_t MAX_TEXTURES          = 1024;
 
 
 // -----------------------------------------------------------------------------
 // UTILITY MACROS
 // -----------------------------------------------------------------------------
 
+// TODO : Better assert.
 #define ASSERT(cond) assert(cond)
 
 
@@ -130,6 +145,97 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
+
+
+// -----------------------------------------------------------------------------
+// FLAG ENUMS
+// -----------------------------------------------------------------------------
+
+enum struct MeshType : uint16_t
+{
+    STATIC    = MESH_STATIC,
+    TRANSIENT = MESH_TRANSIENT,
+    DYNAMIC   = MESH_DYNAMIC,
+    INVALID   = MESH_INVALID,
+};
+
+static inline MeshType mesh_type(uint16_t flags)
+{
+    ASSERT(((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT) >= MESH_STATIC );
+    ASSERT(((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT) <= MESH_INVALID);
+
+    return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
+}
+
+static uint16_t mesh_attribs(uint16_t flags)
+{
+    return (flags & VERTEX_ATTRIB_MASK);
+}
+
+
+// -----------------------------------------------------------------------------
+// GENERAL UTILITY FUNCTIONS
+// -----------------------------------------------------------------------------
+
+// https://stackoverflow.com/a/2595226
+template <typename T>
+inline void hash_combine(size_t& seed, const T& value)
+{
+    std::hash<T> hasher;
+    seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template <typename T>
+constexpr bool is_pod()
+{
+    // Since std::is_pod is being deprecated as of C++20.
+    return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
+}
+
+static inline bool is_aligned(const void* ptr, size_t alignment)
+{
+    return reinterpret_cast<uintptr_t>(ptr) % alignment == 0;
+}
+
+template <size_t Size>
+static inline void assign(const void* src, void* dst)
+{
+    struct Block
+    {
+        uint8_t bytes[Size];
+    };
+
+    ASSERT(is_aligned(src, std::alignment_of<Block>::value));
+    ASSERT(is_aligned(dst, std::alignment_of<Block>::value));
+
+    *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
+}
+
+template <size_t Size>
+static inline void push_back(Vector<uint8_t>& buffer, const void* data)
+{
+    static_assert(Size > 0, "Size must be positive.");
+
+    buffer.resize(buffer.size() + Size);
+
+    assign<Size>(data, buffer.data() + buffer.size() - Size);
+}
+
+template <typename T>
+static inline void push_back(Vector<uint8_t>& buffer, const T& value)
+{
+    push_back<sizeof(T)>(buffer, &value);
+}
+
+template <typename HandleT>
+inline void destroy_if_valid(HandleT& handle)
+{
+    if (bgfx::isValid(handle))
+    {
+        bgfx::destroy(handle);
+        handle = BGFX_INVALID_HANDLE;
+    }
+}
 
 
 // -----------------------------------------------------------------------------
@@ -184,64 +290,6 @@ public:
     }
 };
 
-class PassStack : public Stack<bgfx::ViewId>
-{
-public:
-    inline PassStack()
-        : Stack<bgfx::ViewId>(DEFAULT_PASS)
-    {
-        push();
-    }
-
-    inline void top_and_push(bgfx::ViewId pass)
-    {
-        top() = pass;
-        push();
-    }
-
-    inline void pop()
-    {
-        ASSERT(m_data.size() > 1);
-        Stack<bgfx::ViewId>::pop();
-    }
-};
-
-
-// -----------------------------------------------------------------------------
-// GENERAL UTILITY FUNCTIONS
-// -----------------------------------------------------------------------------
-
-// https://stackoverflow.com/a/2595226
-template <typename T>
-inline void hash_combine(size_t& seed, const T& value)
-{
-    std::hash<T> hasher;
-    seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-template <typename T>
-constexpr bool is_pod()
-{
-    // Since std::is_pod is being deprecated as of C++20.
-    return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
-}
-
-template <typename HandleT>
-inline void destroy_if_valid(uint16_t& handle_idx)
-{
-    if (bgfx::isValid(HandleT { handle_idx }))
-    {
-        bgfx::destroy(HandleT { handle_idx });
-        handle_idx = bgfx::kInvalidHandle;
-    }
-}
-
-template <typename HandleT>
-inline void destroy_if_valid(HandleT& handle)
-{
-    destroy_if_valid<HandleT>(handle.idx);
-}
-
 
 // -----------------------------------------------------------------------------
 // DRAW SUBMISSION
@@ -249,7 +297,6 @@ inline void destroy_if_valid(HandleT& handle)
 
 struct DrawItem
 {
-    // TODO : Mesh ID and view ID could be merged to single uint16_t.
     uint16_t                 transform     = UINT16_MAX;
     uint16_t                 mesh          = UINT16_MAX;
     bgfx::ViewId             pass          = UINT16_MAX;
@@ -312,8 +359,7 @@ public:
         m_attribs_to_ids.clear();
     }
 
-    // NOTE : attribs here aren't shifted!
-    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
+    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t flags = UINT16_MAX)
     {
         if (m_handles.size() >= UINT8_MAX)
         {
@@ -336,9 +382,11 @@ public:
         }
 
         const uint8_t idx = static_cast<uint8_t>(m_handles.size());
+        m_handles.push_back(handle);
 
-        if (attribs != UINT16_MAX)
+        if (flags != UINT16_MAX)
         {
+            const uint16_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
             ASSERT(attribs <  UINT8_MAX);
 
             if (attribs >= m_attribs_to_ids.size())
@@ -356,8 +404,6 @@ public:
             m_attribs_to_ids[attribs] = idx;
         }
 
-        m_handles.push_back(handle);
-
         return idx;
     }
 
@@ -367,13 +413,13 @@ public:
         bgfx::RendererType::Enum    renderer,
         const char*                 vertex_name,
         const char*                 fragment_name,
-        uint16_t                    attribs = UINT16_MAX
+        uint16_t                    flags = UINT16_MAX
     )
     {
         return add(
             bgfx::createEmbeddedShader(shaders, renderer, vertex_name  ),
             bgfx::createEmbeddedShader(shaders, renderer, fragment_name),
-            attribs
+            flags
         );
     }
 
@@ -387,7 +433,7 @@ public:
 
     inline bgfx::ProgramHandle program_handle_from_flags(uint16_t flags) const
     {
-        const uint16_t attribs = flags & VERTEX_ATTRIB_MASK;
+        const uint16_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
 
         ASSERT(attribs < m_attribs_to_ids.size());
         ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
@@ -399,6 +445,11 @@ private:
     Vector<bgfx::ProgramHandle> m_handles;
     Vector<uint8_t>             m_attribs_to_ids;
 };
+
+
+// -----------------------------------------------------------------------------
+// UNIFORMS
+// -----------------------------------------------------------------------------
 
 struct DefaultUniforms
 {
@@ -417,53 +468,39 @@ struct DefaultUniforms
 
 
 // -----------------------------------------------------------------------------
-// PASS CACHE
+// PASSES
 // -----------------------------------------------------------------------------
-
-struct Framebuffer
-{
-    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-    uint16_t                width  = 0;
-    uint16_t                height = 0;
-
-    void destroy()
-    {
-        if (bgfx::isValid(handle))
-        {
-            bgfx::destroy(handle);
-            *this = {};
-        }
-    }
-};
 
 class Pass
 {
 public:
-    inline void update_view(bgfx::ViewId id, const Vector<Mat4>& matrices)
+    inline void update(bgfx::ViewId id)
     {
+        if (m_dirty_flags & DIRTY_TOUCH)
+        {
+            bgfx::touch(id);
+        }
+
         if (m_dirty_flags & DIRTY_CLEAR)
         {
             bgfx::setViewClear(id, m_clear_flags, m_clear_rgba, m_clear_depth, m_clear_stencil);
         }
 
-        if (m_dirty_flags & DIRTY_TOUCH)
+        if (m_dirty_flags & DIRTY_TRANSFORM)
         {
-            ASSERT(m_view_matrix_idx < matrices.size());
-            ASSERT(m_proj_matrix_idx < matrices.size());
-
-            bgfx::setViewTransform(id, &matrices[m_view_matrix_idx], &matrices[m_proj_matrix_idx]);
-            bgfx::touch(id);
-
-            m_view_matrix_idx = UINT16_MAX;
-            m_proj_matrix_idx = UINT16_MAX;
+            bgfx::setViewTransform(id, &m_view_matrix, &m_proj_matrix);
         }
 
         if (m_dirty_flags & DIRTY_RECT)
         {
-            ASSERT(m_viewport_width  != UINT16_MAX);
-            ASSERT(m_viewport_height != UINT16_MAX);
-
-            bgfx::setViewRect(id, m_viewport_x, m_viewport_y, m_viewport_width, m_viewport_height);
+            if (m_viewport_width >= SIZE_EQUAL)
+            {
+                bgfx::setViewRect(id, m_viewport_x, m_viewport_y, static_cast<bgfx::BackbufferRatio::Enum>(m_viewport_width - SIZE_EQUAL));
+            }
+            else
+            {
+                bgfx::setViewRect(id, m_viewport_x, m_viewport_y, m_viewport_width, m_viewport_height);
+            }
         }
 
         if (m_dirty_flags & DIRTY_FRAMEBUFFER)
@@ -477,16 +514,26 @@ public:
         m_dirty_flags = DIRTY_NONE;
     }
 
-    inline void set_transform_indices(uint16_t view, uint16_t proj)
+    inline void touch()
     {
-        m_view_matrix_idx = view;
-        m_proj_matrix_idx = proj;
-        m_dirty_flags    |= DIRTY_TOUCH;
+        m_dirty_flags |= DIRTY_TOUCH;
     }
 
-    inline void set_framebuffer(const Framebuffer& framebuffer)
+    inline void set_view(const Mat4& matrix)
     {
-        m_framebuffer  = framebuffer.handle;
+        m_view_matrix  = matrix;
+        m_dirty_flags |= DIRTY_TRANSFORM;
+    }
+
+    inline void set_projection(const Mat4& matrix)
+    {
+        m_proj_matrix  = matrix;
+        m_dirty_flags |= DIRTY_TRANSFORM;
+    }
+
+    inline void set_framebuffer(bgfx::FrameBufferHandle framebuffer)
+    {
+        m_framebuffer  = framebuffer;
         m_dirty_flags |= DIRTY_FRAMEBUFFER;
     }
 
@@ -501,7 +548,7 @@ public:
 
     void set_clear_depth(float depth)
     {
-        if (m_clear_depth != depth)
+        if (m_clear_depth != depth || !(m_dirty_flags & BGFX_CLEAR_DEPTH))
         {
             m_clear_flags |= BGFX_CLEAR_DEPTH;
             m_clear_depth  = depth;
@@ -511,7 +558,7 @@ public:
 
     void set_clear_color(uint32_t rgba)
     {
-        if (m_clear_rgba != rgba)
+        if (m_clear_rgba != rgba || !(m_dirty_flags & BGFX_CLEAR_COLOR))
         {
             m_clear_flags |= BGFX_CLEAR_COLOR;
             m_clear_rgba   = rgba;
@@ -521,6 +568,8 @@ public:
 
     inline void set_viewport(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
     {
+        ASSERT(width < SIZE_EQUAL || width == height);
+
         if (m_viewport_x      != x     ||
             m_viewport_y      != y     ||
             m_viewport_width  != width ||
@@ -534,38 +583,36 @@ public:
         }
     }
 
-    inline bgfx::FrameBufferHandle framebuffer() const
-    {
-        return m_framebuffer;
-    }
+    inline bgfx::FrameBufferHandle framebuffer() const { return m_framebuffer; }
 
 private:
     enum : uint8_t
     {
-        DIRTY_NONE        = 0x0,
-        DIRTY_CLEAR       = 0x1,
-        DIRTY_TOUCH       = 0x2,
-        DIRTY_RECT        = 0x4,
-        DIRTY_FRAMEBUFFER = 0x8,
+        DIRTY_NONE        = 0x00,
+        DIRTY_CLEAR       = 0x01,
+        DIRTY_TOUCH       = 0x02,
+        DIRTY_TRANSFORM   = 0x04,
+        DIRTY_RECT        = 0x08,
+        DIRTY_FRAMEBUFFER = 0x10,
     };
 
 private:
-    uint16_t m_view_matrix_idx = UINT16_MAX;
-    uint16_t m_proj_matrix_idx = UINT16_MAX;
+    Mat4                    m_view_matrix     = HMM_Mat4d(1.0f);
+    Mat4                    m_proj_matrix     = HMM_Mat4d(1.0f);
 
-    uint16_t m_viewport_x      = 0;
-    uint16_t m_viewport_y      = 0;
-    uint16_t m_viewport_width  = UINT16_MAX;
-    uint16_t m_viewport_height = UINT16_MAX;
+    uint16_t                m_viewport_x      = 0;
+    uint16_t                m_viewport_y      = 0;
+    uint16_t                m_viewport_width  = UINT16_MAX;
+    uint16_t                m_viewport_height = UINT16_MAX;
 
-    bgfx::FrameBufferHandle m_framebuffer = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle m_framebuffer     = BGFX_INVALID_HANDLE;
 
-    float    m_clear_depth     = 1.0f;
-    uint32_t m_clear_rgba      = 0x000000ff;
-    uint16_t m_clear_flags     = BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH;
-    uint8_t  m_clear_stencil   = 0;
+    float                   m_clear_depth     = 1.0f;
+    uint32_t                m_clear_rgba      = 0x000000ff;
+    uint16_t                m_clear_flags     = BGFX_CLEAR_NONE;
+    uint8_t                 m_clear_stencil   = 0;
 
-    uint8_t  m_dirty_flags     = DIRTY_CLEAR;
+    uint8_t                 m_dirty_flags     = DIRTY_CLEAR;
 };
 
 class PassCache
@@ -577,24 +624,8 @@ public:
 
         for (bgfx::ViewId id = 0; id < m_passes.size(); id++)
         {
-            m_passes[id].update_view(id, m_matrices);
+            m_passes[id].update(id);
         }
-
-        m_matrices.clear();
-    }
-
-    void set_pass_transforms(bgfx::ViewId id, const Mat4& view, const Mat4& proj)
-    {
-        MutexScope lock(m_mutex);
-
-        ASSERT(m_matrices.size() + 2 < UINT16_MAX);
-
-        const uint16_t idx = static_cast<uint16_t>(m_matrices.size());
-
-        m_passes[id].set_transform_indices(idx, idx + 1);
-
-        m_matrices.push_back(view);
-        m_matrices.push_back(proj);
     }
 
     // Changing pass properties directly is not thread safe, but it seems
@@ -607,7 +638,6 @@ public:
 private:
     Mutex                   m_mutex;
     Array<Pass, MAX_PASSES> m_passes;
-    Vector<Mat4>            m_matrices;
 };
 
 
@@ -682,7 +712,7 @@ public:
         return m_layouts[attribs];
     }
 
-    void clear()
+    inline void clear()
     {
         m_layouts.clear();
     }
@@ -871,88 +901,88 @@ private:
 };
 
 
-
 // -----------------------------------------------------------------------------
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
-static inline bool is_aligned(const void* ptr, size_t size)
-{
-    return reinterpret_cast<uintptr_t>(ptr) % size == 0;
-}
-
-template <size_t Size>
-static inline void assign(const void* src, void* dst)
-{
-    struct Block
-    {
-        uint8_t bytes[Size];
-    };
-
-    ASSERT(is_aligned(src, std::alignment_of<Block>::value));
-    ASSERT(is_aligned(dst, std::alignment_of<Block>::value));
-
-    *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
-}
-
-template <size_t Size>
-static inline void push_back(Vector<uint8_t>& buffer, const void* data)
-{
-    static_assert(Size > 0, "Size must be positive.");
-
-    buffer.resize(buffer.size() + Size);
-
-    assign<Size>(data, buffer.data() + buffer.size() - Size);
-}
-
-template <typename T>
-static inline void push_back(Vector<uint8_t>& buffer, const T& value)
-{
-    push_back<sizeof(T)>(buffer, &value);
-}
-
-class GeometryRecorder
+class MeshRecorder
 {
 public:
-    void reset(uint16_t flags)
+    void begin(uint16_t id, uint16_t flags)
     {
+        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT16_MAX));
+
+        m_id    = id;
+        m_flags = flags;
+
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
 
-        m_attrib_funcs     = &ms_attrib_state_func_table[flags];
-        m_vertex_func      =  ms_vertex_push_func_table [flags];
+        m_attrib_funcs     = flags != UINT16_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
+        m_vertex_func      = flags != UINT16_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
         m_vertex_count     = 0;
         m_invocation_count = 0;
     }
 
+    void end()
+    {
+        ASSERT(is_recording());
+
+        begin(UINT16_MAX, UINT16_MAX);
+    }
+
     inline void vertex(const Vec3& position)
     {
+        ASSERT(is_recording());
+
         (* m_vertex_func)(*this, position);
     }
 
     inline void color(uint32_t rgba)
     {
+        ASSERT(is_recording());
+
         m_attrib_funcs->color(m_attrib_state, rgba);
     }
 
     inline void normal(float nx, float ny, float nz)
     {
+        ASSERT(is_recording());
+
         m_attrib_funcs->normal(m_attrib_state, nx, ny, nz);
     }
 
     inline void texcoord(float u, float v)
     {
+        ASSERT(is_recording());
+
         m_attrib_funcs->texcoord(m_attrib_state, u, v);
     }
 
+    inline const Vector<uint8_t>& attrib_buffer() const
+    {
+        ASSERT(is_recording());
+
+        return m_attrib_buffer;
+    }
+
+    inline const Vector<uint8_t>& position_buffer() const
+    {
+        ASSERT(is_recording());
+
+        return m_position_buffer;
+    }
+
+    inline bool is_recording() const { return m_id != UINT16_MAX; }
+
+    inline uint16_t id() const { return m_id; }
+
+    inline uint16_t flags() const { return m_flags; }
+
     inline uint32_t vertex_count() const { return m_vertex_count; }
 
-    inline const Vector<uint8_t>& attrib_buffer() const { return m_attrib_buffer; }
-
-    inline const Vector<uint8_t>& position_buffer() const { return m_position_buffer; }
-
 private:
-    using VertexPushFunc = void (*)(GeometryRecorder&, const Vec3&);
+    using VertexPushFunc = void (*)(MeshRecorder&, const Vec3&);
 
     class VertexPushFuncTable
     {
@@ -1011,32 +1041,32 @@ private:
         }
 
         template <uint16_t Flags>
-        static void vertex(GeometryRecorder& recorder, const Vec3& position)
+        static void vertex(MeshRecorder& mesh_recorder, const Vec3& position)
         {
             if constexpr (!!(Flags & (PRIMITIVE_QUADS)))
             {
-                if ((recorder.m_invocation_count & 3) == 3)
+                if ((mesh_recorder.m_invocation_count & 3) == 3)
                 {
-                    emulate_quad<sizeof(position)>(recorder.m_position_buffer);
+                    emulate_quad<sizeof(position)>(mesh_recorder.m_position_buffer);
 
                     if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
                     {
-                        emulate_quad<vertex_attribs_size<Flags>()>(recorder.m_attrib_buffer);
+                        emulate_quad<vertex_attribs_size<Flags>()>(mesh_recorder.m_attrib_buffer);
                     }
 
-                    recorder.m_vertex_count += 2;
+                    mesh_recorder.m_vertex_count += 2;
                 }
 
-                recorder.m_invocation_count++;
+                mesh_recorder.m_invocation_count++;
             }
 
-            recorder.m_vertex_count++;
+            mesh_recorder.m_vertex_count++;
 
-            push_back(recorder.m_position_buffer, position);
+            push_back(mesh_recorder.m_position_buffer, position);
 
             if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
             {
-                push_back<vertex_attribs_size<Flags>()>(recorder.m_attrib_buffer, recorder.m_attrib_state.data);
+                push_back<vertex_attribs_size<Flags>()>(mesh_recorder.m_attrib_buffer, mesh_recorder.m_attrib_state.data);
             }
         }
 
@@ -1063,57 +1093,71 @@ protected:
     VertexPushFunc                          m_vertex_func      = nullptr;
     uint32_t                                m_vertex_count     = 0;
     uint32_t                                m_invocation_count = 0;
+    uint16_t                                m_id               = UINT16_MAX;
+    uint16_t                                m_flags            = UINT16_MAX;
 
     static const VertexAttribStateFuncTable ms_attrib_state_func_table;
     static const VertexPushFuncTable        ms_vertex_push_func_table;
 };
 
-const VertexAttribStateFuncTable GeometryRecorder::ms_attrib_state_func_table;
+const VertexAttribStateFuncTable MeshRecorder::ms_attrib_state_func_table;
 
-const GeometryRecorder::VertexPushFuncTable GeometryRecorder::ms_vertex_push_func_table;
-
-
-// -----------------------------------------------------------------------------
-// INSTANCE DATA RECORDING
-// -----------------------------------------------------------------------------
-
-class InstanceRecorder
-{
-public:
-    void reset(uint16_t flags)
-    {
-        // ...  
-    }
-
-private:
-};
+const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
 // MESH
 // -----------------------------------------------------------------------------
 
+union VertexBufferUnion
+{
+    uint16_t                        transient_index = bgfx::kInvalidHandle;
+    bgfx::VertexBufferHandle        static_buffer;
+    bgfx::DynamicVertexBufferHandle dynamic_buffer;
+};
+
+union IndexBufferUnion
+{
+    uint16_t                       transient_index = bgfx::kInvalidHandle;
+    bgfx::IndexBufferHandle        static_buffer;
+    bgfx::DynamicIndexBufferHandle dynamic_buffer;
+};
+
 struct Mesh
 {
-    uint32_t element_count   = 0;
-    uint16_t flags           = 0;
-    uint16_t position_buffer = bgfx::kInvalidHandle;
-    uint16_t attrib_buffer   = bgfx::kInvalidHandle;
-    uint16_t index_buffer    = bgfx::kInvalidHandle;
+    uint32_t          element_count = 0;
+    uint16_t          flags         = MESH_INVALID;
+    VertexBufferUnion positions;
+    VertexBufferUnion attribs;
+    IndexBufferUnion  indices;
 
-    static inline MeshType type(uint16_t flags)
+    inline MeshType type() const
     {
-        return static_cast<MeshType>(flags & MESH_TYPE_MASK);
+        return mesh_type(flags);
     }
 
-    static inline uint16_t attribs(uint16_t flags)
+    void destroy()
     {
-        return flags & VERTEX_ATTRIB_MASK;
+        switch (type())
+        {
+        case MeshType::STATIC:
+            bgfx::destroy   (positions.static_buffer);
+            bgfx::destroy   (attribs  .static_buffer);
+            destroy_if_valid(indices  .static_buffer);
+            break;
+
+        case MeshType::DYNAMIC:
+            bgfx::destroy   (positions.dynamic_buffer);
+            bgfx::destroy   (attribs  .dynamic_buffer);
+            destroy_if_valid(indices  .dynamic_buffer);
+            break;
+
+        default:
+            break;
+        }
+
+        *this = {};
     }
-
-    inline MeshType type() const { return type(flags); }
-
-    inline uint16_t attribs() const { return attribs(flags); }
 };
 
 
@@ -1124,58 +1168,40 @@ struct Mesh
 struct MeshCache
 {
 public:
-    bool add_mesh(uint16_t id, uint16_t flags, const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    bool add_mesh(const MeshRecorder& recorder, const VertexLayoutCache& layouts)
     {
-        ASSERT(id < m_meshes.size());
+        ASSERT(recorder.id() < m_meshes.size());
 
         MutexScope lock(m_mutex);
 
-        Mesh& mesh = m_meshes[id];
+        Mesh& mesh = m_meshes[recorder.id()];
 
-        const MeshType old_type = mesh. type();
-        const MeshType new_type = Mesh::type(flags);
+        const MeshType old_type = mesh.type();
+        const MeshType new_type = mesh_type(recorder.flags());
 
-        if (new_type == MESH_INVALID)
+        if (new_type == MeshType::INVALID)
         {
             ASSERT(false && "Invalid registered mesh type.");
             return false;
         }
 
-        switch (old_type)
-        {
-        case MESH_TRANSIENT:
-            ASSERT(false && "Do you really want to overwrite transient mesh " \
-                "with this ID, that was also defined in the current frame?");
-            break;
-
-        case MESH_STATIC:
-            destroy_mesh<MESH_STATIC>(mesh);
-            break;
-
-        case MESH_DYNAMIC:
-            destroy_mesh<MESH_DYNAMIC>(mesh);
-            break;
-
-        default:
-            break;
-        }
+        mesh.destroy();
 
         mesh.element_count = recorder.vertex_count();
-        mesh.flags         = flags;
+        mesh.flags         = recorder.flags();
 
         switch (new_type)
         {
-        case MESH_TRANSIENT:
-            add_transient_mesh(mesh, recorder, vertex_layout_cache);
-            m_transient_mesh_idxs.push_back(id);
+        case MeshType::STATIC:
+        case MeshType::DYNAMIC:
+            add_persistent_mesh(mesh, recorder, layouts);
             break;
 
-        case MESH_STATIC:
-            add_persistent_mesh<MESH_STATIC>(mesh, recorder, vertex_layout_cache);
-            break;
-
-        case MESH_DYNAMIC:
-            add_persistent_mesh<MESH_DYNAMIC>(mesh, recorder, vertex_layout_cache);
+        case MeshType::TRANSIENT:
+            if (add_transient_mesh(mesh, recorder, layouts))
+            {
+                m_transient_idxs.push_back(recorder.id());
+            }
             break;
 
         default:
@@ -1185,137 +1211,110 @@ public:
         return true;
     }
 
-    void clear_transient_meshes()
-    {
-        MutexScope lock(m_mutex);
-
-        for (uint16_t idx : m_transient_mesh_idxs)
-        {
-            ASSERT(m_meshes[idx].type() == MESH_TRANSIENT);
-            m_meshes[idx] = {};
-        }
-
-        m_transient_mesh_idxs     .clear();
-        m_transient_vertex_buffers.clear();
-    }
-
-    void clear_persistent_meshes()
+    void clear()
     {
         MutexScope lock(m_mutex);
 
         for (Mesh& mesh : m_meshes)
         {
-            switch (mesh.type())
-            {
-            case MESH_STATIC:
-                destroy_mesh<MESH_STATIC>(mesh);
-                break;
-
-            case MESH_DYNAMIC:
-                destroy_mesh<MESH_DYNAMIC>(mesh);
-                break;
-
-            default:
-                break;
-            }
+            mesh.destroy();
         }
     }
 
-    inline Mesh& mesh(uint16_t id) { return m_meshes[id]; }
+    void clear_transient_meshes()
+    {
+        MutexScope lock(m_mutex);
 
-    inline const Mesh& mesh(uint16_t id) const { return m_meshes[id]; }
+        for (uint16_t idx : m_transient_idxs)
+        {
+            ASSERT(m_meshes[idx].type() == MeshType::TRANSIENT);
 
-    inline const Vector<bgfx::TransientVertexBuffer>& transient_vertex_buffers() const { return m_transient_vertex_buffers; }
+            m_meshes[idx] = {};
+        }
+
+        m_transient_idxs   .clear();
+        m_transient_buffers.clear();
+
+        m_transient_exhausted = false;
+    }
+
+    inline Mesh& operator[](uint16_t id) { return m_meshes[id]; }
+
+    inline const Mesh& operator[](uint16_t id) const { return m_meshes[id]; }
+
+    inline const Vector<bgfx::TransientVertexBuffer>& transient_buffers() const
+    {
+        return m_transient_buffers;
+    }
 
 private:
-    template <MeshType MeshType>
-    static inline void destroy_mesh(Mesh& mesh)
+    bool add_transient_buffer(const Vector<uint8_t>& data, const bgfx::VertexLayout& layout, uint16_t& dst_index)
     {
-        static_assert(MeshType == MESH_STATIC || MeshType == MESH_DYNAMIC, "Unsupported mesh type for destruction.");
+        ASSERT(layout.getStride() > 0);
 
-        using VertexBufferT = typename std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
-        using IndexBufferT  = typename std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
-
-        ASSERT(bgfx::isValid(VertexBufferT { mesh.position_buffer }));
-        ASSERT(bgfx::isValid(IndexBufferT  { mesh.index_buffer    }));
-
-        destroy_if_valid<VertexBufferT>(mesh.position_buffer);
-        destroy_if_valid<VertexBufferT>(mesh.attrib_buffer  );
-        destroy_if_valid<IndexBufferT >(mesh.index_buffer   );
-
-        mesh = {};
-    }
-
-    inline void add_transient_mesh(Mesh& mesh, const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
-    {
-        if (!(
-            update_transient_buffer(mesh.element_count, recorder.position_buffer(), vertex_layout_cache[VERTEX_POSITION], mesh.position_buffer) &&
-            update_transient_buffer(mesh.element_count, recorder.attrib_buffer  (), vertex_layout_cache[mesh.attribs() ], mesh.attrib_buffer  )
-        ))
+        if (data.empty())
         {
-            mesh = {}; // TODO : We need to handle this in a reasonable way.
+            return true;
         }
+
+        if (data.size() % layout.getStride() != 0)
+        {
+            ASSERT(false && "Layout does not match data size.");
+            return false;
+        }
+
+        const uint32_t count = static_cast<uint32_t>(data.size() / layout.getStride());
+
+        if (bgfx::getAvailTransientVertexBuffer(count, layout) < count)
+        {
+            // No assert here as it can happen and we'll just skip that geometry.
+            return false;
+        }
+
+        ASSERT(m_transient_buffers.size() < UINT16_MAX);
+
+        dst_index = static_cast<uint16_t>(m_transient_buffers.size());
+        m_transient_buffers.resize(m_transient_buffers.size() + 1);
+
+        bgfx::allocTransientVertexBuffer(&m_transient_buffers.back(), count, layout);
+        (void)memcpy(m_transient_buffers.back().data, data.data(), data.size());
+
+        return true;
     }
 
-    bool update_transient_buffer
-    (
-        uint32_t                  vertex_count,
-        const Vector<uint8_t>&    data,
-        const bgfx::VertexLayout& vertex_layout,
-        uint16_t&                 dst_buffer_index
-    )
+    bool add_transient_mesh(Mesh& mesh, const MeshRecorder& recorder, const VertexLayoutCache& layouts)
     {
-        ASSERT(data.size() % vertex_layout.getStride() == 0);
-        ASSERT(data.size() / vertex_layout.getStride() == vertex_count);
+        ASSERT(!recorder.position_buffer().empty());
 
-        bool success = true;
-
-        if (vertex_count > 0)
+        if (!m_transient_exhausted)
         {
-            if (bgfx::getAvailTransientVertexBuffer(vertex_count, vertex_layout) >= vertex_count)
+            if (!add_transient_buffer(recorder.position_buffer(), layouts[VERTEX_POSITION         ], mesh.positions.transient_index) ||
+                !add_transient_buffer(recorder.attrib_buffer  (), layouts[mesh_attribs(mesh.flags)], mesh.attribs  .transient_index)
+            )
             {
-                ASSERT(m_transient_vertex_buffers.size() < UINT16_MAX);
-                dst_buffer_index = static_cast<uint16_t>(m_transient_vertex_buffers.size());
-
-                m_transient_vertex_buffers.resize(m_transient_vertex_buffers.size() + 1);
-                bgfx::TransientVertexBuffer& buffer = m_transient_vertex_buffers.back();
-
-                bgfx::allocTransientVertexBuffer(&buffer, vertex_count, vertex_layout);
-                (void)memcpy(buffer.data, data.data(), data.size());
-            }
-            else
-            {
-                ASSERT(false && "Unable to allocate requested number of transient vertices.");
-                success = false; // TODO : We need to handle this in a reasonable way.
+                m_transient_exhausted = true;
+                mesh = {};
             }
         }
-        else
-        {
-            dst_buffer_index = UINT16_MAX;
-        }
 
-        return success;
+        return !m_transient_exhausted;
     }
 
-    template <MeshType MeshType>
-    void add_persistent_mesh(Mesh& mesh, const GeometryRecorder& recorder, const VertexLayoutCache& vertex_layout_cache)
+    void add_persistent_mesh(Mesh& mesh, const MeshRecorder& recorder, const VertexLayoutCache& layout_cache)
     {
-        static_assert(MeshType == MESH_STATIC || MeshType == MESH_DYNAMIC, "Unsupported mesh type for destruction.");
-
-        using VertexBufferT = typename std::conditional<MeshType == MESH_STATIC, bgfx::VertexBufferHandle, bgfx::DynamicVertexBufferHandle>::type;
-        using IndexBufferT  = typename std::conditional<MeshType == MESH_STATIC, bgfx::IndexBufferHandle , bgfx::DynamicIndexBufferHandle >::type;
+        ASSERT(mesh.type() == MeshType::STATIC || mesh.type() == MeshType::DYNAMIC);
 
         meshopt_Stream            streams[2];
         const bgfx::VertexLayout* layouts[2];
 
-        layouts[0] = &vertex_layout_cache[VERTEX_POSITION]; // TODO : Eventually add support for 2D position.
+        layouts[0] = &layout_cache[VERTEX_POSITION]; // TODO : Eventually add support for 2D position.
         streams[0] = { recorder.position_buffer().data(), layouts[0]->getStride(), layouts[0]->getStride() };
 
-        const bool has_attribs = (mesh.attribs() & VERTEX_ATTRIB_MASK);
+        const bool has_attribs = (mesh_attribs(mesh.flags) & VERTEX_ATTRIB_MASK);
 
         if (has_attribs)
         {
-            layouts[1] = &vertex_layout_cache[mesh.attribs()];
+            layouts[1] = &layout_cache[mesh_attribs(mesh.flags)];
             streams[1] = { recorder.attrib_buffer().data(), layouts[1]->getStride(), layouts[1]->getStride() };
         }
 
@@ -1328,9 +1327,18 @@ private:
                 remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
             ));
 
-            update_persistent_vertex_buffer<VertexBufferT>(
-                streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attrib_buffer
-            );
+            if (mesh.type() == MeshType::STATIC)
+            {
+                update_persistent_vertex_buffer(
+                    streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attribs.static_buffer
+                );
+            }
+            else
+            {
+                update_persistent_vertex_buffer(
+                    streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attribs.dynamic_buffer
+                );
+            }
         }
         else
         {
@@ -1340,18 +1348,40 @@ private:
         }
 
         void* vertex_positions = nullptr;
-        update_persistent_vertex_buffer<VertexBufferT>(
-            streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.position_buffer, &vertex_positions
-        );
+        if (mesh.type() == MeshType::STATIC)
+        {
+            update_persistent_vertex_buffer(
+                streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.positions.static_buffer, &vertex_positions
+            );
+        }
+        else
+        {
+            update_persistent_vertex_buffer(
+                streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.positions.dynamic_buffer, &vertex_positions
+            );
+        }
 
-        update_persistent_index_buffer<IndexBufferT>(
-            mesh.element_count,
-            indexed_vertex_count,
-            remap_table,
-            (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
-            static_cast<float*>(vertex_positions),
-            mesh.index_buffer
-        );
+        if (mesh.type() == MeshType::STATIC)
+        {
+            update_persistent_index_buffer(
+                mesh.element_count,
+                indexed_vertex_count,
+                remap_table,
+                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                static_cast<float*>(vertex_positions),
+                mesh.indices.static_buffer
+            );
+        }
+        {
+            update_persistent_index_buffer(
+                mesh.element_count,
+                indexed_vertex_count,
+                remap_table,
+                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                static_cast<float*>(vertex_positions),
+                mesh.indices.dynamic_buffer
+            );
+        }
     }
 
     template <typename BufferT>
@@ -1362,7 +1392,7 @@ private:
         uint32_t                    vertex_count,
         uint32_t                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
-        uint16_t&                   dst_buffer_handle,
+        BufferT&                    dst_buffer_handle,
         void**                      dst_remapped_memory = nullptr
     )
     {
@@ -1384,15 +1414,15 @@ private:
 
         if constexpr (std::is_same<BufferT, bgfx::VertexBufferHandle>::value)
         {
-            dst_buffer_handle = bgfx::createVertexBuffer(memory, layout).idx;
+            dst_buffer_handle = bgfx::createVertexBuffer(memory, layout);
         }
 
         if constexpr (std::is_same<BufferT, bgfx::DynamicVertexBufferHandle>::value)
         {
-            dst_buffer_handle = bgfx::createDynamicVertexBuffer(memory, layout).idx;
+            dst_buffer_handle = bgfx::createDynamicVertexBuffer(memory, layout);
         }
 
-        ASSERT(dst_buffer_handle != bgfx::kInvalidHandle);
+        ASSERT(bgfx::isValid(dst_buffer_handle));
     }
 
     template <typename T>
@@ -1424,7 +1454,7 @@ private:
         const Vector<unsigned int>& remap_table,
         bool                        optimize,
         const float*                vertex_positions,
-        uint16_t&                   dst_buffer_handle
+        BufferT&                    dst_buffer_handle
     )
     {
         static_assert(
@@ -1451,87 +1481,24 @@ private:
 
         if constexpr (std::is_same<BufferT, bgfx::IndexBufferHandle>::value)
         {
-            dst_buffer_handle = bgfx::createIndexBuffer(memory, buffer_flags).idx;
+            dst_buffer_handle = bgfx::createIndexBuffer(memory, buffer_flags);
         }
 
         if constexpr (std::is_same<BufferT, bgfx::DynamicIndexBufferHandle>::value)
         {
-            dst_buffer_handle = bgfx::createDynamicIndexBuffer(memory, buffer_flags).idx;
+            dst_buffer_handle = bgfx::createDynamicIndexBuffer(memory, buffer_flags);
         }
 
-        ASSERT(dst_buffer_handle != bgfx::kInvalidHandle);
+        ASSERT(bgfx::isValid(dst_buffer_handle));
     }
 
 private:
     Mutex                               m_mutex;
     Array<Mesh, MAX_MESHES>             m_meshes;
-    Vector<uint16_t>                    m_transient_mesh_idxs;
-    Vector<bgfx::TransientVertexBuffer> m_transient_vertex_buffers;
+    Vector<uint16_t>                    m_transient_idxs;
+    Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
+    bool                                m_transient_exhausted = false;
 };
-
-
-// -----------------------------------------------------------------------------
-// TRANSIENT BUFFERS
-// -----------------------------------------------------------------------------
-
-class TransientBuffers
-{
-public:
-    inline bool update_from_recorder(const GeometryRecorder& recorder)
-    {
-        return
-            update_buffer(recorder.position_buffer(), m_positions) &&
-            update_buffer(recorder.attrib_buffer  (), m_attribs  );
-    }
-
-    inline const bgfx::TransientVertexBuffer* positions() const { return &m_positions; }
-
-    inline const bgfx::TransientVertexBuffer* attribs() const { return &m_attribs; }
-
-private:
-    static bool update_buffer(const Vector<uint8_t>& src, bgfx::TransientVertexBuffer& dst)
-    {
-        if (!src.empty())
-        {
-            const uint32_t dummy_vertex_count = static_cast<uint32_t>(src.size() / ms_dummy_vertex_layout.getStride());
-
-            if (bgfx::getAvailTransientVertexBuffer(dummy_vertex_count, ms_dummy_vertex_layout) < dummy_vertex_count)
-            {
-                ASSERT(false && "Unable to allocate requested number of transient vertices.");
-                return false;
-            }
-
-            bgfx::allocTransientVertexBuffer(&dst, dummy_vertex_count, ms_dummy_vertex_layout);
-            (void)memcpy(dst.data, src.data(), src.size());
-        }
-        else
-        {
-            dst = { nullptr, 0 };
-        }
-
-        return true;
-    }
-
-private:
-    static const bgfx::VertexLayout ms_dummy_vertex_layout;
-
-    bgfx::TransientVertexBuffer     m_positions = { nullptr, 0 };
-    bgfx::TransientVertexBuffer     m_attribs   = { nullptr, 0 };
-};
-
-const bgfx::VertexLayout TransientBuffers::ms_dummy_vertex_layout = []()
-{
-    bgfx::VertexLayout layout;
-
-    layout
-        .begin()
-        .add  (bgfx::Attrib::TexCoord7, 1, bgfx::AttribType::Float)
-        .end  ();
-
-    ASSERT(layout.getStride() % 4 == 0);
-
-    return layout;
-}();
 
 
 // -----------------------------------------------------------------------------
@@ -1542,7 +1509,7 @@ static void submit_draw_list
 (
     const DrawList&          draw_list,
     const MeshCache&         mesh_cache,
-    const VertexLayoutCache& vertex_layout_cache,
+    const VertexLayoutCache& layout_cache,
     bool                     is_main_thread
 )
 {
@@ -1568,29 +1535,30 @@ static void submit_draw_list
         BGFX_STATE_PT_TRISTRIP,
         BGFX_STATE_PT_LINES,
         BGFX_STATE_PT_LINESTRIP,
+        BGFX_STATE_PT_POINTS,
     };
 
     for (const DrawItem& item : draw_list.items())
     {
-        const Mesh& mesh = mesh_cache.mesh(item.mesh);
+        const Mesh& mesh = mesh_cache[item.mesh];
 
         switch (mesh.type())
         {
-        case MESH_TRANSIENT:
-                                encoder->setVertexBuffer(0, &mesh_cache.transient_vertex_buffers()[mesh.position_buffer]);
-            if (mesh.attribs()) encoder->setVertexBuffer(1, &mesh_cache.transient_vertex_buffers()[mesh.attrib_buffer  ]);
+        case MeshType::TRANSIENT:
+                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index]);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, &mesh_cache.transient_buffers()[mesh.attribs  .transient_index]);
             break;
 
-        case MESH_STATIC:
-                                encoder->setVertexBuffer(0, bgfx::VertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) encoder->setVertexBuffer(1, bgfx::VertexBufferHandle { mesh.attrib_buffer   });
-                                encoder->setIndexBuffer (   bgfx::IndexBufferHandle  { mesh.index_buffer    });
+        case MeshType::STATIC:
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
+                                          encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 
-        case MESH_DYNAMIC:
-                                encoder->setVertexBuffer(0, bgfx::DynamicVertexBufferHandle { mesh.position_buffer });
-            if (mesh.attribs()) encoder->setVertexBuffer(1, bgfx::DynamicVertexBufferHandle { mesh.attrib_buffer   });
-                                encoder->setIndexBuffer (   bgfx::DynamicIndexBufferHandle  { mesh.index_buffer    });
+        case MeshType::DYNAMIC:
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
+                                          encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 
         default:
@@ -1660,19 +1628,6 @@ public:
         Texture& texture = m_textures[id];
         texture.destroy();
 
-        // TODO : Move elsewhere?
-        constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
-        constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
-
-        constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
-        constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
-
-        constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
-        constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
-
-        constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
-        constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
-
         static const uint64_t sampling_flags[] =
         {
             BGFX_SAMPLER_NONE,
@@ -1688,8 +1643,8 @@ public:
 
         static const uint64_t target_flags[] =
         {
-            0,
-            BGFX_TEXTURE_RT, // TEXTURE_TARGET
+            BGFX_TEXTURE_NONE,
+            BGFX_TEXTURE_RT,
         };
 
         static const struct Format
@@ -1757,7 +1712,7 @@ public:
         texture.height = height;
     }
 
-    inline const Texture& texture(uint16_t id) const { return m_textures[id]; }
+    inline const Texture& operator[](uint16_t id) const { return m_textures[id]; }
 
 private:
     Mutex                        m_mutex;
@@ -1768,6 +1723,22 @@ private:
 // -----------------------------------------------------------------------------
 // FRAMEBUFFERS
 // -----------------------------------------------------------------------------
+
+struct Framebuffer
+{
+    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+    uint16_t                width  = 0;
+    uint16_t                height = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            *this = {};
+        }
+    }
+};
 
 class FramebufferRecorder
 {
@@ -1847,16 +1818,16 @@ public:
         }
     }
 
-    void add_framebuffer(const FramebufferRecorder& recorder)
+    void add_framebuffer(const FramebufferRecorder& mesh_recorder)
     {
         MutexScope lock(m_mutex);
 
-        Framebuffer& framebuffer = m_framebuffers[recorder.id()];
+        Framebuffer& framebuffer = m_framebuffers[mesh_recorder.id()];
         framebuffer.destroy();
-        framebuffer = recorder.create_framebuffer();
+        framebuffer = mesh_recorder.create_framebuffer();
     }
 
-    inline const Framebuffer& framebuffer(uint16_t id) const { return m_framebuffers[id]; }
+    inline const Framebuffer& operator[](uint16_t id) const { return m_framebuffers[id]; }
 
 private:
     Mutex                                m_mutex;
@@ -2270,9 +2241,8 @@ struct GlobalContext
     FramebufferCache    framebuffer_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
+    VertexLayoutCache   layout_cache;
     DefaultUniforms     default_uniforms;
-    VertexLayoutCache   vertex_layout_cache;
-    bgfx::VertexLayout  dummy_vertex_layout;
 
     Window              window;
 
@@ -2287,28 +2257,19 @@ struct GlobalContext
 
 struct LocalContext
 {
-    GeometryRecorder    recorder;
+    MeshRecorder        mesh_recorder;
 
     FramebufferRecorder framebuffer_recorder;
 
     DrawList            draw_list;
-    TransientBuffers    transient_buffers;
 
-    PassStack           pass_stack;
-
-    MatrixStack         view_matrix_stack;
-    MatrixStack         proj_matrix_stack;
-    MatrixStack         model_matrix_stack;
+    MatrixStack         matrix_stack;
 
     Timer               stop_watch;
     Timer               frame_time;
 
-    MatrixStack*        active_matrix_stack = &model_matrix_stack;
+    bgfx::ViewId        active_pass         = 0;
 
-    uint16_t            recorded_mesh_id    = UINT16_MAX;
-    uint16_t            recorded_mesh_flags = 0;
-
-    bool                is_recording        = false;
     bool                is_main_thread      = false;
 };
 
@@ -2361,6 +2322,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     gleqTrackWindow(g_ctx.window.handle);
 
     {
+        // TODO : Set Limits on number of encoders and transient memory.
         bgfx::Init init;
         init.platformData = create_platform_data(g_ctx.window.handle, init.type);
 
@@ -2374,13 +2336,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
-    g_ctx.vertex_layout_cache.add_builtins();
-
-    g_ctx.dummy_vertex_layout
-        .begin()
-        .add  (bgfx::Attrib::TexCoord7, 1, bgfx::AttribType::Float)
-        .end  ();
-    ASSERT(g_ctx.dummy_vertex_layout.getStride() % 4 == 0);
+    g_ctx.layout_cache.add_builtins();
 
     if (setup)
     {
@@ -2388,6 +2344,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
+
+    // bgfx::frame();
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
@@ -2433,6 +2391,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     g_ctx.default_uniforms.init();
+
+    g_ctx.pass_cache[0].set_viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
 
     g_ctx.mouse.update_position(g_ctx.window);
 
@@ -2503,7 +2463,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
 
-            g_ctx.pass_cache[DEFAULT_PASS].set_viewport(0, 0, width, height);
+            // TODO : Reattach framebuffers to views (the problem is).
+            // g_ctx.pass_cache[0].set_viewport(0, 0, width, height);
         }
 
         if (update_cursor_position)
@@ -2534,22 +2495,13 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (t_ctx.is_main_thread)
         {
-            // This means the default pass transforms are governed by the matrix stacks on the main thread.
-            // We could avoid it by having the user explictly specify default pass delimiter, but it seems
-            // fine like this, at least for now, and it's less typing in most cases. Or perhaps just add
-            // explicit function like `default_pass` that would store the current matrices in both stacks
-            // in whichever thread it would be called from.
-            g_ctx.pass_cache.set_pass_transforms(
-                DEFAULT_PASS,
-                t_ctx.view_matrix_stack.top(),
-                t_ctx.proj_matrix_stack.top()
-            );
-
+            // TODO : I guess ideally we touch all active passes in all local context (?).
+            g_ctx.pass_cache[t_ctx.active_pass].touch();
             g_ctx.pass_cache.update();
         }
 
         // TODO : This needs to be done for all contexts across all threads.
-        submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.vertex_layout_cache, t_ctx.is_main_thread);
+        submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.layout_cache, t_ctx.is_main_thread);
 
         if (t_ctx.is_main_thread)
         {
@@ -2567,12 +2519,11 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.task_scheduler.WaitforAllAndShutdown();
 
-    // TODO : Proper destruction of cached buffers and other framework-retained BGFX resources.
-    g_ctx.vertex_layout_cache.clear();
-    g_ctx.texture_cache      .clear();
-    g_ctx.program_cache      .clear();
-    g_ctx.default_uniforms   .clear();
-    g_ctx.mesh_cache         .clear_persistent_meshes();
+    g_ctx.layout_cache    .clear();
+    g_ctx.texture_cache   .clear();
+    g_ctx.program_cache   .clear();
+    g_ctx.default_uniforms.clear();
+    g_ctx.mesh_cache      .clear();
 
     bgfx::shutdown();
 
@@ -2749,70 +2700,43 @@ double toc(void)
 // PUBLIC API IMPLEMENTATION - GEOMETRY
 // -----------------------------------------------------------------------------
 
-static inline void begin_recording(int id, int flags, mnm::MeshType type)
+void begin_mesh(int id, int flags)
 {
-    ASSERT(id > 0 && id < mnm::MAX_MESHES);
+    ASSERT(!mnm::t_ctx.mesh_recorder.is_recording());
 
-    ASSERT(!mnm::t_ctx.is_recording);
-
-    mnm::t_ctx.recorded_mesh_id    = static_cast<uint16_t>(id);
-    mnm::t_ctx.recorded_mesh_flags = static_cast<uint16_t>(flags | static_cast<int>(type));
-    mnm::t_ctx.is_recording        = true;
-
-    mnm::t_ctx.recorder.reset(mnm::t_ctx.recorded_mesh_flags);
+    mnm::t_ctx.mesh_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(flags));
 }
 
-void begin_transient(int id, int flags)
+void end_mesh(void)
 {
-    begin_recording(id, flags, mnm::MESH_TRANSIENT);
-}
+    using namespace mnm;
 
-void begin_static(int id, int flags)
-{
-    begin_recording(id, flags, mnm::MESH_STATIC);
-}
+    ASSERT(t_ctx.mesh_recorder.is_recording());
 
-void begin_dynamic(int id, int flags)
-{
-    begin_recording(id, flags, mnm::MESH_DYNAMIC);
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    (void)g_ctx.mesh_cache.add_mesh(t_ctx.mesh_recorder, g_ctx.layout_cache);
+
+    t_ctx.mesh_recorder.end();
 }
 
 void vertex(float x, float y, float z)
 {
-    ASSERT(mnm::t_ctx.is_recording);
-    mnm::t_ctx.recorder.vertex((mnm::t_ctx.model_matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+    mnm::t_ctx.mesh_recorder.vertex((mnm::t_ctx.matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
 }
 
 void color(unsigned int rgba)
 {
-    ASSERT(mnm::t_ctx.is_recording);
-    mnm::t_ctx.recorder.color(rgba);
+    mnm::t_ctx.mesh_recorder.color(rgba);
 }
 
 void normal(float nx, float ny, float nz)
 {
-    ASSERT(mnm::t_ctx.is_recording);
-    mnm::t_ctx.recorder.normal(nx, ny, nz);
+    mnm::t_ctx.mesh_recorder.normal(nx, ny, nz);
 }
 
 void texcoord(float u, float v)
 {
-    ASSERT(mnm::t_ctx.is_recording);
-    mnm::t_ctx.recorder.texcoord(u, v);
-}
-
-void end(void)
-{
-    using namespace mnm;
-
-    ASSERT(t_ctx.is_recording);
-
-    // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.mesh_cache.add_mesh(t_ctx.recorded_mesh_id, t_ctx.recorded_mesh_flags, t_ctx.recorder, g_ctx.vertex_layout_cache);
-
-    t_ctx.recorded_mesh_id    = UINT16_MAX;
-    t_ctx.recorded_mesh_flags = 0;
-    t_ctx.is_recording        = false;
+    mnm::t_ctx.mesh_recorder.texcoord(u, v);
 }
 
 void mesh(int id)
@@ -2820,24 +2744,24 @@ void mesh(int id)
     using namespace mnm;
 
     ASSERT(id > 0 && id < MAX_MESHES);
-    ASSERT(!t_ctx.is_recording);
+    ASSERT(!t_ctx.mesh_recorder.is_recording());
 
     // TODO : This "split data filling" is silly, it should be done either fully
     //        here or in the draw list.
     DrawItem& state = t_ctx.draw_list.state();
 
-    state.pass = t_ctx.pass_stack.top();
+    state.pass = t_ctx.active_pass;
 
-    state.framebuffer = g_ctx.pass_cache[t_ctx.pass_stack.top()].framebuffer();
+    state.framebuffer = g_ctx.pass_cache[t_ctx.active_pass].framebuffer();
 
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.program_handle_from_flags(
-            g_ctx.mesh_cache.mesh(static_cast<uint16_t>(id)).flags
+            g_ctx.mesh_cache[static_cast<uint16_t>(id)].flags
         );
     }
 
-    t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.model_matrix_stack.top());
+    t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.matrix_stack.top());
 }
 
 
@@ -2880,12 +2804,12 @@ void texture(int id)
         //        non-default shader is used.
         DrawItem& state = t_ctx.draw_list.state();
 
-        state.texture = g_ctx.texture_cache.texture(static_cast<uint16_t>(id)).handle;
+        state.texture = g_ctx.texture_cache[static_cast<uint16_t>(id)].handle;
         state.sampler = g_ctx.default_uniforms.color_texture;
     }
     else
     {
-        t_ctx.framebuffer_recorder.add_texture(g_ctx.texture_cache.texture(static_cast<uint16_t>(id)));
+        t_ctx.framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
     }
 }
 
@@ -2894,45 +2818,41 @@ void texture(int id)
 // PUBLIC API IMPLEMENTATION - PASSES
 // -----------------------------------------------------------------------------
 
-void begin_pass(int id)
+void pass(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_PASSES);
+    ASSERT(id >= 0 && id < mnm::MAX_PASSES);
 
-    mnm::t_ctx.pass_stack.top_and_push(static_cast<bgfx::ViewId>(id));
-
-    mnm::t_ctx.view_matrix_stack.push();
-    mnm::t_ctx.proj_matrix_stack.push();
-}
-
-void end_pass(void)
-{
-    using namespace mnm;
-
-    t_ctx.pass_stack.pop();
-
-    g_ctx.pass_cache.set_pass_transforms(
-        t_ctx.pass_stack       .top(),
-        t_ctx.view_matrix_stack.top(),
-        t_ctx.proj_matrix_stack.top()
-    );
-
-    t_ctx.view_matrix_stack.pop();
-    t_ctx.proj_matrix_stack.pop();
+    mnm::t_ctx.active_pass = static_cast<uint16_t>(id);
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].touch();
 }
 
 void no_clear(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_no_clear();
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_no_clear();
 }
 
 void clear_depth(float depth)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_clear_depth(depth);
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_clear_depth(depth);
 }
 
 void clear_color(unsigned int rgba)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_clear_color(rgba);
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_clear_color(rgba);
+}
+
+void no_framebuffer(void)
+{
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_framebuffer(BGFX_INVALID_HANDLE);
+}
+
+void framebuffer(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_framebuffer(
+        mnm::g_ctx.framebuffer_cache[static_cast<uint16_t>(id)].handle
+    );
 }
 
 void viewport(int x, int y, int width, int height)
@@ -2942,12 +2862,17 @@ void viewport(int x, int y, int width, int height)
     ASSERT(width  >  0);
     ASSERT(height >  0);
 
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_viewport(
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_viewport(
         static_cast<uint16_t>(x),
         static_cast<uint16_t>(y),
         static_cast<uint16_t>(width),
         static_cast<uint16_t>(height)
     );
+}
+
+void full_viewport()
+{
+    viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
 }
 
 
@@ -2968,75 +2893,54 @@ void end_framebuffer(void)
     mnm::t_ctx.framebuffer_recorder.end();
 }
 
-void no_framebuffer(void)
-{
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_framebuffer({ BGFX_INVALID_HANDLE });
-}
-
-void framebuffer(int id)
-{
-    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
-
-    mnm::g_ctx.pass_cache[mnm::t_ctx.pass_stack.top()].set_framebuffer(
-        mnm::g_ctx.framebuffer_cache.framebuffer(static_cast<uint16_t>(id))
-    );
-}
-
 
 // -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - TRANSFORMATIONS
 // -----------------------------------------------------------------------------
 
-void model(void)
-{
-    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.model_matrix_stack;
-}
-
 void view(void)
 {
-    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.view_matrix_stack;
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_view(mnm::t_ctx.matrix_stack.top());
 }
 
 void projection(void)
 {
-    mnm::t_ctx.active_matrix_stack = &mnm::t_ctx.proj_matrix_stack;
+    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_projection(mnm::t_ctx.matrix_stack.top());
 }
 
 void push(void)
 {
-    ASSERT(mnm::t_ctx.active_matrix_stack);
-    mnm::t_ctx.active_matrix_stack->push();
+    mnm::t_ctx.matrix_stack.push();
 }
 
 void pop(void)
 {
-    ASSERT(mnm::t_ctx.active_matrix_stack);
-    mnm::t_ctx.active_matrix_stack->pop();
+    mnm::t_ctx.matrix_stack.pop();
 }
 
 void identity(void)
 {
-    mnm::t_ctx.active_matrix_stack->top() = HMM_Mat4d(1.0f);
+    mnm::t_ctx.matrix_stack.top() = HMM_Mat4d(1.0f);
 }
 
 void ortho(float left, float right, float bottom, float top, float near_, float far_)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
 }
 
 void perspective(float fovy, float aspect, float near_, float far_)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
 }
 
 void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
 }
 
 void rotate(float angle, float x, float y, float z)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, z)));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, z)));
 }
 
 void rotate_x(float angle)
@@ -3059,12 +2963,12 @@ void rotate_z(float angle)
 
 void scale(float scale)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
 }
 
 void translate(float x, float y, float z)
 {
-    mnm::t_ctx.active_matrix_stack->multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
+    mnm::t_ctx.matrix_stack.multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
 }
 
 

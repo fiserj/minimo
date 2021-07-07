@@ -1,12 +1,15 @@
 #include <mnm/mnm.h>
 
-#define MESH_ID    1
+#define TRIANGLE_ID 1
 
-#define TEXTURE_ID 1
+#define TEXTURE_ID  1
 
 static void setup(void)
 {
     title("Hello Triangle Example");
+
+    clear_color(0x333333ff);
+    clear_depth(1.0f);
 
     const unsigned int abgr[] =
     {
@@ -24,11 +27,13 @@ static void draw(void)
         quit();
     }
 
-    projection();
     identity();
     ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+    projection();
 
-    begin_transient(MESH_ID, VERTEX_TEXCOORD);
+    identity();
+
+    begin_mesh(TRIANGLE_ID, MESH_TRANSIENT | VERTEX_TEXCOORD);
     {
         texcoord(0.0f, 1.0f);
         vertex(-0.6f, -0.4f, 0.0f);
@@ -39,10 +44,10 @@ static void draw(void)
         texcoord(0.5f, 0.0f);
         vertex(0.0f, 0.6f, 0.0f);
     }
-    end();
+    end_mesh();
 
     texture(TEXTURE_ID);
-    mesh(MESH_ID);
+    mesh(TRIANGLE_ID);
 }
 
 MNM_MAIN(0, setup, draw, 0);

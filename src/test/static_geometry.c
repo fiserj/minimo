@@ -1,6 +1,6 @@
 #include <mnm/mnm.h>
 
-#define CUBE_ID 1
+#define CUBE_MESH 1
 
 static void cube(void);
 
@@ -11,10 +11,11 @@ static void setup(void)
     title("Static Geometry Example");
 
     clear_color(0x333333ff);
+    clear_depth(1.0f);
 
-    begin_static(CUBE_ID, PRIMITIVE_QUADS | VERTEX_COLOR);
+    begin_mesh(CUBE_MESH, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
-    end();
+    end_mesh();
 }
 
 static void draw(void)
@@ -24,15 +25,14 @@ static void draw(void)
         quit();
     }
 
-    projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
+    projection();
 
-    view();
     identity();
     look_at(0.0f, 0.0f, -17.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    view();
 
-    model();
     identity();
 
     scene();
@@ -49,7 +49,7 @@ void scene(void)
         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        mesh(CUBE_ID);
+        mesh(CUBE_MESH);
 
         pop();
     }
