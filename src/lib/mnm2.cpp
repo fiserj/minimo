@@ -474,7 +474,7 @@ struct DefaultUniforms
 class Pass
 {
 public:
-    inline void update(bgfx::ViewId id)
+    inline void update(bgfx::ViewId id, bool backbuffer_size_changed)
     {
         if (m_dirty_flags & DIRTY_TOUCH)
         {
@@ -491,7 +491,7 @@ public:
             bgfx::setViewTransform(id, &m_view_matrix, &m_proj_matrix);
         }
 
-        if (m_dirty_flags & DIRTY_RECT)
+        if ((m_dirty_flags & DIRTY_RECT) || (backbuffer_size_changed && m_viewport_width >= SIZE_EQUAL))
         {
             if (m_viewport_width >= SIZE_EQUAL)
             {
@@ -503,7 +503,7 @@ public:
             }
         }
 
-        if (m_dirty_flags & DIRTY_FRAMEBUFFER)
+        if ((m_dirty_flags & DIRTY_FRAMEBUFFER) || backbuffer_size_changed)
         {
             // Having `BGFX_INVALID_HANDLE` here is OK.
             bgfx::setViewFrameBuffer(id, m_framebuffer);
@@ -602,14 +602,14 @@ private:
 
     uint16_t                m_viewport_x      = 0;
     uint16_t                m_viewport_y      = 0;
-    uint16_t                m_viewport_width  = UINT16_MAX;
-    uint16_t                m_viewport_height = UINT16_MAX;
+    uint16_t                m_viewport_width  = 0;
+    uint16_t                m_viewport_height = 0;
 
     bgfx::FrameBufferHandle m_framebuffer     = BGFX_INVALID_HANDLE;
 
+    uint16_t                m_clear_flags     = BGFX_CLEAR_NONE;
     float                   m_clear_depth     = 1.0f;
     uint32_t                m_clear_rgba      = 0x000000ff;
-    uint16_t                m_clear_flags     = BGFX_CLEAR_NONE;
     uint8_t                 m_clear_stencil   = 0;
 
     uint8_t                 m_dirty_flags     = DIRTY_CLEAR;
@@ -624,8 +624,15 @@ public:
 
         for (bgfx::ViewId id = 0; id < m_passes.size(); id++)
         {
-            m_passes[id].update(id);
+            m_passes[id].update(id, m_backbuffer_size_changed);
         }
+
+        m_backbuffer_size_changed = false;
+    }
+
+    void notify_backbuffer_size_changed()
+    {
+        m_backbuffer_size_changed = true;
     }
 
     // Changing pass properties directly is not thread safe, but it seems
@@ -638,6 +645,7 @@ public:
 private:
     Mutex                   m_mutex;
     Array<Pass, MAX_PASSES> m_passes;
+    bool                    m_backbuffer_size_changed = true;
 };
 
 
@@ -2463,8 +2471,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
 
-            // TODO : Reattach framebuffers to views (the problem is).
-            // g_ctx.pass_cache[0].set_viewport(0, 0, width, height);
+            g_ctx.pass_cache.notify_backbuffer_size_changed();
         }
 
         if (update_cursor_position)
