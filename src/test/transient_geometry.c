@@ -9,6 +9,9 @@ static void scene(void);
 static void setup(void)
 {
     title("Transient Geometry Example");
+
+    clear_color(0x333333ff);
+    clear_depth(1.0f);
 }
 
 static void draw(void)
@@ -18,20 +21,19 @@ static void draw(void)
         quit();
     }
 
-    projection();
     identity();
     perspective(60.0f, aspect(), 0.1f, 100.0f);
+    projection();
 
-    view();
     identity();
     look_at(0.0f, 0.0f, -17.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    view();
 
-    model();
     identity();
 
-    begin_transient(SCENE_ID, PRIMITIVE_QUADS | VERTEX_COLOR);
+    begin_mesh(SCENE_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
     scene();
-    end();
+    end_mesh();
 
     mesh(SCENE_ID);
 }
