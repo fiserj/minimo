@@ -513,8 +513,6 @@ public:
         {
             // Having `BGFX_INVALID_HANDLE` here is OK.
             bgfx::setViewFrameBuffer(id, m_framebuffer);
-
-            m_framebuffer = BGFX_INVALID_HANDLE;
         }
 
         m_dirty_flags = DIRTY_NONE;
@@ -554,7 +552,7 @@ public:
 
     void set_clear_depth(float depth)
     {
-        if (m_clear_depth != depth || !(m_dirty_flags & BGFX_CLEAR_DEPTH))
+        if (m_clear_depth != depth || !(m_dirty_flags & BGFX_CLEAR_DEPTH) || !(m_clear_flags & BGFX_CLEAR_DEPTH))
         {
             m_clear_flags |= BGFX_CLEAR_DEPTH;
             m_clear_depth  = depth;
@@ -564,7 +562,7 @@ public:
 
     void set_clear_color(uint32_t rgba)
     {
-        if (m_clear_rgba != rgba || !(m_dirty_flags & BGFX_CLEAR_COLOR))
+        if (m_clear_rgba != rgba || !(m_dirty_flags & BGFX_CLEAR_COLOR) || !(m_clear_flags & BGFX_CLEAR_COLOR))
         {
             m_clear_flags |= BGFX_CLEAR_COLOR;
             m_clear_rgba   = rgba;
