@@ -108,9 +108,13 @@ constexpr uint32_t MAX_MESHES            = 4096;
 
 constexpr uint32_t MAX_PASSES            = 64;
 
+constexpr uint32_t MAX_PROGRAMS          = 128;
+
 constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint32_t MAX_TEXTURES          = 1024;
+
+constexpr uint32_t MAX_UNIFORMS          = 128;
 
 
 // -----------------------------------------------------------------------------
@@ -348,102 +352,114 @@ private:
 class ProgramCache
 {
 public:
+    ProgramCache()
+    {
+        m_handles .fill(BGFX_INVALID_HANDLE);
+        m_builtins.fill(BGFX_INVALID_HANDLE);
+    }
+
     void clear()
     {
-        for (bgfx::ProgramHandle handle : m_handles)
+        MutexScope lock(m_mutex);
+
+        for (bgfx::ProgramHandle& handle : m_handles)
         {
-            bgfx::destroy(handle);
+            destroy_if_valid(handle);
         }
 
-        m_handles       .clear();
-        m_attribs_to_ids.clear();
+        for (bgfx::ProgramHandle& handle : m_builtins)
+        {
+            destroy_if_valid(handle);
+        }
     }
 
-    uint8_t add(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t flags = UINT16_MAX)
+    bool add(uint16_t id, bgfx::ProgramHandle handle, uint16_t attribs = UINT16_MAX)
     {
-        if (m_handles.size() >= UINT8_MAX)
+        if (!bgfx::isValid(handle))
         {
-            ASSERT(false && "Program cache full.");
-            return UINT8_MAX;
+            return false;
         }
 
-        if (!bgfx::isValid(vertex) || !bgfx::isValid(fragment))
-        {
-            ASSERT(false && "Invalid vertex and/or fragment shader.");
-            return UINT8_MAX;
-        }
+        MutexScope lock(m_mutex);
 
-        // TODO : Don't necessarily destroy shaders.
-        bgfx::ProgramHandle handle = bgfx::createProgram(vertex, fragment, true);
-        if (!bgfx::isValid( handle))
+        bgfx::ProgramHandle& dst_handle = (id == UINT16_MAX && attribs != UINT16_MAX)
+            ? m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]
+            : m_handles[id];
+
+        destroy_if_valid(dst_handle);
+        dst_handle = handle;
+
+        return true;
+    }
+
+    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
+    {
+        bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
+        if (!bgfx::isValid( program))
         {
             ASSERT(false && "Invalid program handle.");
-            return UINT8_MAX;
+            return false;
         }
 
-        const uint8_t idx = static_cast<uint8_t>(m_handles.size());
-        m_handles.push_back(handle);
+        return add(id, program, attribs);
+    }
 
-        if (flags != UINT16_MAX)
+    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint16_t attribs = UINT16_MAX)
+    {
+        bgfx::ShaderHandle vertex = bgfx::createEmbeddedShader(shaders, renderer, vertex_name);
+        if (!bgfx::isValid(vertex))
         {
-            const uint16_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
-            ASSERT(attribs <  UINT8_MAX);
-
-            if (attribs >= m_attribs_to_ids.size())
-            {
-                m_attribs_to_ids.resize(attribs + 1, UINT8_MAX);
-            }
-
-            if (m_attribs_to_ids[attribs] != UINT8_MAX)
-            {
-                ASSERT(false && "Default shader for given attributes already set.");
-                bgfx::destroy(handle);
-                return UINT8_MAX;
-            }
-
-            m_attribs_to_ids[attribs] = idx;
+            ASSERT(false && "Invalid vertex shader handle.");
+            return false;
         }
 
-        return idx;
+        bgfx::ShaderHandle fragment = bgfx::createEmbeddedShader(shaders, renderer, fragment_name);
+        if (!bgfx::isValid(fragment))
+        {
+            ASSERT(false && "Invalid fragment shader handle.");
+            bgfx::destroy(vertex);
+            return false;
+        }
+
+        return add(id, vertex, fragment, attribs);
     }
 
-    inline uint8_t add
-    (
-        const bgfx::EmbeddedShader* shaders,
-        bgfx::RendererType::Enum    renderer,
-        const char*                 vertex_name,
-        const char*                 fragment_name,
-        uint16_t                    flags = UINT16_MAX
-    )
+    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint16_t attribs = UINT16_MAX)
     {
-        return add(
-            bgfx::createEmbeddedShader(shaders, renderer, vertex_name  ),
-            bgfx::createEmbeddedShader(shaders, renderer, fragment_name),
-            flags
-        );
+        bgfx::ShaderHandle vertex = bgfx::createShader(bgfx::copy(vertex_data, vertex_size));
+        if (!bgfx::isValid(vertex))
+        {
+            ASSERT(false && "Invalid vertex shader handle.");
+            return false;
+        }
+
+        bgfx::ShaderHandle fragment = bgfx::createShader(bgfx::copy(fragment_data, fragment_size));
+        if (!bgfx::isValid(fragment))
+        {
+            ASSERT(false && "Invalid fragment shader handle.");
+            bgfx::destroy(vertex);
+            return false;
+        }
+
+        return add(id, vertex, fragment, attribs);
     }
 
-    inline bgfx::ProgramHandle program_handle_from_id(uint8_t id) const
+    inline bgfx::ProgramHandle operator[](uint16_t id) const
     {
-        ASSERT(id < m_handles.size());
-        ASSERT(bgfx::isValid(m_handles[id]));
-
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle program_handle_from_flags(uint16_t flags) const
+    inline bgfx::ProgramHandle builtin(uint16_t attribs) const
     {
-        const uint16_t attribs = (flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT;
-
-        ASSERT(attribs < m_attribs_to_ids.size());
-        ASSERT(m_attribs_to_ids[attribs] != UINT8_MAX);
-
-        return program_handle_from_id(m_attribs_to_ids[attribs]);
+        return m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
 private:
-    Vector<bgfx::ProgramHandle> m_handles;
-    Vector<uint8_t>             m_attribs_to_ids;
+    static constexpr uint32_t MAX_BUILTINS = 1 + (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT);
+
+    Mutex                                    m_mutex;
+    Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
+    Array<bgfx::ProgramHandle, MAX_BUILTINS> m_builtins;
 };
 
 
@@ -2394,7 +2410,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             strcpy(fs_name, programs[i].name);
             strcat(fs_name, "_fs");
 
-            (void)g_ctx.program_cache.add(s_shaders, type, vs_name, fs_name, programs[i].attribs);
+            (void)g_ctx.program_cache.add(UINT16_MAX, s_shaders, type, vs_name, fs_name, programs[i].attribs);
         }
     }
 
@@ -2763,7 +2779,7 @@ void mesh(int id)
 
     if (!bgfx::isValid(state.program))
     {
-        state.program = g_ctx.program_cache.program_handle_from_flags(
+        state.program = g_ctx.program_cache.builtin(
             g_ctx.mesh_cache[static_cast<uint16_t>(id)].flags
         );
     }
