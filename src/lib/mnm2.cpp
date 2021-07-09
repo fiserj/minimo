@@ -373,25 +373,6 @@ public:
         }
     }
 
-    bool add(uint16_t id, bgfx::ProgramHandle handle, uint16_t attribs = UINT16_MAX)
-    {
-        if (!bgfx::isValid(handle))
-        {
-            return false;
-        }
-
-        MutexScope lock(m_mutex);
-
-        bgfx::ProgramHandle& dst_handle = (id == UINT16_MAX && attribs != UINT16_MAX)
-            ? m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]
-            : m_handles[id];
-
-        destroy_if_valid(dst_handle);
-        dst_handle = handle;
-
-        return true;
-    }
-
     bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
     {
         bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
@@ -401,7 +382,16 @@ public:
             return false;
         }
 
-        return add(id, program, attribs);
+        MutexScope lock(m_mutex);
+
+        bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT16_MAX)
+            ? m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]
+            : m_handles[id];
+
+        destroy_if_valid(handle);
+        handle = program;
+
+        return true;
     }
 
     bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint16_t attribs = UINT16_MAX)
