@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    hello_triangle.c
+    offscreen.c
 )
 
 target_include_directories(${NAME} PRIVATE

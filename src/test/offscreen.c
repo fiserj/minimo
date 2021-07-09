@@ -9,28 +9,38 @@
 #define FRAMEBUFFER_OFFSCREEN 1
 
 #define PASS_OFFSCREEN        1
+#define PASS_DEFAULT          2
+
+#define SIZE_OFFSCREEN        512
 
 static void cube(void);
-
-static void offscreen_pass(void);
-
-static void default_pass(void);
 
 static void setup(void)
 {
     title("Framebuffer Example");
 
-    create_texture(TEXTURE_COLOR, TEXTURE_CLAMP | TEXTURE_TARGET               , SIZE_HALF, SIZE_HALF);
-    create_texture(TEXTURE_DEPTH, TEXTURE_CLAMP | TEXTURE_TARGET | TEXTURE_D32F, SIZE_HALF, SIZE_HALF);
+    create_texture(TEXTURE_COLOR, TEXTURE_CLAMP | TEXTURE_TARGET               , SIZE_OFFSCREEN, SIZE_OFFSCREEN);
+    create_texture(TEXTURE_DEPTH, TEXTURE_CLAMP | TEXTURE_TARGET | TEXTURE_D32F, SIZE_OFFSCREEN, SIZE_OFFSCREEN);
 
     begin_framebuffer(FRAMEBUFFER_OFFSCREEN);
     texture(TEXTURE_COLOR);
     texture(TEXTURE_DEPTH);
     end_framebuffer();
 
-    begin_static(MESH_CUBE, PRIMITIVE_QUADS | VERTEX_COLOR);
+    begin_mesh(MESH_CUBE, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
-    end();
+    end_mesh();
+
+    pass(PASS_OFFSCREEN);
+    clear_color(0xff0000ff);
+    clear_depth(1.0f);
+    framebuffer(FRAMEBUFFER_OFFSCREEN);
+    viewport(0, 0, SIZE_OFFSCREEN, SIZE_OFFSCREEN);
+
+    pass(PASS_DEFAULT);
+    clear_color(0x333333ff);
+    clear_depth(1.0f);
+    full_viewport();
 }
 
 static void draw(void)
@@ -40,70 +50,49 @@ static void draw(void)
         quit();
     }
 
-    begin_pass(PASS_OFFSCREEN);
+    pass(PASS_OFFSCREEN);
     {
-        offscreen_pass();
+        identity();
+        perspective(60.0f, 1.0f, 0.1f, 100.0f);
+        projection();
+
+        identity();
+        look_at(0.0f, 0.0f, -2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+        view();
+
+        identity();
+        rotate_x(((float)elapsed() + 1.0f) * 57.2958f);
+        rotate_y(((float)elapsed() + 2.0f) * 57.2958f);
+
+        mesh(MESH_CUBE);
     }
-    end_pass();
 
-    default_pass();
-}
-
-void offscreen_pass(void)
-{
-    clear_color(0xccffccff);
-
-    framebuffer(FRAMEBUFFER_OFFSCREEN);
-
-    projection();
-    identity();
-    perspective(60.0f, aspect(), 0.1f, 100.0f);
-
-    view();
-    identity();
-    look_at(0.0f, 0.0f, -3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-
-    model();
-    identity();
-
-    rotate_x(((float)elapsed() + 1.0f) * 57.2958f);
-    rotate_y(((float)elapsed() + 2.0f) * 57.2958f);
-
-    mesh(MESH_CUBE);
-}
-
-void default_pass(void)
-{
-    clear_color(0x333333ff);
-
-    projection();
-    ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
-
-    view();
-    identity();
-
-    model();
-    identity();
-
-    begin_transient(MESH_QUAD, PRIMITIVE_QUADS | VERTEX_TEXCOORD);
+    pass(PASS_DEFAULT);
     {
-        const float a = aspect() * 0.5f;
+        identity();
+        ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+        projection();
 
-        texcoord(0.0f, 0.0f);
-        vertex(-a, 0.5f, 0.0f);
+        identity();
+        begin_mesh(MESH_QUAD, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_TEXCOORD);
+        {
+            texcoord(0.0f, 0.0f);
+            vertex(-0.5f, 0.5f, 0.0f);
 
-        texcoord(0.0f, 1.0f);
-        vertex(-a, -0.5f, 0.0f);
+            texcoord(0.0f, 1.0f);
+            vertex(-0.5f, -0.5f, 0.0f);
 
-        texcoord(1.0f, 1.0f);
-        vertex(a, -0.5f, 0.0f);
+            texcoord(1.0f, 1.0f);
+            vertex(0.5f, -0.5f, 0.0f);
 
-        texcoord(1.0f, 0.0f);
-        vertex(a, 0.5f, 0.0f);
+            texcoord(1.0f, 0.0f);
+            vertex(0.5f, 0.5f, 0.0f);
+        }
+        end_mesh();
+
+        texture(TEXTURE_COLOR);
+        mesh(MESH_QUAD);
     }
-    end();
-
-    mesh(MESH_QUAD);
 }
 
 void cube(void)
