@@ -1154,14 +1154,14 @@ struct Mesh
         {
         case MeshType::STATIC:
             bgfx::destroy   (positions.static_buffer);
-            bgfx::destroy   (attribs  .static_buffer);
-            destroy_if_valid(indices  .static_buffer);
+            destroy_if_valid(attribs  .static_buffer);
+            bgfx::destroy   (indices  .static_buffer);
             break;
 
         case MeshType::DYNAMIC:
             bgfx::destroy   (positions.dynamic_buffer);
-            bgfx::destroy   (attribs  .dynamic_buffer);
-            destroy_if_valid(indices  .dynamic_buffer);
+            destroy_if_valid(attribs  .dynamic_buffer);
+            bgfx::destroy   (indices  .dynamic_buffer);
             break;
 
         default:
@@ -1384,6 +1384,7 @@ private:
                 mesh.indices.static_buffer
             );
         }
+        else
         {
             update_persistent_index_buffer(
                 mesh.element_count,
@@ -2530,11 +2531,12 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.task_scheduler.WaitforAllAndShutdown();
 
-    g_ctx.layout_cache    .clear();
-    g_ctx.texture_cache   .clear();
-    g_ctx.program_cache   .clear();
-    g_ctx.default_uniforms.clear();
-    g_ctx.mesh_cache      .clear();
+    g_ctx.layout_cache     .clear();
+    g_ctx.texture_cache    .clear();
+    g_ctx.framebuffer_cache.clear();
+    g_ctx.program_cache    .clear();
+    g_ctx.default_uniforms .clear();
+    g_ctx.mesh_cache       .clear();
 
     bgfx::shutdown();
 
