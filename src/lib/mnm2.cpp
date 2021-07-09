@@ -2800,7 +2800,7 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
 
 void create_texture(int id, int flags, int width, int height)
 {
-    load_texture(id, flags, width, height, 0, 0);
+    load_texture(id, flags, width, height, 0, nullptr);
 }
 
 void texture(int id)
