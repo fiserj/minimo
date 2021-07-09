@@ -2275,7 +2275,7 @@ struct GlobalContext
 
     Atomic<uint32_t>    frame_number      = 0;
 
-    bool                vsync_on          = false;
+    Atomic<bool>        vsync_on          = false;
     bool                reset_back_buffer = true;
 };
 
