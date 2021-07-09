@@ -32,13 +32,13 @@ static void setup(void)
     end_mesh();
 
     pass(PASS_OFFSCREEN);
-    clear_color(0xff0000ff);
+    clear_color(0x33aa33ff);
     clear_depth(1.0f);
     framebuffer(FRAMEBUFFER_OFFSCREEN);
     viewport(0, 0, SIZE_OFFSCREEN, SIZE_OFFSCREEN);
 
     pass(PASS_DEFAULT);
-    clear_color(0x333333ff);
+    clear_color(0x000000ff);
     clear_depth(1.0f);
     full_viewport();
 }
@@ -69,27 +69,56 @@ static void draw(void)
 
     pass(PASS_DEFAULT);
     {
+        // identity();
+        // ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+        // projection();
+
         identity();
-        ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+        perspective(60.0f, aspect(), 0.1f, 100.0f);
         projection();
 
         identity();
-        begin_mesh(MESH_QUAD, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_TEXCOORD);
+        look_at(0.0f, 0.0f, 2.5f, 0.0f, 0.2f, 0.0f, 0.0f, 1.0f, 0.0f);
+        view();
+
+        identity();
+
+        begin_mesh(MESH_QUAD, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_TEXCOORD);
         {
+            color(0xffffffff);
+
             texcoord(0.0f, 0.0f);
-            vertex(-0.5f, 0.5f, 0.0f);
+            vertex(-0.5f, 1.0f, 0.0f);
 
             texcoord(0.0f, 1.0f);
-            vertex(-0.5f, -0.5f, 0.0f);
+            vertex(-0.5f, 0.0f, 0.0f);
 
             texcoord(1.0f, 1.0f);
-            vertex(0.5f, -0.5f, 0.0f);
+            vertex(0.5f, 0.0f, 0.0f);
 
             texcoord(1.0f, 0.0f);
-            vertex(0.5f, 0.5f, 0.0f);
+            vertex(0.5f, 1.0f, 0.0f);
+
+
+            color(0x444444ff);
+            texcoord(0.0f, 1.0f);
+            vertex(-0.5f, 0.0f, 0.0f);
+
+            color(0x000000ff);
+            texcoord(0.0f, 0.0f);
+            vertex(-0.5f, -0.8f, 0.0f);
+
+            color(0x000000ff);
+            texcoord(1.0f, 0.0f);
+            vertex(0.5f, -0.8f, 0.0f);
+
+            color(0x444444ff);
+            texcoord(1.0f, 1.0f);
+            vertex(0.5f, 0.0f, 0.0f);
         }
         end_mesh();
 
+        identity();
         texture(TEXTURE_COLOR);
         mesh(MESH_QUAD);
     }
