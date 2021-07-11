@@ -661,9 +661,12 @@ private:
 class VertexLayoutCache
 {
 public:
-    void add(uint16_t attribs)
+    void add(uint16_t flags)
     {
-        if (attribs < m_layouts.size() && m_layouts[attribs].getStride() > 0)
+        const uint16_t attribs = mesh_attribs(flags);
+        const uint16_t idx     = attribs >> VERTEX_ATTRIB_SHIFT;
+
+        if (idx < m_layouts.size() && m_layouts[idx].getStride() > 0)
         {
             return;
         }
@@ -694,12 +697,12 @@ public:
         layout.end();
         ASSERT(layout.getStride() % 4 == 0);
 
-        if (attribs >= m_layouts.size())
+        if (idx >= m_layouts.size())
         {
-            m_layouts.resize(attribs + 1);
+            m_layouts.resize(idx + 1);
         }
 
-        m_layouts[attribs] = layout;
+        m_layouts[idx] = layout;
 
         return;
     }
@@ -719,10 +722,9 @@ public:
         add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
     }
 
-    inline const bgfx::VertexLayout& operator[](uint16_t attribs) const
+    inline const bgfx::VertexLayout& operator[](uint16_t flags) const
     {
-        ASSERT(attribs < m_layouts.size());
-        return m_layouts[attribs];
+        return m_layouts[(flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
     inline void clear()
@@ -1343,7 +1345,7 @@ private:
 
         if (has_attribs)
         {
-            layouts[1] = &layout_cache[mesh_attribs(mesh.flags)];
+            layouts[1] = &layout_cache[mesh.flags];
             streams[1] = { recorder.attrib_buffer().data(), layouts[1]->getStride(), layouts[1]->getStride() };
         }
 
