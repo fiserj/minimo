@@ -308,6 +308,7 @@ struct DrawItem
     bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayoutHandle vertex_alias  = BGFX_INVALID_HANDLE;
 };
 
 class DrawList
@@ -731,6 +732,22 @@ public:
 
 protected:
     Vector<bgfx::VertexLayout> m_layouts;
+};
+
+
+// -----------------------------------------------------------------------------
+// VERTEX ALIAS CACHE
+// -----------------------------------------------------------------------------
+
+class VertexAliasCache
+{
+public:
+
+    bgfx::VertexLayoutHandle operator[](uint16_t id) const
+    {
+        return BGFX_INVALID_HANDLE;
+    }
+private:
 };
 
 
@@ -1558,18 +1575,18 @@ static void submit_draw_list
         switch (mesh.type())
         {
         case MeshType::TRANSIENT:
-                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index]);
+                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index], 0, UINT32_MAX, item.vertex_alias);
             if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, &mesh_cache.transient_buffers()[mesh.attribs  .transient_index]);
             break;
 
         case MeshType::STATIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer, 0, UINT32_MAX, item.vertex_alias);
             if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
                                           encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 
         case MeshType::DYNAMIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer, 0, UINT32_MAX, item.vertex_alias);
             if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
                                           encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
@@ -2255,6 +2272,7 @@ struct GlobalContext
     ProgramCache        program_cache;
     TextureCache        texture_cache;
     VertexLayoutCache   layout_cache;
+    VertexAliasCache    alias_cache;
     DefaultUniforms     default_uniforms;
 
     Window              window;
@@ -2767,6 +2785,11 @@ void mesh(int id)
 
     state.framebuffer = g_ctx.pass_cache[t_ctx.active_pass].framebuffer();
 
+    if (bgfx::isValid(state.vertex_alias))
+    {
+        state.vertex_alias = g_ctx.alias_cache[state.vertex_alias.idx];
+    }
+
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.builtin(
@@ -2775,6 +2798,11 @@ void mesh(int id)
     }
 
     t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.matrix_stack.top());
+}
+
+void alias(int flags)
+{
+    mnm::t_ctx.draw_list.state().vertex_alias = { static_cast<uint16_t>(flags) };
 }
 
 
