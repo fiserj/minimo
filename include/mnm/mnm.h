@@ -306,6 +306,12 @@ void texcoord(float u, float v);
 ///
 void mesh(int id);
 
+/// Sets alias for next submited mesh's vertex buffer.
+///
+/// @param[in] flags Vertex attribute flags.
+///
+void alias(int flags);
+
 
 // -----------------------------------------------------------------------------
 /// @section TEXTURING
