@@ -661,50 +661,20 @@ private:
 class VertexLayoutCache
 {
 public:
-    void add(uint16_t flags)
+    inline void clear()
     {
-        const uint16_t attribs = mesh_attribs(flags);
-        const uint16_t idx     = attribs >> VERTEX_ATTRIB_SHIFT;
-
-        if (idx < m_layouts.size() && m_layouts[idx].getStride() > 0)
+        for (bgfx::VertexLayoutHandle& handle : m_handles)
         {
-            return;
+            destroy_if_valid(handle);
         }
 
-        bgfx::VertexLayout layout;
-        layout.begin();
+        m_layouts.clear();
+        m_handles.clear();
+    }
 
-        if (attribs == VERTEX_POSITION)
-        {
-            layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
-        }
-
-        if (!!(attribs & VERTEX_COLOR))
-        {
-            layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
-        }
-
-        if (!!(attribs & VERTEX_NORMAL))
-        {
-            layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
-        }
-
-        if (!!(attribs & VERTEX_TEXCOORD))
-        {
-            layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
-        }
-
-        layout.end();
-        ASSERT(layout.getStride() % 4 == 0);
-
-        if (idx >= m_layouts.size())
-        {
-            m_layouts.resize(idx + 1);
-        }
-
-        m_layouts[idx] = layout;
-
-        return;
+    inline void add(uint16_t flags)
+    {
+        add(mesh_attribs(flags), 0);
     }
 
     void add_builtins()
@@ -722,34 +692,107 @@ public:
         add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
     }
 
+    bgfx::VertexLayoutHandle resolve_alias(uint16_t& inout_flags, uint16_t alias_flags)
+    {
+        const uint16_t orig_attribs  = mesh_attribs(inout_flags);
+        const uint16_t alias_attribs = mesh_attribs(alias_flags);
+
+        const uint16_t skips = orig_attribs & (~alias_attribs);
+        const uint16_t idx   = get_idx(orig_attribs, skips);
+
+        inout_flags &= ~skips;
+
+        return m_handles[idx];
+    }
+
     inline const bgfx::VertexLayout& operator[](uint16_t flags) const
     {
         return m_layouts[(flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
-    inline void clear()
-    {
-        m_layouts.clear();
-    }
-
-protected:
-    Vector<bgfx::VertexLayout> m_layouts;
-};
-
-
-// -----------------------------------------------------------------------------
-// VERTEX ALIAS CACHE
-// -----------------------------------------------------------------------------
-
-class VertexAliasCache
-{
-public:
-
-    bgfx::VertexLayoutHandle operator[](uint16_t id) const
-    {
-        return BGFX_INVALID_HANDLE;
-    }
 private:
+    inline uint16_t get_idx(uint16_t attribs, uint16_t skips) const
+    {
+        return (attribs >> VERTEX_ATTRIB_SHIFT) | (skips >> 1);
+    }
+
+    void add(uint16_t attribs, uint16_t skips)
+    {
+        ASSERT(attribs == mesh_attribs(attribs));
+        ASSERT(skips == mesh_attribs(skips));
+        ASSERT(skips != attribs || attribs == 0);
+        ASSERT((skips & attribs) == skips);
+
+        const uint16_t idx = get_idx(attribs, skips);
+
+        if (idx < m_layouts.size() && m_layouts[idx].getStride() > 0)
+        {
+            return;
+        }
+
+        bgfx::VertexLayout layout;
+        layout.begin();
+
+        if (attribs == VERTEX_POSITION)
+        {
+            layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
+        }
+
+        if (!!(skips & VERTEX_COLOR))
+        {
+            layout.skip(4 * sizeof(uint8_t));
+        }
+        else if (!!(attribs & VERTEX_COLOR))
+        {
+            layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+        }
+
+        if (!!(skips & VERTEX_NORMAL))
+        {
+            layout.skip(4 * sizeof(uint8_t));
+        }
+        else if (!!(attribs & VERTEX_NORMAL))
+        {
+            layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
+        }
+
+        if (!!(skips & VERTEX_TEXCOORD))
+        {
+            layout.skip(2 * sizeof(int16_t));
+        }
+        else if (!!(attribs & VERTEX_TEXCOORD))
+        {
+            layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
+        }
+
+        layout.end();
+        ASSERT(layout.getStride() % 4 == 0);
+
+        if (idx >= m_layouts.size())
+        {
+            m_layouts.resize(idx + 1);
+            m_handles.resize(idx + 1, BGFX_INVALID_HANDLE);
+        }
+
+        m_layouts[idx] = layout;
+        m_handles[idx] = bgfx::createVertexLayout(layout);
+
+        // Add variants with skipped attributes (for aliasing).
+        if (attribs && !skips)
+        {
+            for (skips = VERTEX_COLOR; skips < attribs; skips++)
+            {
+                if (skips != attribs && (skips & attribs) == skips)
+                {
+                    add(attribs, skips);
+                }
+            }
+        }
+    }
+
+private:
+    Vector<bgfx::VertexLayout>       m_layouts;
+    Vector<bgfx::VertexLayoutHandle> m_handles;
 };
 
 
@@ -2274,7 +2317,6 @@ struct GlobalContext
     ProgramCache        program_cache;
     TextureCache        texture_cache;
     VertexLayoutCache   layout_cache;
-    VertexAliasCache    alias_cache;
     DefaultUniforms     default_uniforms;
 
     Window              window;
@@ -2787,16 +2829,16 @@ void mesh(int id)
 
     state.framebuffer = g_ctx.pass_cache[t_ctx.active_pass].framebuffer();
 
+    uint16_t mesh_flags = g_ctx.mesh_cache[static_cast<uint16_t>(id)].flags;
+
     if (bgfx::isValid(state.vertex_alias))
     {
-        state.vertex_alias = g_ctx.alias_cache[state.vertex_alias.idx];
+        state.vertex_alias = g_ctx.layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
     }
 
     if (!bgfx::isValid(state.program))
     {
-        state.program = g_ctx.program_cache.builtin(
-            g_ctx.mesh_cache[static_cast<uint16_t>(id)].flags
-        );
+        state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
     t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.matrix_stack.top());

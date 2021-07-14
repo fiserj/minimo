@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    offscreen.c
+    vertex_alias.c
 )
 
 target_include_directories(${NAME} PRIVATE
