@@ -1620,19 +1620,19 @@ static void submit_draw_list
         switch (mesh.type())
         {
         case MeshType::TRANSIENT:
-                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index], 0, UINT32_MAX, item.vertex_alias);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, &mesh_cache.transient_buffers()[mesh.attribs  .transient_index]);
+                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index]);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, &mesh_cache.transient_buffers()[mesh.attribs  .transient_index], 0, UINT32_MAX, item.vertex_alias);
             break;
 
         case MeshType::STATIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer, 0, UINT32_MAX, item.vertex_alias);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, item.vertex_alias);
                                           encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 
         case MeshType::DYNAMIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer, 0, UINT32_MAX, item.vertex_alias);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer);
+                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, item.vertex_alias);
                                           encoder->setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 

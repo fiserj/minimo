@@ -8,56 +8,76 @@ static void setup(void)
 {
     title("Vertex Alias Example");
 
-    clear_color(0x333333ff);
+    clear_color(0x101010ff);
     clear_depth(1.0f);
 
     const unsigned int abgr[] =
     {
-        // 0xff0000ff, 0xff00ff00,
-        // 0xffff0000, 0xffffffff,
-        0xccccccff, 0xccccccff,
-        0xccccccff, 0xccccccff,
+        0xff404040, 0xffeeeeee,
+        0xffeeeeee, 0xff404040,
     };
     load_texture(CUBE_TEXTURE, TEXTURE_NEAREST | TEXTURE_CLAMP, 2, 2, 0, abgr);
 
     begin_mesh(CUBE_MESH, PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_TEXCOORD);
     {
-        texcoord(0.0f, 0.0f);
-
         color (0xfff200ff);
+        texcoord(1.0f, 0.0f);
         vertex( 0.5f,  0.5f, -0.5f);
+        texcoord(1.0f, 1.0f);
         vertex(-0.5f,  0.5f, -0.5f);
+        texcoord(0.0f, 1.0f);
         vertex(-0.5f,  0.5f,  0.5f);
+        texcoord(0.0f, 0.0f);
         vertex( 0.5f,  0.5f,  0.5f);
 
         color(0x65def1ff);
+        texcoord(1.0f, 0.0f);
         vertex( 0.5f, -0.5f,  0.5f);
+        texcoord(1.0f, 1.0f);
         vertex(-0.5f, -0.5f,  0.5f);
+        texcoord(0.0f, 1.0f);
         vertex(-0.5f, -0.5f, -0.5f);
+        texcoord(0.0f, 0.0f);
         vertex( 0.5f, -0.5f, -0.5f);
 
         color(0xf96900ff);
+        texcoord(1.0f, 0.0f);
         vertex( 0.5f,  0.5f,  0.5f);
+        texcoord(1.0f, 1.0f);
         vertex(-0.5f,  0.5f,  0.5f);
+        texcoord(0.0f, 1.0f);
         vertex(-0.5f, -0.5f,  0.5f);
+        texcoord(0.0f, 0.0f);
         vertex( 0.5f, -0.5f,  0.5f);
 
         color(0xdc2e73ff);
+        texcoord(1.0f, 0.0f);
         vertex( 0.5f, -0.5f, -0.5f);
+        texcoord(1.0f, 1.0f);
         vertex(-0.5f, -0.5f, -0.5f);
+        texcoord(0.0f, 1.0f);
         vertex(-0.5f,  0.5f, -0.5f);
+        texcoord(0.0f, 0.0f);
         vertex( 0.5f,  0.5f, -0.5f);
 
         color(0x5d00ffff);
+        texcoord(1.0f, 0.0f);
         vertex(-0.5f,  0.5f,  0.5f);
+        texcoord(1.0f, 1.0f);
         vertex(-0.5f,  0.5f, -0.5f);
+        texcoord(0.0f, 1.0f);
         vertex(-0.5f, -0.5f, -0.5f);
+        texcoord(0.0f, 0.0f);
         vertex(-0.5f, -0.5f,  0.5f);
 
         color(0x000c7dff);
+        texcoord(1.0f, 0.0f);
         vertex( 0.5f,  0.5f, -0.5f);
+        texcoord(1.0f, 1.0f);
         vertex( 0.5f,  0.5f,  0.5f);
+        texcoord(0.0f, 1.0f);
         vertex( 0.5f, -0.5f,  0.5f);
+        texcoord(0.0f, 0.0f);
         vertex( 0.5f, -0.5f, -0.5f);
     }
     end_mesh();
@@ -75,7 +95,7 @@ static void draw(void)
     projection();
 
     identity();
-    look_at(0.0f, 0.0f, -5.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    look_at(0.0f, 0.0f, 5.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
     view();
 
     identity();
