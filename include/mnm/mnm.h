@@ -445,7 +445,7 @@ void framebuffer(int id);
 ///
 /// Viewport origin is at the window's top-left corner.
 ///
-/// TODO : Decide behavior on the high-DPI displays.
+/// @todo Decide behavior on the high-DPI displays.
 ///
 /// @param[in] x Horizontal offset from the window's top-left corner.
 /// @param[in] y Vertical offset from the window's top-left corner.
@@ -480,6 +480,69 @@ void begin_framebuffer(int id);
 /// Ends framebuffer building.
 ///
 void end_framebuffer(void);
+
+
+// -----------------------------------------------------------------------------
+/// @section SHADERS
+///
+/// By default, \a MiNiMo provides basic shaders for common vertex attribute
+/// combinations, but custom shaders can be created.
+
+/// Uniform flags.
+///
+enum
+{
+    // Uniform type.
+    UNIFORM_VEC4    = 0x0001,
+    UNIFORM_MAT4    = 0x0002,
+    UNIFORM_MAT3    = 0x0003,
+    UNIFORM_SAMPLER = 0x0004,
+
+    // Uniform elements count. One by default.
+    UNIFORM_2       = 0x0008,
+    UNIFORM_3       = 0x0010,
+    UNIFORM_4       = 0x0018,
+    UNIFORM_5       = 0x0020,
+    UNIFORM_6       = 0x0028,
+    UNIFORM_7       = 0x0030,
+    UNIFORM_8       = 0x0038,
+};
+
+/// Creates a uniform.
+///
+/// Using existing ID will result in destruction of the previously created data.
+///
+/// @param[in] id Uniform identifier.
+/// @param[in] flags Uniform properties' flags.
+///
+void create_uniform(int id, int flags, const char* name);
+
+/// Sets the uniform value which is used with next `mesh` call.
+///
+/// @param[in] id Uniform identifier.
+/// @param[in] value Uniform data.
+///
+void uniform(int id, const void* value);
+
+/// Creates a shader program. The shader blobs must be in specific format
+///
+/// Using existing ID will result in destruction of the previously created data.
+///
+/// @param[in] id Shader program identifier.
+/// @param[in] vs Vertex shader blob data.
+/// @param[in] vs_size Vertex shader blob size in bytes.
+/// @param[in] fs Fragment shader blob data.
+/// @param[in] fs_size Fragment shader blob size in bytes.
+///
+void create_shader(int id, const void* vs, int vs_size, const void* fs, int fs_size);
+
+/// Sets the shader program used with next `mesh` call. If no shader is
+/// provided, the default one for mesh's vertex attributes (or an alias) is
+/// used.
+///
+/// @param[in] id Shader program identifier.
+///
+void shader(int id);
 
 
 // -----------------------------------------------------------------------------
