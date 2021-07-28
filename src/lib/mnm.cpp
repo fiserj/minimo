@@ -2487,6 +2487,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
     {
+        BGFX_EMBEDDED_SHADER(position_fs               ),
+        BGFX_EMBEDDED_SHADER(position_vs               ),
+
         BGFX_EMBEDDED_SHADER(position_color_fs         ),
         BGFX_EMBEDDED_SHADER(position_color_vs         ),
 
@@ -2507,6 +2510,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
         programs[] =
         {
+            { "position"               , 0                              },
             { "position_color"         , VERTEX_COLOR                   },
             { "position_color_texcoord", VERTEX_COLOR | VERTEX_TEXCOORD },
             { "position_texcoord"      ,                VERTEX_TEXCOORD },
