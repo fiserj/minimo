@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    vertex_alias.c
+    custom_shader.c
 )
 
 target_include_directories(${NAME} PRIVATE
