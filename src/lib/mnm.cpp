@@ -93,6 +93,14 @@ constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
 
 constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
 
+constexpr uint16_t UNIFORM_COUNT_MASK     = UNIFORM_2 | UNIFORM_3 | UNIFORM_4 | UNIFORM_5 | UNIFORM_6 | UNIFORM_7 | UNIFORM_8;
+
+constexpr uint16_t UNIFORM_COUNT_SHIFT    = 3;
+
+constexpr uint16_t UNIFORM_TYPE_MASK      = UNIFORM_VEC4 | UNIFORM_MAT4 | UNIFORM_MAT3 | UNIFORM_SAMPLER;
+
+constexpr uint16_t UNIFORM_TYPE_SHIFT     = 0;
+
 constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
 
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
@@ -471,6 +479,59 @@ struct DefaultUniforms
     {
         destroy_if_valid(color_texture);
     }
+};
+
+class UniformCache
+{
+public:
+    UniformCache()
+    {
+        m_handles.fill(BGFX_INVALID_HANDLE);
+    }
+
+    void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        for (bgfx::UniformHandle& handle : m_handles)
+        {
+            destroy_if_valid(handle);
+        }
+    }
+
+    bool add(uint16_t id, uint16_t flags, const char* name)
+    {
+        static const bgfx::UniformType::Enum types[] =
+        {
+            bgfx::UniformType::Vec4,
+            bgfx::UniformType::Mat4,
+            bgfx::UniformType::Mat3,
+            bgfx::UniformType::Sampler,
+        };
+
+        const bgfx::UniformType::Enum type  = types[(flags & UNIFORM_TYPE_MASK) >> UNIFORM_TYPE_SHIFT];
+        const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
+
+        bgfx::UniformHandle uniform = bgfx::createUniform(name, type, count);
+        if (!bgfx::isValid( uniform))
+        {
+            ASSERT(false && "Invalid uniform handle.");
+            return false;
+        }
+
+        MutexScope lock(m_mutex);
+
+        bgfx::UniformHandle& handle = m_handles[id];
+        destroy_if_valid(handle);
+
+        handle = uniform;
+
+        return true;
+    }
+
+private:
+    Mutex                                    m_mutex;
+    Array<bgfx::UniformHandle, MAX_UNIFORMS> m_handles;
 };
 
 
@@ -2318,6 +2379,7 @@ struct GlobalContext
     TextureCache        texture_cache;
     VertexLayoutCache   layout_cache;
     DefaultUniforms     default_uniforms;
+    UniformCache        uniform_cache;
 
     Window              window;
 
@@ -2598,6 +2660,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     g_ctx.framebuffer_cache.clear();
     g_ctx.program_cache    .clear();
     g_ctx.default_uniforms .clear();
+    g_ctx.uniform_cache    .clear();
     g_ctx.mesh_cache       .clear();
 
     bgfx::shutdown();
@@ -2986,6 +3049,14 @@ void end_framebuffer(void)
 void create_uniform(int id, int flags, const char* name)
 {
     ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+    ASSERT(flags > 0 && flags <= (UNIFORM_SAMPLER | UNIFORM_8));
+    ASSERT(name);
+
+    (void)mnm::g_ctx.uniform_cache.add(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags),
+        name
+    );
 }
 
 void uniform(int id, const void* value)
