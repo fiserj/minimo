@@ -3089,7 +3089,7 @@ void shader(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
 
-    mnm::t_ctx.draw_list.state().program.idx = static_cast<uint16_t>(id);
+    mnm::t_ctx.draw_list.state().program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
 }
 
 
