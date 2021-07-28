@@ -114,7 +114,7 @@ constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint32_t MAX_TEXTURES          = 1024;
 
-constexpr uint32_t MAX_UNIFORMS          = 128;
+constexpr uint32_t MAX_UNIFORMS          = 256;
 
 
 // -----------------------------------------------------------------------------
@@ -2976,6 +2976,45 @@ void end_framebuffer(void)
 {
     mnm::g_ctx.framebuffer_cache.add_framebuffer(mnm::t_ctx.framebuffer_recorder);
     mnm::t_ctx.framebuffer_recorder.end();
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - SHADERS
+// -----------------------------------------------------------------------------
+
+void create_uniform(int id, int flags, const char* name)
+{
+    ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+}
+
+void uniform(int id, const void* value)
+{
+    ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+}
+
+void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
+{
+    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+    ASSERT(vs_data);
+    ASSERT(vs_size > 0);
+    ASSERT(fs_data);
+    ASSERT(fs_size > 0);
+
+    (void)mnm::g_ctx.program_cache.add(
+        static_cast<uint16_t>(id),
+        vs_data,
+        static_cast<uint32_t>(vs_size),
+        fs_data,
+        static_cast<uint32_t>(fs_size)
+    );
+}
+
+void shader(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+
+    mnm::t_ctx.draw_list.state().program.idx = static_cast<uint16_t>(id);
 }
 
 

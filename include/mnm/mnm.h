@@ -529,12 +529,12 @@ void uniform(int id, const void* value);
 /// Using existing ID will result in destruction of the previously created data.
 ///
 /// @param[in] id Shader program identifier.
-/// @param[in] vs Vertex shader blob data.
+/// @param[in] vs_data Vertex shader blob data.
 /// @param[in] vs_size Vertex shader blob size in bytes.
-/// @param[in] fs Fragment shader blob data.
+/// @param[in] fs_data Fragment shader blob data.
 /// @param[in] fs_size Fragment shader blob size in bytes.
 ///
-void create_shader(int id, const void* vs, int vs_size, const void* fs, int fs_size);
+void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size);
 
 /// Sets the shader program used with next `mesh` call. If no shader is
 /// provided, the default one for mesh's vertex attributes (or an alias) is
