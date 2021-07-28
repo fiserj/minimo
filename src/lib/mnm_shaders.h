@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shaders/position_fs.h>                // position_fs
+#include <shaders/position_vs.h>                // position_vs
 #include <shaders/position_color_fs.h>          // position_color_fs
 #include <shaders/position_color_vs.h>          // position_color_vs
 #include <shaders/position_color_texcoord_fs.h> // position_color_texcoord_fs
