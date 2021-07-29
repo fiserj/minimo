@@ -2348,6 +2348,42 @@ void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
 
 
 // -----------------------------------------------------------------------------
+// FILE CONTENT CACHE
+// -----------------------------------------------------------------------------
+
+class FileContentCache
+{
+public:
+    void clear()
+    {
+
+    }
+
+    unsigned char* load_bytes(const char* file_name, int* bytes_read)
+    {
+        // ...
+
+        return nullptr;
+    }
+
+    char* load_string(const char* file_name)
+    {
+        // ...
+
+        return nullptr;
+    }
+
+    void unload(void* file_content)
+    {
+        // ...
+    }
+
+private:
+    Mutex m_mutex;
+};
+
+
+// -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
@@ -2380,6 +2416,7 @@ struct GlobalContext
     VertexLayoutCache   layout_cache;
     DefaultUniforms     default_uniforms;
     UniformCache        uniform_cache;
+    FileContentCache    file_content_cache;
 
     Window              window;
 
@@ -2659,13 +2696,14 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.task_scheduler.WaitforAllAndShutdown();
 
-    g_ctx.layout_cache     .clear();
-    g_ctx.texture_cache    .clear();
-    g_ctx.framebuffer_cache.clear();
-    g_ctx.program_cache    .clear();
-    g_ctx.default_uniforms .clear();
-    g_ctx.uniform_cache    .clear();
-    g_ctx.mesh_cache       .clear();
+    g_ctx.layout_cache      .clear();
+    g_ctx.texture_cache     .clear();
+    g_ctx.framebuffer_cache .clear();
+    g_ctx.program_cache     .clear();
+    g_ctx.default_uniforms  .clear();
+    g_ctx.uniform_cache     .clear();
+    g_ctx.mesh_cache        .clear();
+    g_ctx.file_content_cache.clear();
 
     bgfx::shutdown();
 
@@ -3188,6 +3226,26 @@ int task(void (* func)(void* data), void* data)
     }
 
     return task != nullptr;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - FILE IO
+// -----------------------------------------------------------------------------
+
+unsigned char* load_bytes(const char* file_name, int* bytes_read)
+{
+    return mnm::g_ctx.file_content_cache.load_bytes(file_name, bytes_read);
+}
+
+char* load_string(const char* file_name)
+{
+    return mnm::g_ctx.file_content_cache.load_string(file_name);
+}
+
+void unload(void* file_content)
+{
+    mnm::g_ctx.file_content_cache.unload(file_content);
 }
 
 

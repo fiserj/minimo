@@ -689,6 +689,24 @@ int task(void (* func)(void* data), void* data);
 
 
 // -----------------------------------------------------------------------------
+/// @section FILE IO
+///
+/// ...
+
+/// Reads the raw contents of a file and places it in an array.
+///
+unsigned char* load_bytes(const char* file_name, int* bytes_read);
+
+/// Reads the contents of a file as a single null-terminated string.
+///
+char* load_string(const char* file_name);
+
+/// Releases memory allocated by one of the `load_*` functions.
+///
+void unload(void* file_content);
+
+
+// -----------------------------------------------------------------------------
 /// @section MISCELLANEOUS
 ///
 /// Miscellaneous utilities that don't belong in other sections. 
