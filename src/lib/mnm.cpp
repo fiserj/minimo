@@ -3,6 +3,7 @@
 #include <assert.h>               // assert
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
+#include <stdio.h>                // fclose, fopen, fread, fseek, ftell
 #include <string.h>               // memcpy, strcat, strcpy
 
 #include <algorithm>              // max, transform
@@ -13,6 +14,7 @@
 #include <mutex>                  // lock_guard, mutex
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
+#include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
 #include <bgfx/bgfx.h>            // bgfx::*
@@ -146,6 +148,9 @@ using Atomic = std::atomic<T>;
 using Mutex = std::mutex;
 
 using MutexScope = std::lock_guard<std::mutex>;
+
+template <typename Key, typename T>
+using HashMap = std::unordered_map<Key, T>;
 
 template <typename T>
 using Vector = std::vector<T>;
@@ -2356,30 +2361,84 @@ class FileContentCache
 public:
     void clear()
     {
+        MutexScope lock(m_mutex);
 
+        m_contents.clear();
     }
 
     unsigned char* load_bytes(const char* file_name, int* bytes_read)
     {
-        // ...
-
-        return nullptr;
+        return static_cast<unsigned char*>(load(BYTES, file_name, bytes_read));
     }
 
     char* load_string(const char* file_name)
     {
-        // ...
-
-        return nullptr;
+        return static_cast<char*>(load(STRING, file_name));
     }
 
     void unload(void* file_content)
     {
-        // ...
+        if (file_content)
+        {
+            MutexScope lock(m_mutex);
+
+            m_contents.erase(file_content);
+        }
     }
 
 private:
-    Mutex m_mutex;
+    enum Type
+    {
+        BYTES,
+        STRING,
+    };
+
+    void* load(Type type, const char* file_name, int* bytes_read = nullptr)
+    {
+        void* content = nullptr;
+
+        if (file_name)
+        {
+            if (FILE* f = fopen(file_name, "rb"))
+            {
+                fseek(f, 0, SEEK_END);
+                const long length = ftell(f);
+                fseek(f, 0, SEEK_SET);
+
+                Vector<uint8_t> buffer(length + (type == STRING));
+
+                if (fread(buffer.data(), 1, length, f) == length)
+                {
+                    if (type == STRING)
+                    {
+                        buffer.back() = 0;
+                    }
+
+                    content = buffer.data();
+
+                    if (bytes_read)
+                    {
+                        *bytes_read = static_cast<int>(length);
+                    }
+
+                    {
+                        MutexScope lock(m_mutex);
+                        m_contents.insert({ content, std::move(buffer) });
+                    }
+                }
+                else
+                {
+                    ASSERT(false && "File content reading failed.");
+                }
+            }
+        }
+
+        return content;
+    }
+
+private:
+    Mutex                           m_mutex;
+    HashMap<void*, Vector<uint8_t>> m_contents;
 };
 
 
@@ -3235,11 +3294,15 @@ int task(void (* func)(void* data), void* data)
 
 unsigned char* load_bytes(const char* file_name, int* bytes_read)
 {
+    ASSERT(file_name);
+
     return mnm::g_ctx.file_content_cache.load_bytes(file_name, bytes_read);
 }
 
 char* load_string(const char* file_name)
 {
+    ASSERT(file_name);
+
     return mnm::g_ctx.file_content_cache.load_string(file_name);
 }
 
