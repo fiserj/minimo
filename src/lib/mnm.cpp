@@ -238,6 +238,13 @@ static inline void push_back(Vector<uint8_t>& buffer, const void* data)
     assign<Size>(data, buffer.data() + buffer.size() - Size);
 }
 
+static inline void push_back(Vector<uint8_t>& buffer, const void* data, size_t size)
+{
+    buffer.resize(buffer.size() + size);
+
+    (void)memcpy(buffer.data() + buffer.size() - size, data, size);
+}
+
 template <typename T>
 static inline void push_back(Vector<uint8_t>& buffer, const T& value)
 {
@@ -309,8 +316,127 @@ public:
 
 
 // -----------------------------------------------------------------------------
+// UNIFORMS
+// -----------------------------------------------------------------------------
+
+struct DefaultUniforms
+{
+    bgfx::UniformHandle color_texture = BGFX_INVALID_HANDLE;
+
+    void init()
+    {
+        color_texture = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
+    }
+
+    void clear()
+    {
+        destroy_if_valid(color_texture);
+    }
+};
+
+struct Uniform
+{
+    bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
+    uint8_t             size   = 0;
+
+    void destroy()
+    {
+        if (bgfx::isValid(handle))
+        {
+            bgfx::destroy(handle);
+            *this = {};
+        }
+    }
+};
+
+class UniformCache
+{
+public:
+    void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        for (Uniform& uniform : m_uniforms)
+        {
+            uniform.destroy();
+        }
+    }
+
+    bool add(uint16_t id, uint16_t flags, const char* name)
+    {
+        struct Info
+        {
+            bgfx::UniformType::Enum type;
+            uint16_t                size;
+        };
+
+        static const Info infos[] =
+        {
+            { bgfx::UniformType::Vec4   ,  4 * sizeof(float) },
+            { bgfx::UniformType::Mat4   , 16 * sizeof(float) },
+            { bgfx::UniformType::Mat3   ,  9 * sizeof(float) },
+            { bgfx::UniformType::Sampler,  0                 },
+        };
+
+        const Info                    info  = infos[((flags & UNIFORM_TYPE_MASK ) >> UNIFORM_TYPE_SHIFT ) - 1];
+        const bgfx::UniformType::Enum type  = info.type;
+        const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
+
+        bgfx::UniformHandle handle = bgfx::createUniform(name, type, count);
+        if (!bgfx::isValid( handle))
+        {
+            ASSERT(false && "Invalid uniform handle.");
+            return false;
+        }
+
+        MutexScope lock(m_mutex);
+
+        Uniform& uniform = m_uniforms[id];
+        uniform.destroy();
+
+        uniform.handle = handle;
+        uniform.size   = info.size * count;
+
+        return true;
+    }
+
+    inline Uniform& operator[](uint16_t id) { return m_uniforms[id]; }
+
+private:
+    Mutex                        m_mutex;
+    Array<Uniform, MAX_UNIFORMS> m_uniforms;
+};
+
+
+// -----------------------------------------------------------------------------
 // DRAW SUBMISSION
 // -----------------------------------------------------------------------------
+
+struct DrawUniform
+{
+    bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
+    uint16_t            index  = UINT16_MAX;
+};
+
+struct DrawUniforms
+{
+    DrawUniform uniforms[4];
+    uint8_t     count = 0; // TODO : Replace with flag bits in the indices.
+
+    inline bool is_available() const
+    {
+        return count < 4;
+    }
+
+    inline DrawUniform& next()
+    {
+        ASSERT(is_available());
+
+        return uniforms[count++];
+    }
+
+    inline const DrawUniform& operator[](uint8_t i) const { return uniforms[i]; }
+};
 
 struct DrawItem
 {
@@ -322,6 +448,7 @@ struct DrawItem
     bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
     bgfx::VertexLayoutHandle vertex_alias  = BGFX_INVALID_HANDLE;
+    DrawUniforms             uniforms;
 };
 
 class DrawList
@@ -344,6 +471,23 @@ public:
         m_state = {};
     }
 
+    void set_uniform(const Uniform& uniform, const void* value)
+    {
+        ASSERT(bgfx::isValid(uniform.handle));
+        ASSERT(uniform.size > 0);
+        ASSERT(value);
+
+        if (m_state.uniforms.is_available())
+        {
+            DrawUniform& draw_uniform = m_state.uniforms.next();
+
+            draw_uniform.handle = uniform.handle;
+            draw_uniform.index  = static_cast<uint16_t>(m_uniform_data.size());
+
+            push_back(m_uniform_data, value, uniform.size);
+        }
+    }
+
     inline DrawItem& state() { return m_state; }
 
     inline const DrawItem& state() const { return m_state; }
@@ -352,10 +496,13 @@ public:
 
     inline const Vector<Mat4>& matrices() const { return m_matrices; }
 
+    inline const Vector<uint8_t>& uniforms() const { return m_uniform_data; };
+
 private:
     DrawItem         m_state;
     Vector<DrawItem> m_items;
     Vector<Mat4>     m_matrices;
+    Vector<uint8_t>  m_uniform_data;
 };
 
 
@@ -464,79 +611,6 @@ private:
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
     Array<bgfx::ProgramHandle, MAX_BUILTINS> m_builtins;
-};
-
-
-// -----------------------------------------------------------------------------
-// UNIFORMS
-// -----------------------------------------------------------------------------
-
-struct DefaultUniforms
-{
-    bgfx::UniformHandle color_texture = BGFX_INVALID_HANDLE;
-
-    void init()
-    {
-        color_texture = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
-    }
-
-    void clear()
-    {
-        destroy_if_valid(color_texture);
-    }
-};
-
-class UniformCache
-{
-public:
-    UniformCache()
-    {
-        m_handles.fill(BGFX_INVALID_HANDLE);
-    }
-
-    void clear()
-    {
-        MutexScope lock(m_mutex);
-
-        for (bgfx::UniformHandle& handle : m_handles)
-        {
-            destroy_if_valid(handle);
-        }
-    }
-
-    bool add(uint16_t id, uint16_t flags, const char* name)
-    {
-        static const bgfx::UniformType::Enum types[] =
-        {
-            bgfx::UniformType::Vec4,
-            bgfx::UniformType::Mat4,
-            bgfx::UniformType::Mat3,
-            bgfx::UniformType::Sampler,
-        };
-
-        const bgfx::UniformType::Enum type  = types[((flags & UNIFORM_TYPE_MASK) >> UNIFORM_TYPE_SHIFT) - 1];
-        const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
-
-        bgfx::UniformHandle uniform = bgfx::createUniform(name, type, count);
-        if (!bgfx::isValid( uniform))
-        {
-            ASSERT(false && "Invalid uniform handle.");
-            return false;
-        }
-
-        MutexScope lock(m_mutex);
-
-        bgfx::UniformHandle& handle = m_handles[id];
-        destroy_if_valid(handle);
-
-        handle = uniform;
-
-        return true;
-    }
-
-private:
-    Mutex                                    m_mutex;
-    Array<bgfx::UniformHandle, MAX_UNIFORMS> m_handles;
 };
 
 
@@ -1718,6 +1792,11 @@ static void submit_draw_list
             BGFX_STATE_DEFAULT |
             primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
         );
+
+        for (uint8_t i = 0; i < item.uniforms.count; i++)
+        {
+            encoder->setUniform(item.uniforms[i].handle, &draw_list.uniforms()[item.uniforms[i].index]);
+        }
 
         ASSERT(bgfx::isValid(item.program));
         encoder->submit(item.pass, item.program);
@@ -3163,6 +3242,9 @@ void create_uniform(int id, int flags, const char* name)
 void uniform(int id, const void* value)
 {
     ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+    ASSERT(value);
+
+    mnm::t_ctx.draw_list.set_uniform(mnm::g_ctx.uniform_cache[static_cast<uint16_t>(id)], value);
 }
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
