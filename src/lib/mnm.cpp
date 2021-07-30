@@ -514,7 +514,7 @@ public:
             bgfx::UniformType::Sampler,
         };
 
-        const bgfx::UniformType::Enum type  = types[(flags & UNIFORM_TYPE_MASK) >> UNIFORM_TYPE_SHIFT];
+        const bgfx::UniformType::Enum type  = types[((flags & UNIFORM_TYPE_MASK) >> UNIFORM_TYPE_SHIFT) - 1];
         const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
 
         bgfx::UniformHandle uniform = bgfx::createUniform(name, type, count);
