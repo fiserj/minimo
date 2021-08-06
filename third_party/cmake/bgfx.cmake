@@ -24,10 +24,18 @@ if(APPLE)
         "-framework Metal"
         "-framework QuartzCore"
     )
+
+    target_compile_definitions(bgfx PRIVATE
+        BGFX_CONFIG_RENDERER_METAL
+    )
 elseif(WIN32)
     target_include_directories(bgfx PRIVATE
             ${BGFX_DIR}/3rdparty
             ${BGFX_DIR}/3rdparty/dxsdk/include
+    )
+
+    target_compile_definitions(bgfx PRIVATE
+        BGFX_CONFIG_RENDERER_DIRECT3D11
     )
 endif()
 
