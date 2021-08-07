@@ -1720,12 +1720,77 @@ private:
 // GEOMETRY SUBMISSION
 // -----------------------------------------------------------------------------
 
+static void submit_mesh
+(
+    const Mesh&                                mesh,
+    const Mat4&                                transform,
+    const DrawItem&                            state,
+    const Vector<bgfx::TransientVertexBuffer>& transient_buffers,
+    bgfx::Encoder&                             encoder
+)
+{
+    static const uint64_t primitive_flags[] =
+    {
+        0, // Triangles.
+        0, // Quads (for users, triangles internally).
+        BGFX_STATE_PT_TRISTRIP,
+        BGFX_STATE_PT_LINES,
+        BGFX_STATE_PT_LINESTRIP,
+        BGFX_STATE_PT_POINTS,
+    };
+
+    switch (mesh.type())
+        {
+        case MeshType::TRANSIENT:
+                                          encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
+            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
+            break;
+
+        case MeshType::STATIC:
+                                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                                          encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+            break;
+
+        case MeshType::DYNAMIC:
+                                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                                          encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+            break;
+
+        default:
+            ASSERT(false && "Invalid mesh type.");
+            break;
+        }
+
+        if (bgfx::isValid(state.texture) && bgfx::isValid(state.sampler))
+        {
+            encoder.setTexture(0, state.sampler, state.texture);
+        }
+
+        // encoder.setTransform(transform_offset + item.transform);
+        encoder.setTransform(&transform);
+
+        encoder.setState(
+            BGFX_STATE_DEFAULT |
+            primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
+        );
+
+        // TODO : Re-enable.
+        // for (uint8_t i = 0; i < item.uniforms.count; i++)
+        // {
+        //     encoder.setUniform(item.uniforms[i].handle, &draw_list.uniforms()[item.uniforms[i].index]);
+        // }
+
+        ASSERT(bgfx::isValid(state.program));
+        encoder.submit(state.pass, state.program);
+}
+
 static void submit_draw_list
 (
-    const DrawList&          draw_list,
-    const MeshCache&         mesh_cache,
-    const VertexLayoutCache& layout_cache,
-    bool                     is_main_thread
+    const DrawList&  draw_list,
+    const MeshCache& mesh_cache,
+    bool             is_main_thread
 )
 {
     bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
@@ -2423,6 +2488,8 @@ private:
 
 void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
 {
+    // ASSERT(t_ctx);
+
     ASSERT(func);
     (*func)(data);
 
@@ -2580,6 +2647,8 @@ struct LocalContext
     Timer               stop_watch;
     Timer               frame_time;
 
+    bgfx::Encoder*      encoder             = nullptr;
+
     bgfx::ViewId        active_pass         = 0;
 
     bool                is_main_thread      = false;
@@ -2587,10 +2656,9 @@ struct LocalContext
 
 static GlobalContext g_ctx;
 
-// TODO : Number of these should probably be limited and the non-main thread
-//        should explicitly ask for them and release them (possibly with the
-//        exception of the lightweight items (timers, main-thread-ness flag, ...)).
-thread_local LocalContext t_ctx;
+static Vector<LocalContext> t_ctxs;
+
+thread_local LocalContext* t_ctx = nullptr;
 
 
 // -----------------------------------------------------------------------------
@@ -2602,8 +2670,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     // TODO : Check we're not being called multiple times witohut first terminating.
     // TODO : Reset global context data (thread local as well, if possible, but might not be).
     // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
-
-    t_ctx.is_main_thread = true;
+    // TODO : Move thread-local context creations (or at least the pointer setups) before the `init` function
 
     if (init)
     {
@@ -2647,6 +2714,41 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
+
+    {
+        struct PinnedTask : enki::IPinnedTask
+        {
+            PinnedTask(uint32_t idx)
+                : enki::IPinnedTask(idx)
+            {
+            }
+
+            void Execute() override
+            {
+                const auto id = std::this_thread::get_id();
+                ASSERT(t_ctx == nullptr);
+                ASSERT(threadNum < t_ctxs.size());
+
+                t_ctx = &t_ctxs[threadNum];
+            }
+        };
+
+        t_ctxs.resize(g_ctx.task_scheduler.GetNumTaskThreads());
+        t_ctx = &t_ctxs[0];
+
+        for (uint32_t i = 0; i < g_ctx.task_scheduler.GetNumTaskThreads(); i++)
+        {
+            t_ctxs[i].is_main_thread = i == 0;
+            // t_ctxs[i].encoder = bgfx::begin(!t_ctxs[i].is_main_thread);
+
+            if (i)
+            {
+                PinnedTask task(i);
+                g_ctx.task_scheduler.AddPinnedTask(&task);
+                g_ctx.task_scheduler.WaitforTask(&task);
+            }
+        }
+    }
 
     g_ctx.layout_cache.add_builtins();
 
@@ -2794,7 +2896,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         if (g_ctx.frame_number > 0)
         {
             // TODO : This needs to be done for all contexts across all threads.
-            t_ctx.draw_list.clear();
+            t_ctx->draw_list.clear();
         }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
@@ -2808,17 +2910,26 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
 
-        if (t_ctx.is_main_thread)
+        if (t_ctx->is_main_thread)
         {
             // TODO : I guess ideally we touch all active passes in all local context (?).
-            g_ctx.pass_cache[t_ctx.active_pass].touch();
+            g_ctx.pass_cache[t_ctx->active_pass].touch();
             g_ctx.pass_cache.update();
         }
 
         // TODO : This needs to be done for all contexts across all threads.
-        submit_draw_list(t_ctx.draw_list, g_ctx.mesh_cache, g_ctx.layout_cache, t_ctx.is_main_thread);
+        // submit_draw_list(t_ctx->draw_list, g_ctx.mesh_cache, t_ctx->is_main_thread);
 
-        if (t_ctx.is_main_thread)
+        for (LocalContext& ctx : t_ctxs)
+        {
+            if (ctx.encoder)
+            {
+                bgfx::end(ctx.encoder);
+                ctx.encoder = nullptr;
+            }
+        }
+
+        if (t_ctx->is_main_thread)
         {
             g_ctx.mesh_cache.clear_transient_meshes();
         }
@@ -2873,7 +2984,7 @@ int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void
 
 void size(int width, int height, int flags)
 {
-    ASSERT(mnm::t_ctx.is_main_thread);
+    ASSERT(mnm::t_ctx->is_main_thread);
     ASSERT(mnm::g_ctx.window.display_scale_x);
     ASSERT(mnm::g_ctx.window.display_scale_y);
 
@@ -2886,14 +2997,14 @@ void size(int width, int height, int flags)
 
 void title(const char* title)
 {
-    ASSERT(mnm::t_ctx.is_main_thread);
+    ASSERT(mnm::t_ctx->is_main_thread);
 
     glfwSetWindowTitle(mnm::g_ctx.window.handle, title);
 }
 
 void vsync(int vsync)
 {
-    ASSERT(mnm::t_ctx.is_main_thread);
+    ASSERT(mnm::t_ctx->is_main_thread);
 
     mnm::g_ctx.vsync_on          = static_cast<bool>(vsync);
     mnm::g_ctx.reset_back_buffer = true;
@@ -2901,7 +3012,7 @@ void vsync(int vsync)
 
 void quit(void)
 {
-    ASSERT(mnm::t_ctx.is_main_thread);
+    ASSERT(mnm::t_ctx->is_main_thread);
 
     glfwSetWindowShouldClose(mnm::g_ctx.window.handle, GLFW_TRUE);
 }
@@ -2998,19 +3109,19 @@ double dt(void)
 
 void sleep_for(double seconds)
 {
-    ASSERT(!mnm::t_ctx.is_main_thread);
+    ASSERT(!mnm::t_ctx->is_main_thread);
 
     std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
 }
 
 void tic(void)
 {
-    mnm::t_ctx.stop_watch.tic();
+    mnm::t_ctx->stop_watch.tic();
 }
 
 double toc(void)
 {
-    return mnm::t_ctx.stop_watch.toc();
+    return mnm::t_ctx->stop_watch.toc();
 }
 
 
@@ -3020,41 +3131,41 @@ double toc(void)
 
 void begin_mesh(int id, int flags)
 {
-    ASSERT(!mnm::t_ctx.mesh_recorder.is_recording());
+    ASSERT(!mnm::t_ctx->mesh_recorder.is_recording());
 
-    mnm::t_ctx.mesh_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(flags));
+    mnm::t_ctx->mesh_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(flags));
 }
 
 void end_mesh(void)
 {
     using namespace mnm;
 
-    ASSERT(t_ctx.mesh_recorder.is_recording());
+    ASSERT(t_ctx->mesh_recorder.is_recording());
 
     // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.mesh_cache.add_mesh(t_ctx.mesh_recorder, g_ctx.layout_cache);
+    (void)g_ctx.mesh_cache.add_mesh(t_ctx->mesh_recorder, g_ctx.layout_cache);
 
-    t_ctx.mesh_recorder.end();
+    t_ctx->mesh_recorder.end();
 }
 
 void vertex(float x, float y, float z)
 {
-    mnm::t_ctx.mesh_recorder.vertex((mnm::t_ctx.matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+    mnm::t_ctx->mesh_recorder.vertex((mnm::t_ctx->matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
 }
 
 void color(unsigned int rgba)
 {
-    mnm::t_ctx.mesh_recorder.color(rgba);
+    mnm::t_ctx->mesh_recorder.color(rgba);
 }
 
 void normal(float nx, float ny, float nz)
 {
-    mnm::t_ctx.mesh_recorder.normal(nx, ny, nz);
+    mnm::t_ctx->mesh_recorder.normal(nx, ny, nz);
 }
 
 void texcoord(float u, float v)
 {
-    mnm::t_ctx.mesh_recorder.texcoord(u, v);
+    mnm::t_ctx->mesh_recorder.texcoord(u, v);
 }
 
 void mesh(int id)
@@ -3062,17 +3173,18 @@ void mesh(int id)
     using namespace mnm;
 
     ASSERT(id > 0 && id < MAX_MESHES);
-    ASSERT(!t_ctx.mesh_recorder.is_recording());
+    ASSERT(!t_ctx->mesh_recorder.is_recording());
 
     // TODO : This "split data filling" is silly, it should be done either fully
     //        here or in the draw list.
-    DrawItem& state = t_ctx.draw_list.state();
+    DrawItem& state = t_ctx->draw_list.state();
 
-    state.pass = t_ctx.active_pass;
+    state.pass = t_ctx->active_pass;
 
-    state.framebuffer = g_ctx.pass_cache[t_ctx.active_pass].framebuffer();
+    state.framebuffer = g_ctx.pass_cache[t_ctx->active_pass].framebuffer();
 
-    uint16_t mesh_flags = g_ctx.mesh_cache[static_cast<uint16_t>(id)].flags;
+    const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
+    uint16_t    mesh_flags = mesh.flags;
 
     if (bgfx::isValid(state.vertex_alias))
     {
@@ -3084,12 +3196,20 @@ void mesh(int id)
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
-    t_ctx.draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx.matrix_stack.top());
+    // t_ctx->draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx->matrix_stack.top());
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
+    submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
 }
 
 void alias(int flags)
 {
-    mnm::t_ctx.draw_list.state().vertex_alias = { static_cast<uint16_t>(flags) };
+    mnm::t_ctx->draw_list.state().vertex_alias = { static_cast<uint16_t>(flags) };
 }
 
 
@@ -3126,18 +3246,18 @@ void texture(int id)
 
     ASSERT(id > 0 && id < MAX_TEXTURES);
 
-    if (!t_ctx.framebuffer_recorder.is_recording())
+    if (!t_ctx->framebuffer_recorder.is_recording())
     {
         // TODO : Samplers should be set by default state and only overwritten when
         //        non-default shader is used.
-        DrawItem& state = t_ctx.draw_list.state();
+        DrawItem& state = t_ctx->draw_list.state();
 
         state.texture = g_ctx.texture_cache[static_cast<uint16_t>(id)].handle;
         state.sampler = g_ctx.default_uniforms.color_texture;
     }
     else
     {
-        t_ctx.framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
+        t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
     }
 }
 
@@ -3150,35 +3270,35 @@ void pass(int id)
 {
     ASSERT(id >= 0 && id < mnm::MAX_PASSES);
 
-    mnm::t_ctx.active_pass = static_cast<uint16_t>(id);
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].touch();
+    mnm::t_ctx->active_pass = static_cast<uint16_t>(id);
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].touch();
 }
 
 void no_clear(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_no_clear();
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_no_clear();
 }
 
 void clear_depth(float depth)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_clear_depth(depth);
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_clear_depth(depth);
 }
 
 void clear_color(unsigned int rgba)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_clear_color(rgba);
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_clear_color(rgba);
 }
 
 void no_framebuffer(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_framebuffer(BGFX_INVALID_HANDLE);
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_framebuffer(BGFX_INVALID_HANDLE);
 }
 
 void framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
 
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_framebuffer(
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_framebuffer(
         mnm::g_ctx.framebuffer_cache[static_cast<uint16_t>(id)].handle
     );
 }
@@ -3190,7 +3310,7 @@ void viewport(int x, int y, int width, int height)
     ASSERT(width  >  0);
     ASSERT(height >  0);
 
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_viewport(
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_viewport(
         static_cast<uint16_t>(x),
         static_cast<uint16_t>(y),
         static_cast<uint16_t>(width),
@@ -3212,13 +3332,13 @@ void begin_framebuffer(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
 
-    mnm::t_ctx.framebuffer_recorder.begin(static_cast<uint16_t>(id));
+    mnm::t_ctx->framebuffer_recorder.begin(static_cast<uint16_t>(id));
 }
 
 void end_framebuffer(void)
 {
-    mnm::g_ctx.framebuffer_cache.add_framebuffer(mnm::t_ctx.framebuffer_recorder);
-    mnm::t_ctx.framebuffer_recorder.end();
+    mnm::g_ctx.framebuffer_cache.add_framebuffer(mnm::t_ctx->framebuffer_recorder);
+    mnm::t_ctx->framebuffer_recorder.end();
 }
 
 
@@ -3244,7 +3364,7 @@ void uniform(int id, const void* value)
     ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
     ASSERT(value);
 
-    mnm::t_ctx.draw_list.set_uniform(mnm::g_ctx.uniform_cache[static_cast<uint16_t>(id)], value);
+    mnm::t_ctx->draw_list.set_uniform(mnm::g_ctx.uniform_cache[static_cast<uint16_t>(id)], value);
 }
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
@@ -3268,7 +3388,7 @@ void shader(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
 
-    mnm::t_ctx.draw_list.state().program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
+    mnm::t_ctx->draw_list.state().program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
 }
 
 
@@ -3278,47 +3398,47 @@ void shader(int id)
 
 void view(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_view(mnm::t_ctx.matrix_stack.top());
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_view(mnm::t_ctx->matrix_stack.top());
 }
 
 void projection(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx.active_pass].set_projection(mnm::t_ctx.matrix_stack.top());
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_projection(mnm::t_ctx->matrix_stack.top());
 }
 
 void push(void)
 {
-    mnm::t_ctx.matrix_stack.push();
+    mnm::t_ctx->matrix_stack.push();
 }
 
 void pop(void)
 {
-    mnm::t_ctx.matrix_stack.pop();
+    mnm::t_ctx->matrix_stack.pop();
 }
 
 void identity(void)
 {
-    mnm::t_ctx.matrix_stack.top() = HMM_Mat4d(1.0f);
+    mnm::t_ctx->matrix_stack.top() = HMM_Mat4d(1.0f);
 }
 
 void ortho(float left, float right, float bottom, float top, float near_, float far_)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
 }
 
 void perspective(float fovy, float aspect, float near_, float far_)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
 }
 
 void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
 }
 
 void rotate(float angle, float x, float y, float z)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, z)));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_Rotate(angle, HMM_Vec3(x, y, z)));
 }
 
 void rotate_x(float angle)
@@ -3341,12 +3461,12 @@ void rotate_z(float angle)
 
 void scale(float scale)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_Scale(HMM_Vec3(scale, scale, scale)));
 }
 
 void translate(float x, float y, float z)
 {
-    mnm::t_ctx.matrix_stack.multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
+    mnm::t_ctx->matrix_stack.multiply_top(HMM_Translate(HMM_Vec3(x, y, z)));
 }
 
 
