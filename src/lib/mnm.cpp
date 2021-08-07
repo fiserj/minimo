@@ -409,100 +409,18 @@ private:
 
 
 // -----------------------------------------------------------------------------
-// DRAW SUBMISSION
+// DRAW STATE
 // -----------------------------------------------------------------------------
 
-struct DrawUniform
+struct DrawState
 {
-    bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
-    uint16_t            index  = UINT16_MAX;
-};
-
-struct DrawUniforms
-{
-    DrawUniform uniforms[4];
-    uint8_t     count = 0; // TODO : Replace with flag bits in the indices.
-
-    inline bool is_available() const
-    {
-        return count < 4;
-    }
-
-    inline DrawUniform& next()
-    {
-        ASSERT(is_available());
-
-        return uniforms[count++];
-    }
-
-    inline const DrawUniform& operator[](uint8_t i) const { return uniforms[i]; }
-};
-
-struct DrawItem
-{
-    uint16_t                 transform     = UINT16_MAX;
-    uint16_t                 mesh          = UINT16_MAX;
+    Mat4                     transform     = HMM_Mat4d(1.0f);
     bgfx::ViewId             pass          = UINT16_MAX;
     bgfx::FrameBufferHandle  framebuffer   = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
     bgfx::VertexLayoutHandle vertex_alias  = BGFX_INVALID_HANDLE;
-    DrawUniforms             uniforms;
-};
-
-class DrawList
-{
-public:
-    inline void clear()
-    {
-        m_items   .clear();
-        m_matrices.clear();
-        m_state = {};
-    }
-
-    void submit_mesh(uint16_t mesh, const Mat4& transform)
-    {
-        m_state.transform = static_cast<uint16_t>(m_matrices.size());
-        m_state.mesh      = mesh;
-
-        m_matrices.push_back(transform);
-        m_items   .push_back(m_state  );
-        m_state = {};
-    }
-
-    void set_uniform(const Uniform& uniform, const void* value)
-    {
-        ASSERT(bgfx::isValid(uniform.handle));
-        ASSERT(uniform.size > 0);
-        ASSERT(value);
-
-        if (m_state.uniforms.is_available())
-        {
-            DrawUniform& draw_uniform = m_state.uniforms.next();
-
-            draw_uniform.handle = uniform.handle;
-            draw_uniform.index  = static_cast<uint16_t>(m_uniform_data.size());
-
-            push_back(m_uniform_data, value, uniform.size);
-        }
-    }
-
-    inline DrawItem& state() { return m_state; }
-
-    inline const DrawItem& state() const { return m_state; }
-
-    inline const Vector<DrawItem>& items() const { return m_items; }
-
-    inline const Vector<Mat4>& matrices() const { return m_matrices; }
-
-    inline const Vector<uint8_t>& uniforms() const { return m_uniform_data; };
-
-private:
-    DrawItem         m_state;
-    Vector<DrawItem> m_items;
-    Vector<Mat4>     m_matrices;
-    Vector<uint8_t>  m_uniform_data;
 };
 
 
@@ -1724,7 +1642,7 @@ static void submit_mesh
 (
     const Mesh&                                mesh,
     const Mat4&                                transform,
-    const DrawItem&                            state,
+    const DrawState&                           state,
     const Vector<bgfx::TransientVertexBuffer>& transient_buffers,
     bgfx::Encoder&                             encoder
 )
@@ -1776,98 +1694,8 @@ static void submit_mesh
             primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
         );
 
-        // TODO : Re-enable.
-        // for (uint8_t i = 0; i < item.uniforms.count; i++)
-        // {
-        //     encoder.setUniform(item.uniforms[i].handle, &draw_list.uniforms()[item.uniforms[i].index]);
-        // }
-
         ASSERT(bgfx::isValid(state.program));
         encoder.submit(state.pass, state.program);
-}
-
-static void submit_draw_list
-(
-    const DrawList&  draw_list,
-    const MeshCache& mesh_cache,
-    bool             is_main_thread
-)
-{
-    bgfx::Encoder* encoder = bgfx::begin(!is_main_thread);
-    if (!encoder)
-    {
-        ASSERT(false && "Failed to obtain BGFX encoder.");
-        return;
-    }
-
-    bgfx::Transform transforms       = { nullptr, 0 };
-    const uint32_t  transform_offset = encoder->allocTransform(&transforms, static_cast<uint16_t>(draw_list.matrices().size()));
-
-    if (transforms.data)
-    {
-        memcpy(transforms.data, draw_list.matrices().data(), draw_list.matrices().size() * sizeof(Mat4));
-    }
-
-    static const uint64_t primitive_flags[] =
-    {
-        0, // Triangles.
-        0, // Quads (for users, triangles internally).
-        BGFX_STATE_PT_TRISTRIP,
-        BGFX_STATE_PT_LINES,
-        BGFX_STATE_PT_LINESTRIP,
-        BGFX_STATE_PT_POINTS,
-    };
-
-    for (const DrawItem& item : draw_list.items())
-    {
-        const Mesh& mesh = mesh_cache[item.mesh];
-
-        switch (mesh.type())
-        {
-        case MeshType::TRANSIENT:
-                                          encoder->setVertexBuffer(0, &mesh_cache.transient_buffers()[mesh.positions.transient_index]);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, &mesh_cache.transient_buffers()[mesh.attribs  .transient_index], 0, UINT32_MAX, item.vertex_alias);
-            break;
-
-        case MeshType::STATIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, item.vertex_alias);
-                                          encoder->setIndexBuffer (   mesh.indices  .static_buffer);
-            break;
-
-        case MeshType::DYNAMIC:
-                                          encoder->setVertexBuffer(0, mesh.positions.static_buffer);
-            if (mesh_attribs(mesh.flags)) encoder->setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, item.vertex_alias);
-                                          encoder->setIndexBuffer (   mesh.indices  .static_buffer);
-            break;
-
-        default:
-            ASSERT(false && "Invalid mesh type.");
-            break;
-        }
-
-        if (bgfx::isValid(item.texture) && bgfx::isValid(item.sampler))
-        {
-            encoder->setTexture(0, item.sampler, item.texture);
-        }
-
-        encoder->setTransform(transform_offset + item.transform);
-
-        encoder->setState(
-            BGFX_STATE_DEFAULT |
-            primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
-        );
-
-        for (uint8_t i = 0; i < item.uniforms.count; i++)
-        {
-            encoder->setUniform(item.uniforms[i].handle, &draw_list.uniforms()[item.uniforms[i].index]);
-        }
-
-        ASSERT(bgfx::isValid(item.program));
-        encoder->submit(item.pass, item.program);
-    }
-
-    bgfx::end(encoder);
 }
 
 
@@ -2640,7 +2468,7 @@ struct LocalContext
 
     FramebufferRecorder framebuffer_recorder;
 
-    DrawList            draw_list;
+    DrawState           draw_state;
 
     MatrixStack         matrix_stack;
 
@@ -2890,14 +2718,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
 
         g_ctx.mouse.update_position_delta();
-
-        // We don't clear on zero-th frame, since the user may have recorded
-        // something in the `setup` callback.
-        if (g_ctx.frame_number > 0)
-        {
-            // TODO : This needs to be done for all contexts across all threads.
-            t_ctx->draw_list.clear();
-        }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
@@ -3175,9 +2995,7 @@ void mesh(int id)
     ASSERT(id > 0 && id < MAX_MESHES);
     ASSERT(!t_ctx->mesh_recorder.is_recording());
 
-    // TODO : This "split data filling" is silly, it should be done either fully
-    //        here or in the draw list.
-    DrawItem& state = t_ctx->draw_list.state();
+    DrawState& state = t_ctx->draw_state;
 
     state.pass = t_ctx->active_pass;
 
@@ -3209,7 +3027,7 @@ void mesh(int id)
 
 void alias(int flags)
 {
-    mnm::t_ctx->draw_list.state().vertex_alias = { static_cast<uint16_t>(flags) };
+    mnm::t_ctx->draw_state.vertex_alias = { static_cast<uint16_t>(flags) };
 }
 
 
@@ -3250,10 +3068,8 @@ void texture(int id)
     {
         // TODO : Samplers should be set by default state and only overwritten when
         //        non-default shader is used.
-        DrawItem& state = t_ctx->draw_list.state();
-
-        state.texture = g_ctx.texture_cache[static_cast<uint16_t>(id)].handle;
-        state.sampler = g_ctx.default_uniforms.color_texture;
+        t_ctx->draw_state.texture = g_ctx.texture_cache[static_cast<uint16_t>(id)].handle;
+        t_ctx->draw_state.sampler = g_ctx.default_uniforms.color_texture;
     }
     else
     {
@@ -3361,10 +3177,20 @@ void create_uniform(int id, int flags, const char* name)
 
 void uniform(int id, const void* value)
 {
-    ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+    using namespace mnm;
+
+    ASSERT(id > 0 && id < MAX_UNIFORMS);
     ASSERT(value);
 
-    mnm::t_ctx->draw_list.set_uniform(mnm::g_ctx.uniform_cache[static_cast<uint16_t>(id)], value);
+    // We could instead store the uniform values in the state, but that would
+    // instead mean unnecessary copying and storage.
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
+    t_ctx->encoder->setUniform(g_ctx.uniform_cache[static_cast<uint16_t>(id)].handle, value);
 }
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
@@ -3388,7 +3214,7 @@ void shader(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
 
-    mnm::t_ctx->draw_list.state().program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
+    mnm::t_ctx->draw_state.program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
 }
 
 
