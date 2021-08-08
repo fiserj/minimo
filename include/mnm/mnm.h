@@ -388,6 +388,61 @@ void texture(int id);
 
 
 // -----------------------------------------------------------------------------
+/// @section INSTANCING
+///
+/// ...
+
+/// Instance data attributes.
+///
+enum
+{
+    // Per-instance transform. If provided, it's always first in the layout.
+    INSTANCE_TRANSFORM = 0x0001,
+
+    // Per-instance custom data with fixed byte-size. Use only one at the time.
+    INSTANCE_BLOB_16   = 0x0002,
+    INSTANCE_BLOB_32   = 0x0004,
+    INSTANCE_BLOB_48   = 0x0006,
+    INSTANCE_BLOB_64   = 0x0008,
+    INSTANCE_BLOB_80   = 0x000a,
+    INSTANCE_BLOB_96   = 0x000c,
+    INSTANCE_BLOB_112  = 0x000e,
+};
+
+/// Starts instance buffer recording. Mesh type, primitive type and attributes
+/// recorded per-vertex are specified via flags. Once recorded, the buffer can
+/// be associated with arbitrary number of mesh submissions, but it's lifetime
+/// is limited to the current frame only.
+///
+/// @param[in] id Instance buffer identifier.
+/// @param[in] flags Instance buffer properties' flags.
+///
+///
+void begin_instancing(int id, int flags);
+
+/// Ends the current instance buffer recording.
+///
+void end_instancing(void);
+
+/// Adds the current transformation matrix into the instance buffer.
+///
+void instance_transform(void);
+
+/// Copies custom data into the instance buffer. Expected size corresponds to
+/// the `INSTANCE_BLOB_*` flag specified in the `begin_instancing` call.
+///
+/// @param[in] data Instance data.
+///
+void instance_blob(const void* data);
+
+/// Sets the active instance buffer which is used with next `mesh` call.
+///
+/// @param[in] id Instance buffer identifier.
+///
+void instances(int id);
+
+
+// -----------------------------------------------------------------------------
 /// @section PASSES
 ///
 /// Passes correspond to BGFX's views concept and are primarily used for
