@@ -114,6 +114,8 @@ constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
 
 constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
 
+constexpr uint32_t MAX_INSTANCE_BUFFERS  = 16;
+
 constexpr uint32_t MAX_MESHES            = 4096;
 
 constexpr uint32_t MAX_PASSES            = 64;
@@ -1238,6 +1240,79 @@ const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
+// INSTANCE RECORDING
+// -----------------------------------------------------------------------------
+
+class InstanceRecorder
+{
+public:
+    void begin(uint16_t id, uint16_t type)
+    {
+        ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
+
+        static const uint16_t type_sizes[] =
+        {
+            16,  // INSTANCE_TRANSFORM
+            16,  // INSTANCE_DATA_16
+            32,  // INSTANCE_DATA_32
+            48,  // INSTANCE_DATA_48
+            64,  // INSTANCE_DATA_64
+            80,  // INSTANCE_DATA_80
+            96,  // INSTANCE_DATA_96
+            112, // INSTANCE_DATA_112
+        };
+
+        m_id            = id;
+        m_instance_size = type_sizes[type];
+        m_is_transform  = type == INSTANCE_TRANSFORM;
+
+        m_buffer.clear();
+    }
+
+    inline void end()
+    {
+        ASSERT(is_recording());
+
+        begin(UINT16_MAX, UINT16_MAX);
+    }
+
+    inline void instance(const void* data)
+    {
+        ASSERT(data);
+        ASSERT(is_recording());
+
+        push_back(m_buffer, data, m_instance_size);
+    }
+
+    inline const Vector<uint8_t>& buffer() const
+    {
+        ASSERT(is_recording());
+
+        return m_buffer;
+    }
+
+    inline uint32_t instance_count() const
+    {
+        return static_cast<uint32_t>(m_buffer.size() / m_instance_size);
+    }
+
+    inline bool is_recording() const { return m_id != UINT16_MAX; }
+
+    inline uint16_t id() const { return m_id; }
+
+    inline uint16_t instance_size() const { return m_instance_size; }
+
+    inline bool is_transform() const { return m_is_transform; }
+
+private:
+    Vector<uint8_t> m_buffer;
+    uint16_t        m_id            = UINT16_MAX;
+    uint16_t        m_instance_size = 0;
+    bool            m_is_transform  = false;
+};
+
+
+// -----------------------------------------------------------------------------
 // MESH
 // -----------------------------------------------------------------------------
 
@@ -1631,6 +1706,52 @@ private:
     Vector<uint16_t>                    m_transient_idxs;
     Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
     bool                                m_transient_exhausted = false;
+};
+
+
+// -----------------------------------------------------------------------------
+// INSTANCE CACHE
+// -----------------------------------------------------------------------------
+
+struct InstanceCache
+{
+public:
+    InstanceCache()
+    {
+        clear();
+    }
+
+    bool add_buffer(const InstanceRecorder& recorder)
+    {
+        ASSERT(recorder.id() < m_buffers.size());
+
+        MutexScope lock(m_mutex);
+
+        const uint32_t count     = recorder.instance_count();
+        const uint16_t size      = recorder.instance_size ();
+        const uint32_t available = bgfx::getAvailInstanceDataBuffer(count, size);
+
+        if (available < count)
+        {
+            return false;
+        }
+
+        bgfx::allocInstanceDataBuffer(&m_buffers[recorder.id()], count, size);
+
+        return true;
+    }
+
+    inline void clear()
+    {
+        MutexScope lock(m_mutex);
+
+        m_active.fill(false);
+    }
+
+private:
+    Mutex                                                 m_mutex;
+    Array<bgfx::InstanceDataBuffer, MAX_INSTANCE_BUFFERS> m_buffers;
+    Array<bool, MAX_INSTANCE_BUFFERS>                     m_active;
 };
 
 
@@ -2443,6 +2564,7 @@ struct GlobalContext
 
     PassCache           pass_cache;
     MeshCache           mesh_cache;
+    InstanceCache       instance_cache;
     FramebufferCache    framebuffer_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
@@ -2465,6 +2587,7 @@ struct GlobalContext
 struct LocalContext
 {
     MeshRecorder        mesh_recorder;
+    InstanceRecorder    instance_recorder;
 
     FramebufferRecorder framebuffer_recorder;
 
@@ -2737,9 +2860,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             g_ctx.pass_cache.update();
         }
 
-        // TODO : This needs to be done for all contexts across all threads.
-        // submit_draw_list(t_ctx->draw_list, g_ctx.mesh_cache, t_ctx->is_main_thread);
-
         for (LocalContext& ctx : t_ctxs)
         {
             if (ctx.encoder)
@@ -2751,7 +2871,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (t_ctx->is_main_thread)
         {
-            g_ctx.mesh_cache.clear_transient_meshes();
+            g_ctx.mesh_cache    .clear_transient_meshes();
+            g_ctx.instance_cache.clear();
         }
 
         bgfx::frame();
@@ -3075,6 +3196,54 @@ void texture(int id)
     {
         t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
     }
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INSTANCING
+// -----------------------------------------------------------------------------
+
+void begin_instancing(int id, int type)
+{
+    using namespace mnm;
+
+    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
+
+    ASSERT(!t_ctx->instance_recorder.is_recording());
+
+    t_ctx->instance_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(type));
+}
+
+void end_instancing(void)
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->instance_recorder.is_recording());
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    (void)g_ctx.instance_cache.add_buffer(t_ctx->instance_recorder);
+
+    t_ctx->instance_recorder.end();
+}
+
+void instance(const void* data)
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->instance_recorder.is_recording());
+    ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform()));
+
+    t_ctx->instance_recorder.instance(
+        t_ctx->instance_recorder.is_transform()
+            ? &t_ctx->matrix_stack.top()
+            : data
+    );
+}
+
+void instances(int id)
+{
+    // ...
 }
 
 
