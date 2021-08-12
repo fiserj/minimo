@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    custom_shader.c
+    instancing.c
 )
 
 target_include_directories(${NAME} PRIVATE
