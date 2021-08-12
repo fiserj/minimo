@@ -1748,6 +1748,11 @@ public:
         m_active.fill(false);
     }
 
+    inline const bgfx::InstanceDataBuffer& operator[](uint16_t id) const
+    {
+        return m_buffers[id];
+    }
+
 private:
     Mutex                                                 m_mutex;
     Array<bgfx::InstanceDataBuffer, MAX_INSTANCE_BUFFERS> m_buffers;
@@ -2715,17 +2720,19 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
     {
-        BGFX_EMBEDDED_SHADER(position_fs               ),
-        BGFX_EMBEDDED_SHADER(position_vs               ),
+        BGFX_EMBEDDED_SHADER(position_fs                 ),
+        BGFX_EMBEDDED_SHADER(position_vs                 ),
 
-        BGFX_EMBEDDED_SHADER(position_color_fs         ),
-        BGFX_EMBEDDED_SHADER(position_color_vs         ),
+        BGFX_EMBEDDED_SHADER(position_color_fs           ),
+        BGFX_EMBEDDED_SHADER(position_color_vs           ),
 
-        BGFX_EMBEDDED_SHADER(position_color_texcoord_fs),
-        BGFX_EMBEDDED_SHADER(position_color_texcoord_vs),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_fs  ),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_vs  ),
 
-        BGFX_EMBEDDED_SHADER(position_texcoord_fs      ),
-        BGFX_EMBEDDED_SHADER(position_texcoord_vs      ),
+        BGFX_EMBEDDED_SHADER(position_texcoord_fs        ),
+        BGFX_EMBEDDED_SHADER(position_texcoord_vs        ),
+
+        BGFX_EMBEDDED_SHADER(instancing_position_color_vs),
 
         BGFX_EMBEDDED_SHADER_END()
     };
@@ -3243,7 +3250,13 @@ void instance(const void* data)
 
 void instances(int id)
 {
-    // ...
+    using namespace mnm;
+
+    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+
+    // TODO : This will have to be moved to `draw_state` first, so that we can
+    //        resolve the correct default shader when the mesh is submitted.
+    t_ctx->encoder->setInstanceDataBuffer(&g_ctx.instance_cache[static_cast<uint16_t>(id)]);
 }
 
 

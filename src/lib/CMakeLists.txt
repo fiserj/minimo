@@ -60,3 +60,5 @@ add_shader_dependency(${NAME} "shaders/position_color_texcoord.vs")
 add_shader_dependency(${NAME} "shaders/position_color_texcoord.fs")
 add_shader_dependency(${NAME} "shaders/position_texcoord.vs"      )
 add_shader_dependency(${NAME} "shaders/position_texcoord.fs"      )
+
+add_shader_dependency(${NAME} "shaders/instancing_position_color.vs")
