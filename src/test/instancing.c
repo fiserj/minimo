@@ -1,10 +1,12 @@
 #include <mnm/mnm.h>
 
-#define CUBE_MESH 1
+#define CUBE_MESH      1
+
+#define CUBE_INSTANCES 1
 
 static void cube(void);
 
-static void scene(void);
+// static void scene(void);
 
 static void setup(void)
 {
@@ -16,6 +18,14 @@ static void setup(void)
     begin_mesh(CUBE_MESH, PRIMITIVE_QUADS | VERTEX_COLOR);
     cube();
     end_mesh();
+
+    begin_instancing(CUBE_INSTANCES, INSTANCE_TRANSFORM);
+    {
+        identity();
+        translate(-7.5f * 1.5f, -7.5f, 0.0f);
+        instance(0);
+    }
+    end_instancing();
 }
 
 static void draw(void)
@@ -33,27 +43,29 @@ static void draw(void)
     look_at(0.0f, 0.0f, -17.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
     view();
 
-    identity();
+    // identity();
 
-    scene();
+    instances(CUBE_INSTANCES);
+    mesh(CUBE_MESH);
+    // scene();
 }
 
-void scene(void)
-{
-    for (float y = 0.0f; y < 11.0f; y += 1.0f)
-    for (float x = 0.0f; x < 11.0f; x += 1.0f)
-    {
-        push();
+// void scene(void)
+// {
+//     for (float y = 0.0f; y < 11.0f; y += 1.0f)
+//     for (float x = 0.0f; x < 11.0f; x += 1.0f)
+//     {
+//         push();
 
-        rotate_x (((float)elapsed() + x * 0.21f) * 57.2958f);
-        rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
-        translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
+//         rotate_x (((float)elapsed() + x * 0.21f) * 57.2958f);
+//         rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
+//         translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
 
-        mesh(CUBE_MESH);
+//         mesh(CUBE_MESH);
 
-        pop();
-    }
-}
+//         pop();
+//     }
+// }
 
 static void cube(void)
 {
