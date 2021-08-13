@@ -418,13 +418,14 @@ private:
 
 struct DrawState
 {
-    Mat4                     transform     = HMM_Mat4d(1.0f);
-    bgfx::ViewId             pass          = UINT16_MAX;
-    bgfx::FrameBufferHandle  framebuffer   = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
-    bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
-    bgfx::VertexLayoutHandle vertex_alias  = BGFX_INVALID_HANDLE;
+    Mat4                            transform     = HMM_Mat4d(1.0f);
+    const bgfx::InstanceDataBuffer* instances     = nullptr;
+    bgfx::ViewId                    pass          = UINT16_MAX;
+    bgfx::FrameBufferHandle         framebuffer   = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle             program       = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle             texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
+    bgfx::UniformHandle             sampler       = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayoutHandle        vertex_alias  = BGFX_INVALID_HANDLE;
 };
 
 
@@ -3144,12 +3145,17 @@ void mesh(int id)
         state.vertex_alias = g_ctx.layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
     }
 
+    // TODO : Check whether instancing works together with the aliasing.
+    if (state.instances)
+    {;
+        t_ctx->encoder->setInstanceDataBuffer(state.instances);
+        mesh_flags |= INSTANCING_SUPPORTED;
+    }
+
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
-
-    // t_ctx->draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx->matrix_stack.top());
 
     if (!t_ctx->encoder)
     {
@@ -3261,9 +3267,7 @@ void instances(int id)
 
     ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
 
-    // TODO : This will have to be moved to `draw_state` first, so that we can
-    //        resolve the correct default shader when the mesh is submitted.
-    t_ctx->encoder->setInstanceDataBuffer(&g_ctx.instance_cache[static_cast<uint16_t>(id)]);
+    t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
 }
 
 
