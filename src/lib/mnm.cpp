@@ -58,13 +58,15 @@ constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 enum
 {
-                   MESH_STATIC           = 0,
+                   INSTANCING_SUPPORTED  = 0x0080, // Needs to make sure it's outside regular mesh flags.
 
-                   MESH_INVALID          = 3,
+                   MESH_STATIC           = 0x0000,
 
-                   PRIMITIVE_TRIANGLES   = 0,
+                   MESH_INVALID          = 0x0003,
 
-                   VERTEX_POSITION       = 0,
+                   PRIMITIVE_TRIANGLES   = 0x0000,
+
+                   VERTEX_POSITION       = 0x0000,
 };
 
 // -----------------------------------------------------------------------------
@@ -466,7 +468,7 @@ public:
         MutexScope lock(m_mutex);
 
         bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT16_MAX)
-            ? m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]
+            ? m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT]
             : m_handles[id];
 
         destroy_if_valid(handle);
@@ -522,11 +524,13 @@ public:
 
     inline bgfx::ProgramHandle builtin(uint16_t attribs) const
     {
-        return m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
 private:
-    static constexpr uint32_t MAX_BUILTINS = 1 + (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT);
+    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED;
+
+    static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
@@ -2740,15 +2744,18 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         const struct
         {
-            const char* name;
             uint16_t    attribs;
+            const char* vs_name;
+            const char* fs_name = nullptr;
         }
         programs[] =
         {
-            { "position"               , 0                              },
-            { "position_color"         , VERTEX_COLOR                   },
-            { "position_color_texcoord", VERTEX_COLOR | VERTEX_TEXCOORD },
-            { "position_texcoord"      ,                VERTEX_TEXCOORD },
+            { 0                                                    , "position"                                    },
+            { VERTEX_COLOR                                         , "position_color"                              },
+            { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                     },
+            {                VERTEX_TEXCOORD                       , "position_texcoord"                           },
+
+            { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color" },
         };
 
         char vs_name[32];
@@ -2756,10 +2763,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         for (int i = 0; i < BX_COUNTOF(programs); i++)
         {
-            strcpy(vs_name, programs[i].name);
+            strcpy(vs_name, programs[i].vs_name);
             strcat(vs_name, "_vs");
 
-            strcpy(fs_name, programs[i].name);
+            strcpy(fs_name, programs[i].fs_name ? programs[i].fs_name : programs[i].vs_name);
             strcat(fs_name, "_fs");
 
             (void)g_ctx.program_cache.add(UINT16_MAX, s_shaders, type, vs_name, fs_name, programs[i].attribs);
