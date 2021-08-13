@@ -416,16 +416,18 @@ private:
 // DRAW STATE
 // -----------------------------------------------------------------------------
 
+struct InstanceData;
+
 struct DrawState
 {
-    Mat4                            transform     = HMM_Mat4d(1.0f);
-    const bgfx::InstanceDataBuffer* instances     = nullptr;
-    bgfx::ViewId                    pass          = UINT16_MAX;
-    bgfx::FrameBufferHandle         framebuffer   = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle             program       = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle             texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
-    bgfx::UniformHandle             sampler       = BGFX_INVALID_HANDLE;
-    bgfx::VertexLayoutHandle        vertex_alias  = BGFX_INVALID_HANDLE;
+    Mat4                     transform    = HMM_Mat4d(1.0f);
+    const InstanceData*      instances    = nullptr;
+    bgfx::ViewId             pass         = UINT16_MAX;
+    bgfx::FrameBufferHandle  framebuffer  = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle      program      = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture      = BGFX_INVALID_HANDLE; // TODO : More texture slots.
+    bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
 };
 
 
@@ -1257,14 +1259,14 @@ public:
 
         static const uint16_t type_sizes[] =
         {
-            16,  // INSTANCE_TRANSFORM
-            16,  // INSTANCE_DATA_16
-            32,  // INSTANCE_DATA_32
-            48,  // INSTANCE_DATA_48
-            64,  // INSTANCE_DATA_64
-            80,  // INSTANCE_DATA_80
-            96,  // INSTANCE_DATA_96
-            112, // INSTANCE_DATA_112
+            sizeof(Mat4), // INSTANCE_TRANSFORM
+            16,           // INSTANCE_DATA_16
+            32,           // INSTANCE_DATA_32
+            48,           // INSTANCE_DATA_48
+            64,           // INSTANCE_DATA_64
+            80,           // INSTANCE_DATA_80
+            96,           // INSTANCE_DATA_96
+            112,          // INSTANCE_DATA_112
         };
 
         m_id            = id;
@@ -1718,50 +1720,47 @@ private:
 // INSTANCE CACHE
 // -----------------------------------------------------------------------------
 
-struct InstanceCache
+struct InstanceData
+{
+    bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
+    bool                     is_transform = false;
+};
+
+class InstanceCache
 {
 public:
-    InstanceCache()
-    {
-        clear();
-    }
-
     bool add_buffer(const InstanceRecorder& recorder)
     {
-        ASSERT(recorder.id() < m_buffers.size());
+        ASSERT(recorder.id() < m_data.size());
 
         MutexScope lock(m_mutex);
 
         const uint32_t count     = recorder.instance_count();
-        const uint16_t size      = recorder.instance_size ();
-        const uint32_t available = bgfx::getAvailInstanceDataBuffer(count, size);
+        const uint16_t stride    = recorder.instance_size ();
+        const uint32_t available = bgfx::getAvailInstanceDataBuffer(count, stride);
 
         if (available < count)
         {
+            // TODO : Handle this, inform user.
             return false;
         }
 
-        bgfx::allocInstanceDataBuffer(&m_buffers[recorder.id()], count, size);
+        InstanceData &data = m_data[recorder.id()];
+        data.is_transform = recorder.is_transform();
+        bgfx::allocInstanceDataBuffer(&data.buffer, count, stride);
+        memcpy(data.buffer.data, recorder.buffer().data(), recorder.buffer().size());
 
         return true;
     }
 
-    inline void clear()
+    inline const InstanceData& operator[](uint16_t id) const
     {
-        MutexScope lock(m_mutex);
-
-        m_active.fill(false);
-    }
-
-    inline const bgfx::InstanceDataBuffer& operator[](uint16_t id) const
-    {
-        return m_buffers[id];
+        return m_data[id];
     }
 
 private:
-    Mutex                                                 m_mutex;
-    Array<bgfx::InstanceDataBuffer, MAX_INSTANCE_BUFFERS> m_buffers;
-    Array<bool, MAX_INSTANCE_BUFFERS>                     m_active;
+    Mutex                                     m_mutex;
+    Array<InstanceData, MAX_INSTANCE_BUFFERS> m_data;
 };
 
 
@@ -2886,8 +2885,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (t_ctx->is_main_thread)
         {
-            g_ctx.mesh_cache    .clear_transient_meshes();
-            g_ctx.instance_cache.clear();
+            g_ctx.mesh_cache.clear_transient_meshes();
         }
 
         bgfx::frame();
@@ -3140,6 +3138,12 @@ void mesh(int id)
     const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
     uint16_t    mesh_flags = mesh.flags;
 
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
     if (bgfx::isValid(state.vertex_alias))
     {
         state.vertex_alias = g_ctx.layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
@@ -3147,20 +3151,18 @@ void mesh(int id)
 
     // TODO : Check whether instancing works together with the aliasing.
     if (state.instances)
-    {;
-        t_ctx->encoder->setInstanceDataBuffer(state.instances);
-        mesh_flags |= INSTANCING_SUPPORTED;
+    {
+        t_ctx->encoder->setInstanceDataBuffer(&state.instances->buffer);
+
+        if (state.instances->is_transform)
+        {
+            mesh_flags |= INSTANCING_SUPPORTED;
+        }
     }
 
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.builtin(mesh_flags);
-    }
-
-    if (!t_ctx->encoder)
-    {
-        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
-        ASSERT(t_ctx->encoder);
     }
 
     submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
@@ -3254,11 +3256,7 @@ void instance(const void* data)
     ASSERT(t_ctx->instance_recorder.is_recording());
     ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform()));
 
-    t_ctx->instance_recorder.instance(
-        t_ctx->instance_recorder.is_transform()
-            ? &t_ctx->matrix_stack.top()
-            : data
-    );
+    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform() ? &t_ctx->matrix_stack.top() : data);
 }
 
 void instances(int id)
@@ -3267,6 +3265,7 @@ void instances(int id)
 
     ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
 
+    // TODO : Assert that instance ID is active in the cache in the current frame.
     t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
 }
 
