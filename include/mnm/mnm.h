@@ -388,6 +388,32 @@ void texture(int id);
 
 
 // -----------------------------------------------------------------------------
+/// @section TEXTURE READBACK
+///
+/// ...
+
+/// Schedules a texture content to be read and copied to a given data buffer.
+/// The texture must have been created with `TEXTURE_READ_BACK` flag.
+///
+/// Content is not available immediately - use `readable` to check whether
+/// `data` has already been filled with valid content (typically in the next
+/// frame).
+///
+/// @param[in] id Texture identifier.
+/// @param[in] data Destination data buffer.
+///
+void read_texture(int id, void* data);
+
+/// Checks whether a texture can be read back in current frame.
+///
+/// @param[in] id Texture identifier.
+///
+/// @returns Non-zero if task was added to the queue.
+///
+int readable(int id);
+
+
+// -----------------------------------------------------------------------------
 /// @section INSTANCING
 ///
 /// ...
