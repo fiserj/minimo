@@ -58,13 +58,15 @@ constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 enum
 {
-                   MESH_STATIC           = 0,
+                   INSTANCING_SUPPORTED  = 0x0080, // Needs to make sure it's outside regular mesh flags.
 
-                   MESH_INVALID          = 3,
+                   MESH_STATIC           = 0x0000,
 
-                   PRIMITIVE_TRIANGLES   = 0,
+                   MESH_INVALID          = 0x0003,
 
-                   VERTEX_POSITION       = 0,
+                   PRIMITIVE_TRIANGLES   = 0x0000,
+
+                   VERTEX_POSITION       = 0x0000,
 };
 
 // -----------------------------------------------------------------------------
@@ -113,6 +115,8 @@ constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
 // -----------------------------------------------------------------------------
 
 constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
+
+constexpr uint32_t MAX_INSTANCE_BUFFERS  = 16;
 
 constexpr uint32_t MAX_MESHES            = 4096;
 
@@ -412,15 +416,18 @@ private:
 // DRAW STATE
 // -----------------------------------------------------------------------------
 
+struct InstanceData;
+
 struct DrawState
 {
-    Mat4                     transform     = HMM_Mat4d(1.0f);
-    bgfx::ViewId             pass          = UINT16_MAX;
-    bgfx::FrameBufferHandle  framebuffer   = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle      program       = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture       = BGFX_INVALID_HANDLE; // TODO : More texture slots.
-    bgfx::UniformHandle      sampler       = BGFX_INVALID_HANDLE;
-    bgfx::VertexLayoutHandle vertex_alias  = BGFX_INVALID_HANDLE;
+    Mat4                     transform    = HMM_Mat4d(1.0f);
+    const InstanceData*      instances    = nullptr;
+    bgfx::ViewId             pass         = UINT16_MAX;
+    bgfx::FrameBufferHandle  framebuffer  = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle      program      = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture      = BGFX_INVALID_HANDLE; // TODO : More texture slots.
+    bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
 };
 
 
@@ -464,7 +471,7 @@ public:
         MutexScope lock(m_mutex);
 
         bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT16_MAX)
-            ? m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT]
+            ? m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT]
             : m_handles[id];
 
         destroy_if_valid(handle);
@@ -520,11 +527,13 @@ public:
 
     inline bgfx::ProgramHandle builtin(uint16_t attribs) const
     {
-        return m_builtins[(attribs & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
 private:
-    static constexpr uint32_t MAX_BUILTINS = 1 + (VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT);
+    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED;
+
+    static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
@@ -1238,6 +1247,79 @@ const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
+// INSTANCE RECORDING
+// -----------------------------------------------------------------------------
+
+class InstanceRecorder
+{
+public:
+    void begin(uint16_t id, uint16_t type)
+    {
+        ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
+
+        static const uint16_t type_sizes[] =
+        {
+            sizeof(Mat4), // INSTANCE_TRANSFORM
+            16,           // INSTANCE_DATA_16
+            32,           // INSTANCE_DATA_32
+            48,           // INSTANCE_DATA_48
+            64,           // INSTANCE_DATA_64
+            80,           // INSTANCE_DATA_80
+            96,           // INSTANCE_DATA_96
+            112,          // INSTANCE_DATA_112
+        };
+
+        m_id            = id;
+        m_instance_size = type_sizes[type];
+        m_is_transform  = type == INSTANCE_TRANSFORM;
+
+        m_buffer.clear();
+    }
+
+    inline void end()
+    {
+        ASSERT(is_recording());
+
+        begin(UINT16_MAX, UINT16_MAX);
+    }
+
+    inline void instance(const void* data)
+    {
+        ASSERT(data);
+        ASSERT(is_recording());
+
+        push_back(m_buffer, data, m_instance_size);
+    }
+
+    inline const Vector<uint8_t>& buffer() const
+    {
+        ASSERT(is_recording());
+
+        return m_buffer;
+    }
+
+    inline uint32_t instance_count() const
+    {
+        return static_cast<uint32_t>(m_buffer.size() / m_instance_size);
+    }
+
+    inline bool is_recording() const { return m_id != UINT16_MAX; }
+
+    inline uint16_t id() const { return m_id; }
+
+    inline uint16_t instance_size() const { return m_instance_size; }
+
+    inline bool is_transform() const { return m_is_transform; }
+
+private:
+    Vector<uint8_t> m_buffer;
+    uint16_t        m_id            = UINT16_MAX;
+    uint16_t        m_instance_size = 0;
+    bool            m_is_transform  = false;
+};
+
+
+// -----------------------------------------------------------------------------
 // MESH
 // -----------------------------------------------------------------------------
 
@@ -1631,6 +1713,54 @@ private:
     Vector<uint16_t>                    m_transient_idxs;
     Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
     bool                                m_transient_exhausted = false;
+};
+
+
+// -----------------------------------------------------------------------------
+// INSTANCE CACHE
+// -----------------------------------------------------------------------------
+
+struct InstanceData
+{
+    bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
+    bool                     is_transform = false;
+};
+
+class InstanceCache
+{
+public:
+    bool add_buffer(const InstanceRecorder& recorder)
+    {
+        ASSERT(recorder.id() < m_data.size());
+
+        MutexScope lock(m_mutex);
+
+        const uint32_t count     = recorder.instance_count();
+        const uint16_t stride    = recorder.instance_size ();
+        const uint32_t available = bgfx::getAvailInstanceDataBuffer(count, stride);
+
+        if (available < count)
+        {
+            // TODO : Handle this, inform user.
+            return false;
+        }
+
+        InstanceData &data = m_data[recorder.id()];
+        data.is_transform = recorder.is_transform();
+        bgfx::allocInstanceDataBuffer(&data.buffer, count, stride);
+        memcpy(data.buffer.data, recorder.buffer().data(), recorder.buffer().size());
+
+        return true;
+    }
+
+    inline const InstanceData& operator[](uint16_t id) const
+    {
+        return m_data[id];
+    }
+
+private:
+    Mutex                                     m_mutex;
+    Array<InstanceData, MAX_INSTANCE_BUFFERS> m_data;
 };
 
 
@@ -2443,6 +2573,7 @@ struct GlobalContext
 
     PassCache           pass_cache;
     MeshCache           mesh_cache;
+    InstanceCache       instance_cache;
     FramebufferCache    framebuffer_cache;
     ProgramCache        program_cache;
     TextureCache        texture_cache;
@@ -2465,6 +2596,7 @@ struct GlobalContext
 struct LocalContext
 {
     MeshRecorder        mesh_recorder;
+    InstanceRecorder    instance_recorder;
 
     FramebufferRecorder framebuffer_recorder;
 
@@ -2592,17 +2724,19 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
     {
-        BGFX_EMBEDDED_SHADER(position_fs               ),
-        BGFX_EMBEDDED_SHADER(position_vs               ),
+        BGFX_EMBEDDED_SHADER(position_fs                 ),
+        BGFX_EMBEDDED_SHADER(position_vs                 ),
 
-        BGFX_EMBEDDED_SHADER(position_color_fs         ),
-        BGFX_EMBEDDED_SHADER(position_color_vs         ),
+        BGFX_EMBEDDED_SHADER(position_color_fs           ),
+        BGFX_EMBEDDED_SHADER(position_color_vs           ),
 
-        BGFX_EMBEDDED_SHADER(position_color_texcoord_fs),
-        BGFX_EMBEDDED_SHADER(position_color_texcoord_vs),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_fs  ),
+        BGFX_EMBEDDED_SHADER(position_color_texcoord_vs  ),
 
-        BGFX_EMBEDDED_SHADER(position_texcoord_fs      ),
-        BGFX_EMBEDDED_SHADER(position_texcoord_vs      ),
+        BGFX_EMBEDDED_SHADER(position_texcoord_fs        ),
+        BGFX_EMBEDDED_SHADER(position_texcoord_vs        ),
+
+        BGFX_EMBEDDED_SHADER(instancing_position_color_vs),
 
         BGFX_EMBEDDED_SHADER_END()
     };
@@ -2610,15 +2744,18 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         const struct
         {
-            const char* name;
             uint16_t    attribs;
+            const char* vs_name;
+            const char* fs_name = nullptr;
         }
         programs[] =
         {
-            { "position"               , 0                              },
-            { "position_color"         , VERTEX_COLOR                   },
-            { "position_color_texcoord", VERTEX_COLOR | VERTEX_TEXCOORD },
-            { "position_texcoord"      ,                VERTEX_TEXCOORD },
+            { 0                                                    , "position"                                    },
+            { VERTEX_COLOR                                         , "position_color"                              },
+            { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                     },
+            {                VERTEX_TEXCOORD                       , "position_texcoord"                           },
+
+            { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color" },
         };
 
         char vs_name[32];
@@ -2626,10 +2763,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         for (int i = 0; i < BX_COUNTOF(programs); i++)
         {
-            strcpy(vs_name, programs[i].name);
+            strcpy(vs_name, programs[i].vs_name);
             strcat(vs_name, "_vs");
 
-            strcpy(fs_name, programs[i].name);
+            strcpy(fs_name, programs[i].fs_name ? programs[i].fs_name : programs[i].vs_name);
             strcat(fs_name, "_fs");
 
             (void)g_ctx.program_cache.add(UINT16_MAX, s_shaders, type, vs_name, fs_name, programs[i].attribs);
@@ -2736,9 +2873,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             g_ctx.pass_cache[t_ctx->active_pass].touch();
             g_ctx.pass_cache.update();
         }
-
-        // TODO : This needs to be done for all contexts across all threads.
-        // submit_draw_list(t_ctx->draw_list, g_ctx.mesh_cache, t_ctx->is_main_thread);
 
         for (LocalContext& ctx : t_ctxs)
         {
@@ -3004,22 +3138,31 @@ void mesh(int id)
     const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
     uint16_t    mesh_flags = mesh.flags;
 
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
     if (bgfx::isValid(state.vertex_alias))
     {
         state.vertex_alias = g_ctx.layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
     }
 
+    // TODO : Check whether instancing works together with the aliasing.
+    if (state.instances)
+    {
+        t_ctx->encoder->setInstanceDataBuffer(&state.instances->buffer);
+
+        if (state.instances->is_transform)
+        {
+            mesh_flags |= INSTANCING_SUPPORTED;
+        }
+    }
+
     if (!bgfx::isValid(state.program))
     {
         state.program = g_ctx.program_cache.builtin(mesh_flags);
-    }
-
-    // t_ctx->draw_list.submit_mesh(static_cast<uint16_t>(id), t_ctx->matrix_stack.top());
-
-    if (!t_ctx->encoder)
-    {
-        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
-        ASSERT(t_ctx->encoder);
     }
 
     submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
@@ -3075,6 +3218,55 @@ void texture(int id)
     {
         t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
     }
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INSTANCING
+// -----------------------------------------------------------------------------
+
+void begin_instancing(int id, int type)
+{
+    using namespace mnm;
+
+    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
+
+    ASSERT(!t_ctx->instance_recorder.is_recording());
+
+    t_ctx->instance_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(type));
+}
+
+void end_instancing(void)
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->instance_recorder.is_recording());
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    (void)g_ctx.instance_cache.add_buffer(t_ctx->instance_recorder);
+
+    t_ctx->instance_recorder.end();
+}
+
+void instance(const void* data)
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->instance_recorder.is_recording());
+    ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform()));
+
+    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform() ? &t_ctx->matrix_stack.top() : data);
+}
+
+void instances(int id)
+{
+    using namespace mnm;
+
+    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+
+    // TODO : Assert that instance ID is active in the cache in the current frame.
+    t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
 }
 
 

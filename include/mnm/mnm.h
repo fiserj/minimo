@@ -388,6 +388,87 @@ void texture(int id);
 
 
 // -----------------------------------------------------------------------------
+/// @section TEXTURE READBACK
+///
+/// ...
+
+/// Schedules a texture content to be read and copied to a given data buffer.
+/// The texture must have been created with `TEXTURE_READ_BACK` flag.
+///
+/// Content is not available immediately - use `readable` to check whether
+/// `data` has already been filled with valid content (typically in the next
+/// frame).
+///
+/// @param[in] id Texture identifier.
+/// @param[in] data Destination data buffer.
+///
+void read_texture(int id, void* data);
+
+/// Checks whether a texture can be read back in current frame.
+///
+/// @param[in] id Texture identifier.
+///
+/// @returns Non-zero if task was added to the queue.
+///
+int readable(int id);
+
+
+// -----------------------------------------------------------------------------
+/// @section INSTANCING
+///
+/// ...
+
+/// Instance data type.
+///
+enum
+{
+    // Per-instance transform. If provided, it's always first in the layout.
+    INSTANCE_TRANSFORM,
+
+    // Per-instance custom data with fixed byte-size.
+    INSTANCE_DATA_16,
+    INSTANCE_DATA_32,
+    INSTANCE_DATA_48,
+    INSTANCE_DATA_64,
+    INSTANCE_DATA_80,
+    INSTANCE_DATA_96,
+    INSTANCE_DATA_112,
+};
+
+/// Starts instance buffer recording. Mesh type, primitive type and attributes
+/// recorded per-vertex are specified via flags. Once recorded, the buffer can
+/// be associated with arbitrary number of mesh submissions, but it's lifetime
+/// is limited to the current frame only.
+///
+/// @param[in] id Instance buffer identifier.
+/// @param[in] type Instance buffer data type.
+///
+///
+void begin_instancing(int id, int type);
+
+/// Ends the current instance buffer recording.
+///
+void end_instancing(void);
+
+/// Copies custom data into the instance buffer. Expected size corresponds to
+/// the `INSTANCE_DATA_*` flag specified in the `begin_instancing` call.
+///
+/// If `INSTANCE_TRANSFORM` was part of the creation flags, it is added
+/// automatically from the curent matrix stack's top. If instance data only
+/// contain the transformation, pass `NULL` as the parameter.
+///
+/// @param[in] data Instance data or `NULL`.
+///
+void instance(const void* data);
+
+/// Sets the active instance buffer which is used with next `mesh` call.
+///
+/// @param[in] id Instance buffer identifier.
+///
+void instances(int id);
+
+
+// -----------------------------------------------------------------------------
 /// @section PASSES
 ///
 /// Passes correspond to BGFX's views concept and are primarily used for
@@ -524,7 +605,7 @@ void create_uniform(int id, int flags, const char* name);
 ///
 void uniform(int id, const void* value);
 
-/// Creates a shader program. The shader blobs must be in specific format
+/// Creates a shader program. The shader data must be in specific format
 ///
 /// Using existing ID will result in destruction of the previously created data.
 ///
