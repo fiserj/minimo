@@ -1835,9 +1835,10 @@ static void submit_mesh
 
 struct Texture
 {
-    bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
-    uint16_t            width  = 0;
-    uint16_t            height = 0;
+    uint32_t            read_frame = UINT32_MAX;
+    uint16_t            width      = 0;
+    uint16_t            height     = 0;
+    bgfx::TextureHandle handle     = BGFX_INVALID_HANDLE;
 
     void destroy()
     {
@@ -1953,6 +1954,11 @@ public:
 
         texture.width  = width;
         texture.height = height;
+    }
+
+    void schedule_read(uint16_t id, uint32_t frame, void* data)
+    {
+        // ...
     }
 
     inline const Texture& operator[](uint16_t id) const { return m_textures[id]; }
@@ -3218,6 +3224,25 @@ void texture(int id)
     {
         t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
     }
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXTURE READBACK
+// -----------------------------------------------------------------------------
+
+void read_texture(int id, void* data)
+{
+    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+
+    mnm::g_ctx.texture_cache.schedule_read(static_cast<uint16_t>(id), mnm::g_ctx.frame_number, data);
+}
+
+int readable(int id)
+{
+    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+
+    return mnm::g_ctx.frame_number <= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
 }
 
 
