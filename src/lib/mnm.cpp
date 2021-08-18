@@ -1835,13 +1835,23 @@ static void submit_mesh
 
 struct Texture
 {
-    uint32_t            read_frame = UINT32_MAX;
-    uint16_t            width      = 0;
-    uint16_t            height     = 0;
-    bgfx::TextureHandle handle     = BGFX_INVALID_HANDLE;
+    bgfx::TextureFormat::Enum   format      = bgfx::TextureFormat::Count;
+    bgfx::BackbufferRatio::Enum ratio       = bgfx::BackbufferRatio::Count;
+    uint32_t                    read_frame  = UINT32_MAX;
+    uint16_t                    width       = 0;
+    uint16_t                    height      = 0;
+    bgfx::TextureHandle         blit_handle = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle         handle      = BGFX_INVALID_HANDLE;
 
     void destroy()
     {
+        ASSERT(bgfx::isValid(blit_handle) <= bgfx::isValid(handle));
+
+        if (bgfx::isValid(blit_handle))
+        {
+            bgfx::destroy(blit_handle);
+        }
+
         if (bgfx::isValid(handle))
         {
             bgfx::destroy(handle);
@@ -1952,13 +1962,40 @@ public:
         }
         ASSERT(bgfx::isValid(texture.handle));
 
+        texture.format = format.type;
+        texture.ratio  = ratio;
         texture.width  = width;
         texture.height = height;
     }
 
-    void schedule_read(uint16_t id, uint32_t frame, void* data)
+    void schedule_read(uint16_t id, bgfx::ViewId pass, uint32_t frame, bgfx::Encoder* encoder, void* data)
     {
-        // ...
+        MutexScope lock(m_mutex);
+
+        Texture& texture = m_textures[id];
+        ASSERT(bgfx::isValid(texture.handle));
+
+        if (!bgfx::isValid(texture.blit_handle))
+        {
+            constexpr uint64_t flags =
+                BGFX_TEXTURE_BLIT_DST  |
+                BGFX_TEXTURE_READ_BACK |
+                BGFX_SAMPLER_MIN_POINT |
+                BGFX_SAMPLER_MAG_POINT |
+                BGFX_SAMPLER_MIP_POINT |
+                BGFX_SAMPLER_U_CLAMP   |
+                BGFX_SAMPLER_V_CLAMP   ;
+
+            texture.blit_handle = texture.ratio == bgfx::BackbufferRatio::Count
+                ? texture.blit_handle = bgfx::createTexture2D(texture.width, texture.height, false, 1, texture.format, flags)
+                : texture.blit_handle = bgfx::createTexture2D(texture.ratio                , false, 1, texture.format, flags);
+
+            ASSERT(bgfx::isValid(texture.blit_handle));
+        }
+
+        encoder->blit(pass, texture.blit_handle, 0, 0, texture.handle);
+
+        texture.read_frame = bgfx::readTexture(texture.blit_handle, data);
     }
 
     inline const Texture& operator[](uint16_t id) const { return m_textures[id]; }
@@ -3233,9 +3270,23 @@ void texture(int id)
 
 void read_texture(int id, void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    using namespace mnm;
 
-    mnm::g_ctx.texture_cache.schedule_read(static_cast<uint16_t>(id), mnm::g_ctx.frame_number, data);
+    ASSERT(id > 0 && id < MAX_TEXTURES);
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
+    g_ctx.texture_cache.schedule_read(
+        static_cast<uint16_t>(id),
+        t_ctx->active_pass + MAX_PASSES, // TODO : It might be better to let the user specify the pass explicitly.
+        g_ctx.frame_number,
+        t_ctx->encoder,
+        data
+    );
 }
 
 int readable(int id)
