@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    instancing.c
+    texture_readback.c
 )
 
 target_include_directories(${NAME} PRIVATE
