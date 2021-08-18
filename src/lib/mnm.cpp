@@ -3293,7 +3293,8 @@ int readable(int id)
 {
     ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
 
-    return mnm::g_ctx.frame_number <= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
+    // TODO : This needs to compare value returned from `bgfx::frame`.
+    return mnm::g_ctx.frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
 }
 
 
