@@ -674,8 +674,8 @@ private:
 
     uint16_t                m_viewport_x      = 0;
     uint16_t                m_viewport_y      = 0;
-    uint16_t                m_viewport_width  = 0;
-    uint16_t                m_viewport_height = 0;
+    uint16_t                m_viewport_width  = SIZE_EQUAL;
+    uint16_t                m_viewport_height = SIZE_EQUAL;
 
     bgfx::FrameBufferHandle m_framebuffer     = BGFX_INVALID_HANDLE;
 
