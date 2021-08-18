@@ -548,11 +548,11 @@ private:
 class Pass
 {
 public:
-    inline void update(bgfx::ViewId id, bool backbuffer_size_changed)
+    inline void update(bgfx::ViewId id, bgfx::Encoder* encoder, bool backbuffer_size_changed)
     {
         if (m_dirty_flags & DIRTY_TOUCH)
         {
-            bgfx::touch(id);
+            encoder->touch(id);
         }
 
         if (m_dirty_flags & DIRTY_CLEAR)
@@ -690,13 +690,13 @@ private:
 class PassCache
 {
 public:
-    void update()
+    void update(bgfx::Encoder* encoder)
     {
         MutexScope lock(m_mutex);
 
         for (bgfx::ViewId id = 0; id < m_passes.size(); id++)
         {
-            m_passes[id].update(id, m_backbuffer_size_changed);
+            m_passes[id].update(id, encoder, m_backbuffer_size_changed);
         }
 
         m_backbuffer_size_changed = false;
@@ -2914,7 +2914,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         {
             // TODO : I guess ideally we touch all active passes in all local context (?).
             g_ctx.pass_cache[t_ctx->active_pass].touch();
-            g_ctx.pass_cache.update();
+            g_ctx.pass_cache.update(t_ctx->encoder);
         }
 
         for (LocalContext& ctx : t_ctxs)
