@@ -770,7 +770,19 @@ int task(void (* func)(void* data), void* data);
 
 
 // -----------------------------------------------------------------------------
-/// @section FILE IO
+/// @section IMAGE IO
+///
+/// ...
+
+unsigned char* load_image(const char* file_name, int channels, int* width, int* height);
+
+unsigned char* decode_image(const void* data, int bytes, int channels, int* width, int* height);
+
+void save_image(const char* file_name, const void* data, int width, int height, int channels);
+
+
+// -----------------------------------------------------------------------------
+/// @section GENERAL FILE IO
 ///
 /// ...
 
@@ -778,11 +790,15 @@ int task(void (* func)(void* data), void* data);
 ///
 unsigned char* load_bytes(const char* file_name, int* bytes_read);
 
+void save_bytes(const char* file_name, const void* data, int bytes);
+
 /// Reads the contents of a file as a single null-terminated string.
 ///
 char* load_string(const char* file_name);
 
-/// Releases memory allocated by one of the `load_*` functions.
+void save_string(const char* file_name, const char* string);
+
+/// Releases memory allocated by one of the `load_*` or `decode_*` functions.
 ///
 void unload(void* file_content);
 
