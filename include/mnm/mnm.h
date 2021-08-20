@@ -788,6 +788,44 @@ void unload(void* file_content);
 
 
 // -----------------------------------------------------------------------------
+/// @section PLATFORM INFO
+///
+/// Functionality to retrieve basic information about the current environment.
+
+/// Supported platforms.
+///
+enum
+{
+    PLATFORM_LINUX,
+    PLATFORM_MACOS,
+    PLATFORM_WINDOWS,
+    PLATFORM_UNKNOWN,
+};
+
+/// Supported renderers.
+///
+enum
+{
+    RENDERER_DIRECT3D11,
+    RENDERER_METAL,
+    RENDERER_OPENGL,
+    RENDERER_UNKNOWN,
+};
+
+/// Returns current platform identifier.
+///
+/// @returns Current platform identifier.
+///
+int platform(void);
+
+/// Returns current renderer identifier.
+///
+/// @returns Current renderer identifier.
+///
+int renderer(void);
+
+
+// -----------------------------------------------------------------------------
 /// @section MISCELLANEOUS
 ///
 /// Miscellaneous utilities that don't belong in other sections. 
