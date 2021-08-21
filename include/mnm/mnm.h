@@ -85,13 +85,13 @@ float dpi(void);
 
 /// Returns the backbuffer width in pixels.
 ///
-/// @returns Backbuffer width in screen coordinates
+/// @returns Backbuffer width in pixels.
 ///
 int pixel_width(void);
 
 /// Returns the backbuffer height in pixels.
 ///
-/// @returns Backbuffer height in screen coordinates
+/// @returns Backbuffer height in pixels.
 ///
 int pixel_height(void);
 
