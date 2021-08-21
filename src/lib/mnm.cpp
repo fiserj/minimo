@@ -2768,8 +2768,14 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     {
         // TODO : Set Limits on number of encoders and transient memory.
+        // TODO : Init resolution is needed for any backbuffer-size-related
+        //        object creations in `setup` function. We should probably just
+        //        call the code in the block exectured when
+        //        `g_ctx.reset_back_buffer` is true.
         bgfx::Init init;
-        init.platformData = create_platform_data(g_ctx.window.handle, init.type);
+        init.platformData      = create_platform_data(g_ctx.window.handle, init.type);
+        init.resolution.width  = static_cast<uint32_t>(g_ctx.window.framebuffer_width);
+        init.resolution.height = static_cast<uint32_t>(g_ctx.window.framebuffer_height);
 
         if (!bgfx::init(init))
         {
@@ -2805,7 +2811,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         for (uint32_t i = 0; i < g_ctx.task_scheduler.GetNumTaskThreads(); i++)
         {
             t_ctxs[i].is_main_thread = i == 0;
-            // t_ctxs[i].encoder = bgfx::begin(!t_ctxs[i].is_main_thread);
 
             if (i)
             {
@@ -2823,9 +2828,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         (*setup)();
     }
 
-    bgfx::setDebug(BGFX_DEBUG_STATS);
+    bgfx::frame();
 
-    // bgfx::frame();
+    bgfx::setDebug(BGFX_DEBUG_STATS);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
