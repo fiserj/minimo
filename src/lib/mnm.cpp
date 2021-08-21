@@ -2981,6 +2981,12 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (t_ctx->is_main_thread)
         {
+            if (!t_ctx->encoder)
+            {
+                t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+                ASSERT(t_ctx->encoder);
+            }
+
             // TODO : I guess ideally we touch all active passes in all local context (?).
             g_ctx.pass_cache[t_ctx->active_pass].touch();
             g_ctx.pass_cache.update(t_ctx->encoder);
