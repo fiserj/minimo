@@ -34,6 +34,7 @@ target_link_libraries(${NAME} PRIVATE
     glfw
     HandmadeMath
     meshoptimizer
+    stb
 )
 
 if(MSVC)
