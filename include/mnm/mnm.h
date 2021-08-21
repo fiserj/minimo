@@ -83,6 +83,18 @@ float aspect(void);
 ///
 float dpi(void);
 
+/// Returns the backbuffer width in pixels.
+///
+/// @returns Backbuffer width in screen coordinates
+///
+int pixel_width(void);
+
+/// Returns the backbuffer height in pixels.
+///
+/// @returns Backbuffer height in screen coordinates
+///
+int pixel_height(void);
+
 
 // -----------------------------------------------------------------------------
 /// @section INPUT
@@ -408,7 +420,7 @@ void read_texture(int id, void* data);
 ///
 /// @param[in] id Texture identifier.
 ///
-/// @returns Non-zero if task was added to the queue.
+/// @returns Non-zero if the texture was copied to the destination data buffer.
 ///
 int readable(int id);
 

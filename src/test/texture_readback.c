@@ -78,7 +78,7 @@ static void draw(void)
 
         if (!saved && readable(TEXTURE_COLOR))
         {
-            save_image("texture_readback.png", data, width() * dpi(), height() * dpi(), 4);
+            save_image("texture_readback.png", data, pixel_width(), pixel_height(), 4);
             saved = 1;
         }
     }

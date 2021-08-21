@@ -2693,7 +2693,8 @@ struct GlobalContext
     Timer               total_time;
     Timer               frame_time;
 
-    Atomic<uint32_t>    frame_number      = 0;
+    uint32_t            frame_number      = 0;
+    uint32_t            bgfx_frame_number = 0;
 
     Atomic<bool>        vsync_on          = false;
     bool                reset_back_buffer = true;
@@ -2828,7 +2829,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         (*setup)();
     }
 
-    bgfx::frame();
+    g_ctx.bgfx_frame_number = bgfx::frame();
 
     bgfx::setDebug(BGFX_DEBUG_STATS);
 
@@ -2999,7 +3000,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             g_ctx.mesh_cache.clear_transient_meshes();
         }
 
-        bgfx::frame();
+        g_ctx.bgfx_frame_number = bgfx::frame();
         g_ctx.frame_number++;
     }
 
@@ -3100,6 +3101,16 @@ float aspect(void)
 float dpi(void)
 {
     return mnm::g_ctx.window.display_scale_x;
+}
+
+int pixel_width(void)
+{
+    return mnm::g_ctx.window.framebuffer_width;
+}
+
+int pixel_height(void)
+{
+    return mnm::g_ctx.window.framebuffer_height;
 }
 
 
@@ -3362,7 +3373,7 @@ int readable(int id)
     ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
 
     // TODO : This needs to compare value returned from `bgfx::frame`.
-    return mnm::g_ctx.frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
+    return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
 }
 
 
