@@ -68,8 +68,8 @@ static void draw(void)
     pass (PASS_DEFAULT);
     {
         // TODO : This should use dynamically allocated memory eventually.
-        static unsigned char data[1920 * 1080 * 4 * 4] = { 0 };
-        static int           saved                     =   0  ;
+        static unsigned char data[1024 * 1024 * 16] = { 0 };
+        static int           saved                  =   0  ;
 
         if (frame() == 0)
         {
@@ -78,7 +78,7 @@ static void draw(void)
 
         if (!saved && readable(TEXTURE_COLOR))
         {
-            // TODO : Save `data` into an image file.
+            save_image("texture_readback.png", data, width() * dpi(), height() * dpi(), 4);
             saved = 1;
         }
     }
