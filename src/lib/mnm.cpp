@@ -3,8 +3,8 @@
 #include <assert.h>               // assert
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
-#include <stdio.h>                // fclose, fopen, fread, fseek, ftell
-#include <string.h>               // memcpy, strcat, strcpy
+#include <stdio.h>                // fclose, fopen, fread, fseek, ftell, fwrite
+#include <string.h>               // memcpy, strcat, strlen, strcpy
 
 #include <algorithm>              // max, transform
 #include <atomic>                 // atomic
@@ -3596,11 +3596,32 @@ unsigned char* load_bytes(const char* file_name, int* bytes_read)
     return mnm::g_ctx.memory_cache.load_bytes(file_name, bytes_read);
 }
 
+void save_bytes(const char* file_name, const void* data, int bytes)
+{
+    ASSERT(file_name);
+    ASSERT(data);
+    ASSERT(bytes > 0);
+
+    if (FILE* f = fopen(file_name, "wb"))
+    {
+        (void)fwrite(data, static_cast<size_t>(bytes), 1, f); // TODO : Check return value and report error.
+        fclose(f);
+    }
+}
+
 char* load_string(const char* file_name)
 {
     ASSERT(file_name);
 
     return mnm::g_ctx.memory_cache.load_string(file_name);
+}
+
+void save_string(const char* file_name, const char* string)
+{
+    ASSERT(file_name);
+    ASSERT(string);
+
+    save_bytes(file_name, string, strlen(string));
 }
 
 void unload(void* file_content)
