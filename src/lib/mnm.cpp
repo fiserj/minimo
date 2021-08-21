@@ -2500,10 +2500,10 @@ void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
 
 
 // -----------------------------------------------------------------------------
-// FILE CONTENT CACHE
+// MEMORY CACHE
 // -----------------------------------------------------------------------------
 
-class FileContentCache
+class MemoryCache
 {
 public:
     void clear()
@@ -2623,7 +2623,7 @@ struct GlobalContext
     VertexLayoutCache   layout_cache;
     DefaultUniforms     default_uniforms;
     UniformCache        uniform_cache;
-    FileContentCache    file_content_cache;
+    MemoryCache         memory_cache;
 
     Window              window;
 
@@ -2949,7 +2949,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     g_ctx.default_uniforms  .clear();
     g_ctx.uniform_cache     .clear();
     g_ctx.mesh_cache        .clear();
-    g_ctx.file_content_cache.clear();
+    g_ctx.memory_cache.clear();
 
     bgfx::shutdown();
 
@@ -3593,19 +3593,19 @@ unsigned char* load_bytes(const char* file_name, int* bytes_read)
 {
     ASSERT(file_name);
 
-    return mnm::g_ctx.file_content_cache.load_bytes(file_name, bytes_read);
+    return mnm::g_ctx.memory_cache.load_bytes(file_name, bytes_read);
 }
 
 char* load_string(const char* file_name)
 {
     ASSERT(file_name);
 
-    return mnm::g_ctx.file_content_cache.load_string(file_name);
+    return mnm::g_ctx.memory_cache.load_string(file_name);
 }
 
 void unload(void* file_content)
 {
-    mnm::g_ctx.file_content_cache.unload(file_content);
+    mnm::g_ctx.memory_cache.unload(file_content);
 }
 
 
