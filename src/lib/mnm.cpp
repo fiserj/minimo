@@ -4,7 +4,7 @@
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
 #include <stdio.h>                // fclose, fopen, fread, fseek, ftell, fwrite
-#include <string.h>               // memcpy, strcat, strlen, strcpy
+#include <string.h>               // memcpy, strcat, strcmp, strcpy, strlen, strrchr, _stricmp (Windows)
 
 #include <algorithm>              // max, transform
 #include <atomic>                 // atomic
@@ -16,6 +16,14 @@
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
 #include <vector>                 // vector
+
+#if BX_PLATFORM_LINUX || BX_PLATFORM_OSX
+#   include <strings.h>           // strcasecmp
+#endif
+
+#if BX_PLATFORM_WINDOWS
+#   define strcasecmp _stricmp
+#endif
 
 #include <bgfx/bgfx.h>            // bgfx::*
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER*
@@ -37,6 +45,13 @@
 #include <HandmadeMath.h>         // HMM_*, hmm_*
 
 #include <meshoptimizer.h>        // meshopt_*
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#include <stb_image.h>            // stbi_load, stbi_load_from_memory, stbi_image_free
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+#include <stb_image_write.h>      // stbi_write_*
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
@@ -2523,6 +2538,54 @@ public:
         return static_cast<char*>(load(STRING, file_name));
     }
 
+    unsigned char* load_image(const char* file_name, int channels, int* width, int* height)
+    {
+        int      image_width  = 0;
+        int      image_height = 0;
+        uint8_t* image_data   = stbi_load(file_name, &image_width, &image_height, nullptr, channels);
+
+        if (!image_data)
+        {
+            return nullptr;
+        }
+
+        Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
+        stbi_image_free(image_data);
+
+        unsigned char* content = buffer.data();
+
+        {
+            MutexScope lock(m_mutex);
+            m_contents.insert({ content, std::move(buffer) });
+        }
+
+        return content;
+    }
+
+    unsigned char* decode_image(const unsigned char* data, int bytes, int channels, int* width, int* height)
+    {
+        int      image_width  = 0;
+        int      image_height = 0;
+        uint8_t* image_data   = stbi_load_from_memory(data, bytes, &image_width, &image_height, nullptr, channels);
+
+        if (!image_data)
+        {
+            return nullptr;
+        }
+
+        Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
+        stbi_image_free(image_data);
+
+        unsigned char* content = buffer.data();
+
+        {
+            MutexScope lock(m_mutex);
+            m_contents.insert({ content, std::move(buffer) });
+        }
+
+        return content;
+    }
+
     void unload(void* file_content)
     {
         if (file_content)
@@ -3582,6 +3645,61 @@ int task(void (* func)(void* data), void* data)
     }
 
     return task != nullptr;
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - IMAGE IO
+// -----------------------------------------------------------------------------
+
+unsigned char* load_image(const char* file_name, int channels, int* width, int* height)
+{
+    ASSERT(file_name);
+    ASSERT(channels >= 1 && channels <= 4);
+
+    return mnm::g_ctx.memory_cache.load_image(file_name, channels, width, height);
+}
+
+unsigned char* decode_image(const void* data, int bytes, int channels, int* width, int* height)
+{
+    ASSERT(data);
+    ASSERT(bytes > 0);
+    ASSERT(channels >= 1 && channels <= 4);
+
+    return mnm::g_ctx.memory_cache.decode_image(static_cast<const unsigned char*>(data), bytes, channels, width, height);
+}
+
+void save_image(const char* file_name, const void* data, int width, int height, int channels)
+{
+    ASSERT(file_name);
+    ASSERT(data);
+    ASSERT(width > 0);
+    ASSERT(height > 0);
+    ASSERT(channels >= 1 && channels <= 4);
+
+    int success = 0;
+
+    if (const char* ext = strrchr(file_name, '.'))
+    {
+        if (!strcasecmp(ext, ".png"))
+        {
+            success = stbi_write_png(file_name, width, height, channels, data, width * channels);
+        }
+        else if (!strcasecmp(ext, ".jpg") || !strcasecmp(ext, ".jpeg"))
+        {
+            success = stbi_write_jpg(file_name, width, height, channels, data, 85); // TODO : Expose the quality.
+        }
+        else if (!strcasecmp(ext, ".bmp"))
+        {
+            success = stbi_write_bmp(file_name, width, height, channels, data);
+        }
+        else if (!strcasecmp(ext, ".tga"))
+        {
+            success = stbi_write_tga(file_name, width, height, channels, data);
+        }
+    }
+
+    ASSERT(success); // TODO : Report status.
 }
 
 
