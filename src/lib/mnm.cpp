@@ -2549,6 +2549,16 @@ public:
             return nullptr;
         }
 
+        if (width)
+        {
+            *width = image_width;
+        }
+
+        if (height)
+        {
+            *height = image_height;
+        }
+
         Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
         stbi_image_free(image_data);
 
@@ -2571,6 +2581,16 @@ public:
         if (!image_data)
         {
             return nullptr;
+        }
+
+        if (width)
+        {
+            *width = image_width;
+        }
+
+        if (height)
+        {
+            *height = image_height;
         }
 
         Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
