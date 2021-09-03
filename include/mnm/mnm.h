@@ -481,6 +481,34 @@ void instances(int id);
 
 
 // -----------------------------------------------------------------------------
+/// @section FONT ATLASING
+
+/// ...
+///
+enum
+{
+    ATLAS_DEFAULT    = 0x0000,
+    ATLAS_MONOSPACED = 0x0001,
+};
+
+/// One font/size per atlas. Texture size is calculated automatically to fit.
+///
+void begin_atlas(int id, int flags, int size, const void* data);
+
+/// ...
+///
+void end_atlas();
+
+/// ...
+///
+void glyph_range(int first, int last);
+
+/// ...
+///
+void glyphs_from_string(const char* string);
+
+
+// -----------------------------------------------------------------------------
 /// @section PASSES
 ///
 /// Passes correspond to BGFX's views concept and are primarily used for
