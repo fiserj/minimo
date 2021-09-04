@@ -4,9 +4,9 @@
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
 #include <stdio.h>                // fclose, fopen, fread, fseek, ftell, fwrite
-#include <string.h>               // memcpy, strcat, strcmp, strcpy, strlen, strrchr, _stricmp (Windows)
+#include <string.h>               // memcpy, memset, strcat, strcmp, strcpy, strlen, strrchr, _stricmp (Windows)
 
-#include <algorithm>              // max, transform
+#include <algorithm>              // fill, max, sort, transform, unique
 #include <atomic>                 // atomic
 #include <array>                  // array
 #include <chrono>                 // duration
@@ -52,6 +52,10 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
 #include <stb_image_write.h>      // stbi_write_*
+#define STB_RECT_PACK_IMPLEMENTATION
+#include <stb_rect_pack.h>        // stbrp_*
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <stb_truetype.h>         // stbtt_*
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
@@ -2137,38 +2141,146 @@ private:
 
 
 // -----------------------------------------------------------------------------
+// UTF-8 DECODING
+//
+// http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+// -----------------------------------------------------------------------------
+
+enum
+{
+    UTF8_ACCEPT,
+    UTF8_REJECT,
+};
+
+static constexpr uint8_t UTF8_DATA[] =
+{
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 00..1f
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 20..3f
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 40..5f
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 60..7f
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, // 80..9f
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7, // a0..bf
+    8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, // c0..df
+    0xa,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x4,0x3,0x3, // e0..ef
+    0xb,0x6,0x6,0x6,0x5,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8, // f0..ff
+    0x0,0x1,0x2,0x3,0x5,0x8,0x7,0x1,0x1,0x1,0x4,0x6,0x1,0x1,0x1,0x1, // s0..s0
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1,1,1,1,1,1, // s1..s2
+    1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1, // s3..s4
+    1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1,3,1,1,1,1,1,1, // s5..s6
+    1,3,1,1,1,1,1,3,1,3,1,1,1,1,1,1,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // s7..s8
+};
+
+static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_t byte)
+{
+    uint32_t type = UTF8_DATA[byte];
+
+    *codepoint = (*state != UTF8_ACCEPT)
+        ? (byte & 0x3fu) | (*codepoint << 6)
+        : (0xff >> type) & (byte);
+
+    *state = UTF8_DATA[256 + (*state * 16) + type];
+
+    return *state;
+}
+
+
+// -----------------------------------------------------------------------------
 // ATLAS RECORDING / BUILDING / CACHING
 // -----------------------------------------------------------------------------
 
 class AtlasRecorder
 {
 public:
-    inline bool is_recording() const
-    {
-        // ...
-
-        return false;
-    }
-
     void begin(uint16_t id, uint16_t flags, uint16_t size, const void* data)
     {
-        // ...
+        ASSERT(!is_recording());
+
+        m_recording = true;
+        m_glyphs.clear();
+
+        m_id    = id;
+        m_flags = flags;
+        m_size  = size;
+        m_data  = data;
     }
 
     void end()
     {
-        // ...
+        ASSERT(is_recording());
+
+        std::sort(m_glyphs.begin(), m_glyphs.end());
+
+        m_glyphs.erase(std::unique(m_glyphs.begin(), m_glyphs.end()), m_glyphs.end());
+
+        m_recording = false;
     }
 
-    void add_glyph_range(uint16_t first, uint16_t last)
+    void add_glyph_range(int first, int last)
     {
-        // ...
+        ASSERT(last >= first);
+
+        size_t i = last - first + 1;
+        m_glyphs.resize(m_glyphs.size() + i);
+
+        for (int glyph = first; glyph <= last; glyph++, i++)
+        {
+            m_glyphs[i] = glyph;
+        }
     }
 
     void add_glyphs_from_string(const char* string)
     {
-        // ...
+        uint32_t codepoint;
+        uint32_t state = 0;
+
+        for (; *string; string++)
+        {
+            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+            {
+                m_glyphs.push_back(static_cast<int>(codepoint));
+            }
+        }
+
+        ASSERT(state == UTF8_ACCEPT);
     }
+
+    inline bool is_recording() const { return m_recording; }
+
+    inline uint16_t id() const { return m_id; }
+
+    inline uint16_t flags() const { return m_flags; }
+
+    inline uint16_t size() const { return m_size; }
+
+    bool bake_glyphs(uint8_t* buffer, uint16_t size) const
+    {
+        stbtt_pack_context ctx            = {};
+
+        stbtt_pack_range range            = {};
+        range.font_size                   = stbtt_ScaleForPixelHeight(nullptr /* TODO */, static_cast<float>(size));
+        range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
+        range.num_chars                   = static_cast<int>(m_glyphs.size());
+
+        stbtt_PackBegin(&ctx, buffer, size, size, 0, 1, nullptr);
+        stbtt_PackSetOversampling(&ctx, 2, 1);
+        stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
+        stbtt_PackEnd(&ctx);
+
+        return false;
+    }
+
+private:
+    Vector<int>  m_glyphs;
+    const void*  m_data      = nullptr;
+    uint16_t     m_id        = UINT16_MAX;
+    uint16_t     m_flags     = UINT16_MAX;
+    uint16_t     m_size      = UINT16_MAX;
+    bool         m_recording = false;
+};
+
+struct Atlas
+{
+    // TODO : Atlas .
 };
 
 class AtlasCache
@@ -2176,9 +2288,23 @@ class AtlasCache
 public:
     bool add_atlas(const AtlasRecorder& recorder, TextureCache& textures)
     {
-        // ...
+        ASSERT(recorder.is_recording());
 
-        return false;
+        Vector<uint8_t> buffer;
+        uint16_t        size = 128;
+
+        for (;; size *= 2)
+        {
+            buffer.resize(size * size);
+            memset(buffer.data(), 0, buffer.size());
+
+            if (recorder.bake_glyphs(buffer.data(), size))
+            {
+                break;
+            }
+        }
+
+        return true;
     }
 
 private:
@@ -3546,10 +3672,7 @@ void glyph_range(int first, int last)
     ASSERT(first <= last);
     ASSERT(last  <= UINT16_MAX);
 
-    mnm::t_ctx->atlas_recorder.add_glyph_range(
-        static_cast<uint16_t>(first),
-        static_cast<uint16_t>(last)
-    );
+    mnm::t_ctx->atlas_recorder.add_glyph_range(first, last);
 }
 
 void glyphs_from_string(const char* string)
