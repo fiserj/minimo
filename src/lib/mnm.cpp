@@ -2137,6 +2137,56 @@ private:
 
 
 // -----------------------------------------------------------------------------
+// ATLAS RECORDING / BUILDING / CACHING
+// -----------------------------------------------------------------------------
+
+class AtlasRecorder
+{
+public:
+    inline bool is_recording() const
+    {
+        // ...
+
+        return false;
+    }
+
+    void begin(uint16_t id, uint16_t flags, uint16_t size, const void* data)
+    {
+        // ...
+    }
+
+    void end()
+    {
+        // ...
+    }
+
+    void add_glyph_range(uint16_t first, uint16_t last)
+    {
+        // ...
+    }
+
+    void add_glyphs_from_string(const char* string)
+    {
+        // ...
+    }
+};
+
+class AtlasCache
+{
+public:
+    bool add_atlas(const AtlasRecorder& recorder, TextureCache& textures)
+    {
+        // ...
+
+        return false;
+    }
+
+private:
+    Mutex m_mutex;
+};
+
+
+// -----------------------------------------------------------------------------
 // TIME MEASUREMENT
 // -----------------------------------------------------------------------------
 
@@ -2702,6 +2752,7 @@ struct GlobalContext
     InstanceCache       instance_cache;
     FramebufferCache    framebuffer_cache;
     ProgramCache        program_cache;
+    AtlasCache          atlas_cache;
     TextureCache        texture_cache;
     VertexLayoutCache   layout_cache;
     DefaultUniforms     default_uniforms;
@@ -2722,6 +2773,7 @@ struct GlobalContext
 
 struct LocalContext
 {
+    AtlasRecorder       atlas_recorder;
     MeshRecorder        mesh_recorder;
     InstanceRecorder    instance_recorder;
 
@@ -3449,6 +3501,62 @@ void instances(int id)
 
     // TODO : Assert that instance ID is active in the cache in the current frame.
     t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - FONT ATLASING
+// -----------------------------------------------------------------------------
+
+void begin_atlas(int id, int flags, int size, const void* data)
+{
+    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(flags == (flags & (ATLAS_DEFAULT | ATLAS_MONOSPACED)));
+    ASSERT(size > 0 && size <= 4096);
+    ASSERT(data);
+
+    ASSERT(!mnm::t_ctx->atlas_recorder.is_recording());
+
+    mnm::t_ctx->atlas_recorder.begin(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags),
+        static_cast<uint16_t>(size),
+        data
+    );
+}
+
+void end_atlas()
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->atlas_recorder.is_recording());
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    (void)g_ctx.atlas_cache.add_atlas(
+        t_ctx->atlas_recorder,
+        g_ctx. texture_cache
+    );
+
+    t_ctx->atlas_recorder.end();
+}
+
+void glyph_range(int first, int last)
+{
+    ASSERT(first >= 0);
+    ASSERT(first <= last);
+    ASSERT(last  <= UINT16_MAX);
+
+    mnm::t_ctx->atlas_recorder.add_glyph_range(
+        static_cast<uint16_t>(first),
+        static_cast<uint16_t>(last)
+    );
+}
+
+void glyphs_from_string(const char* string)
+{
+    ASSERT(string);
+
+    mnm::t_ctx->atlas_recorder.add_glyphs_from_string(string);
 }
 
 
