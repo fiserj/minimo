@@ -2188,10 +2188,17 @@ static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_
 // ATLAS RECORDING / BUILDING / CACHING
 // -----------------------------------------------------------------------------
 
+struct Atlas
+{
+    HashMap<uint32_t, uint16_t> glyphs;
+    Vector<stbtt_packedchar>    packing;
+    uint16_t                    texture = UINT16_MAX;
+};
+
 class AtlasRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, uint16_t size, const void* data)
+    void begin(uint16_t id, uint16_t flags, float size, const void* data)
     {
         ASSERT(!is_recording());
 
@@ -2219,8 +2226,8 @@ public:
     {
         ASSERT(last >= first);
 
-        size_t i = last - first + 1;
-        m_glyphs.resize(m_glyphs.size() + i);
+        size_t i = m_glyphs.size();
+        m_glyphs.resize(i + static_cast<size_t>(last - first + 1));
 
         for (int glyph = first; glyph <= last; glyph++, i++)
         {
@@ -2246,41 +2253,49 @@ public:
 
     inline bool is_recording() const { return m_recording; }
 
+    inline float size() const { return m_size; }
+
     inline uint16_t id() const { return m_id; }
 
     inline uint16_t flags() const { return m_flags; }
 
-    inline uint16_t size() const { return m_size; }
-
-    bool bake_glyphs(uint8_t* buffer, uint16_t size) const
+    bool bake_glyphs(Atlas& atlas, uint8_t* buffer, uint16_t size) const
     {
-        stbtt_pack_context ctx            = {};
-
-        stbtt_pack_range range            = {};
-        range.font_size                   = stbtt_ScaleForPixelHeight(nullptr /* TODO */, static_cast<float>(size));
-        range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
-        range.num_chars                   = static_cast<int>(m_glyphs.size());
+        stbtt_pack_context ctx = {};
 
         stbtt_PackBegin(&ctx, buffer, size, size, 0, 1, nullptr);
         stbtt_PackSetOversampling(&ctx, 2, 1);
-        stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
+
+        atlas.packing.resize(m_glyphs.size());
+
+        stbtt_pack_range range            = {};
+        range.font_size                   = STBTT_POINT_SIZE(m_size);
+        range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
+        range.num_chars                   = static_cast<int>(m_glyphs.size());
+        range.chardata_for_range          = atlas.packing.data();
+
+        const int success = stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
+
         stbtt_PackEnd(&ctx);
 
-        return false;
+        if (success == 1)
+        {
+            for (size_t i = 0; i < m_glyphs.size(); i++)
+            {
+                atlas.glyphs.insert({ m_glyphs[i], static_cast<uint16_t>(i) });
+            }
+        }
+
+        return success == 1;
     }
 
 private:
     Vector<int>  m_glyphs;
     const void*  m_data      = nullptr;
+    float        m_size      = 0.0f;
     uint16_t     m_id        = UINT16_MAX;
     uint16_t     m_flags     = UINT16_MAX;
-    uint16_t     m_size      = UINT16_MAX;
     bool         m_recording = false;
-};
-
-struct Atlas
-{
-    // TODO : Atlas .
 };
 
 class AtlasCache
@@ -2288,17 +2303,20 @@ class AtlasCache
 public:
     bool add_atlas(const AtlasRecorder& recorder, TextureCache& textures)
     {
-        ASSERT(recorder.is_recording());
+        ASSERT(!recorder.is_recording());
 
+        Atlas           atlas;
         Vector<uint8_t> buffer;
         uint16_t        size = 128;
 
+        // TODO : This trial-and-error is a bit wasteful, and we should really
+        //        just compute the exact size instead, but that'd mean ditching
+        //        all the functionality already provided in stbtt_Pack*.
         for (;; size *= 2)
         {
             buffer.resize(size * size);
-            memset(buffer.data(), 0, buffer.size());
 
-            if (recorder.bake_glyphs(buffer.data(), size))
+            if (recorder.bake_glyphs(atlas, buffer.data(), size))
             {
                 break;
             }
@@ -3634,11 +3652,11 @@ void instances(int id)
 // PUBLIC API IMPLEMENTATION - FONT ATLASING
 // -----------------------------------------------------------------------------
 
-void begin_atlas(int id, int flags, int size, const void* data)
+void begin_atlas(int id, int flags, float size, const void* data)
 {
     ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
     ASSERT(flags == (flags & (ATLAS_DEFAULT | ATLAS_MONOSPACED)));
-    ASSERT(size > 0 && size <= 4096);
+    ASSERT(size >= 5.0f && size <= 4096.0f);
     ASSERT(data);
 
     ASSERT(!mnm::t_ctx->atlas_recorder.is_recording());
@@ -3646,7 +3664,7 @@ void begin_atlas(int id, int flags, int size, const void* data)
     mnm::t_ctx->atlas_recorder.begin(
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
-        static_cast<uint16_t>(size),
+        size,
         data
     );
 }
@@ -3657,13 +3675,13 @@ void end_atlas()
 
     ASSERT(t_ctx->atlas_recorder.is_recording());
 
+    t_ctx->atlas_recorder.end();
+
     // TODO : Figure out error handling - crash or just ignore the submission?
     (void)g_ctx.atlas_cache.add_atlas(
         t_ctx->atlas_recorder,
         g_ctx. texture_cache
     );
-
-    t_ctx->atlas_recorder.end();
 }
 
 void glyph_range(int first, int last)
