@@ -493,7 +493,7 @@ enum
 
 /// One font/size per atlas. Texture size is calculated automatically to fit.
 ///
-void begin_atlas(int id, int flags, int size, const void* data);
+void begin_atlas(int id, int flags, float size, const void* data);
 
 /// ...
 ///
