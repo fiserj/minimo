@@ -258,6 +258,9 @@ enum
     VERTEX_COLOR             = 0x0010,
     VERTEX_NORMAL            = 0x0020,
     VERTEX_TEXCOORD          = 0x0040,
+
+    // Keeps the geometry on CPU (positions only).
+    KEEP_CPU_GEOMETRY        = 0x1000, // TODO : Add support.
 };
 
 /// Starts mesh geometry recording. Mesh type, primitive type and attributes
@@ -481,19 +484,30 @@ void instances(int id);
 
 
 // -----------------------------------------------------------------------------
-/// @section FONT ATLASING
+/// @section FONTS
+
+void create_font(int id, const void* data);
+
+void font(int id);
+
+void font_size(float size);
 
 /// ...
 ///
 enum
 {
-    ATLAS_DEFAULT    = 0x0000,
-    ATLAS_MONOSPACED = 0x0001,
+    ATLAS_DEFAULT      = 0x0000,
+    ATLAS_MONOSPACED   = 0x0001, // TODO : Add support.
+    ATLAS_ALLOW_UPDATE = 0x0002, // TODO : Add support.
 };
 
 /// One font/size per atlas. Texture size is calculated automatically to fit.
 ///
-void begin_atlas(int id, int flags, float size, const void* data);
+void begin_atlas(int id, int flags);
+
+/// ...
+///
+void begin_atlas_update(int id);
 
 /// ...
 ///
@@ -506,6 +520,10 @@ void glyph_range(int first, int last);
 /// ...
 ///
 void glyphs_from_string(const char* string);
+
+/// ...
+///
+void oversampling(int horizontal, int vertical);
 
 
 // -----------------------------------------------------------------------------
