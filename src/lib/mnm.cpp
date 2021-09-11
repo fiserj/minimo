@@ -147,6 +147,8 @@ constexpr uint32_t MAX_TASKS             = 64;
 
 constexpr uint32_t MAX_TEXTURES          = 1024;
 
+constexpr uint32_t MAX_TEXTURE_ATLASES   = 32;
+
 constexpr uint32_t MAX_UNIFORMS          = 256;
 
 
@@ -2188,6 +2190,55 @@ static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_
 // ATLAS RECORDING / BUILDING / CACHING
 // -----------------------------------------------------------------------------
 
+class Atlas_
+{
+public:
+    bool is_locked() const { return m_locked; }
+
+    bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
+
+    void add_glyph_range(uint32_t first, uint32_t last)
+    {
+        // ...
+    }
+
+    void add_glyphs_from_string(const char* string)
+    {
+        // ...
+    }
+
+    bool bake_bitmap()
+    {
+        // Workflow:
+        // 1) Identify new glyphs to bake.
+        // 2) Try to pack their bitmap rectangles.
+        //    a) If can't fit everything, increase the size and repack everything from scratch.
+        // 3) Bake the bitmaps.
+        // 4) Update the texture.
+        // NOTE : Repacking would invalidate texture coordinates of baked text meshes; need to think about that.
+
+        // ...
+
+        return true;
+    }
+
+    void update_texture()
+    {
+        // ...
+    }
+
+private:
+
+private:
+    HashMap<uint32_t, uint16_t> m_glyphs;
+    Vector<stbtt_packedchar>    m_packing; // TODO : Replace with own packed info.
+    Vector<uint32_t>            m_codepoint_requests;
+    uint16_t                    m_flags    = 0;
+    uint16_t                    m_size     = 0;
+    uint16_t                    m_texture  = UINT16_MAX;
+    bool                        m_locked   = false;
+};
+
 struct Atlas
 {
     HashMap<uint32_t, uint16_t> glyphs;
@@ -2311,7 +2362,7 @@ public:
 
         // TODO : This trial-and-error is a bit wasteful, and we should really
         //        just compute the exact size instead, but that'd mean ditching
-        //        all the functionality already provided in stbtt_Pack*.
+        //        all the functionality already provided in `stbtt_Pack*`.
         for (;; size *= 2)
         {
             buffer.resize(size * size);
