@@ -1,8 +1,10 @@
 #include <mnm/mnm.h>
 
-#define FONT_ID     1
+#define FONT_ID  1
 
-#define ATLAS_ID    1
+#define ATLAS_ID 1
+
+#define TEXT_ID  1
 
 static void setup(void)
 {
@@ -13,16 +15,13 @@ static void setup(void)
 
     create_font(FONT_ID, load_bytes("FiraCode-Regular.ttf", 0));
 
-    begin_atlas(ATLAS_ID, ATLAS_DEFAULT);
-    {
-        font(FONT_ID);
-        font_size(20.0f * dpi());
-
-        glyph_range(0x020, 0x07e);
-        glyph_range(0x0a1, 0x0ff);
-        glyph_range(0x100, 0x17f);
-    }
+    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2x, FONT_ID, 20.0f * dpi());
+    glyph_range(0x020, 0x07e);
     end_atlas();
+
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_H_ALIGN_CENTER);
+    text("Hello, World!");
+    end_text();
 }
 
 static void draw(void)
@@ -36,7 +35,8 @@ static void draw(void)
     ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
     projection();
 
-    // ...
+    identity();
+    mesh(TEXT_ID);
 }
 
 MNM_MAIN(0, setup, draw, 0);
