@@ -243,6 +243,9 @@ double toc(void);
 ///
 enum
 {
+    // Static, triangle-based, position-only (so not all that useful).
+    MESH_DEFAULT             = 0x0000,
+
     // Mesh type. Static by default.
     MESH_TRANSIENT           = 0x0001,
     MESH_DYNAMIC             = 0x0002,
@@ -484,34 +487,44 @@ void instances(int id);
 
 
 // -----------------------------------------------------------------------------
-/// @section FONTS
+/// @section FONT ATLASES
+///
+/// ...
 
+/// Creates font face from the given data blob.
+///
 void create_font(int id, const void* data);
 
-void font(int id);
-
-void font_size(float size);
-
-/// ...
+/// Text atlas flags.
 ///
 enum
 {
-    ATLAS_DEFAULT      = 0x0000,
-    ATLAS_MONOSPACED   = 0x0001, // TODO : Add support.
-    ATLAS_ALLOW_UPDATE = 0x0002, // TODO : Add support.
+    // Immutable, no oversampling.
+    ATLAS_DEFAULT         = 0x0000,
+
+    // Non-stored glyphs are attempted to be added when creating text mesh.
+    ATLAS_ALLOW_UPDATE    = 0x0001, // TODO : Add support.
+
+    // Internal optimization, all glyphs.
+    ATLAS_MONOSPACED      = 0x0002, // TODO : Add support.
+
+    // Stores distance to glyph outline rather than direct rasterization.
+    ATLAS_SDF             = 0x0004,
+
+    // Oversampling for better quality.
+    ATLAS_H_OVERSAMPLE_2x = 0x0008,
+    ATLAS_H_OVERSAMPLE_3x = 0x0010,
+    ATLAS_H_OVERSAMPLE_4x = 0x0018,
+    ATLAS_V_OVERSAMPLE_2x = 0x0020,
 };
 
 /// One font/size per atlas. Texture size is calculated automatically to fit.
 ///
-void begin_atlas(int id, int flags);
+void begin_atlas(int id, int flags, int font, float size);
 
 /// ...
 ///
-void begin_atlas_update(int id);
-
-/// ...
-///
-void end_atlas();
+void end_atlas(void);
 
 /// ...
 ///
@@ -521,9 +534,56 @@ void glyph_range(int first, int last);
 ///
 void glyphs_from_string(const char* string);
 
+
+// -----------------------------------------------------------------------------
+/// @section TEXT MESHES
+///
+/// ...
+
+// TODO : We'll probably need to add some helper like `pixel_ortho()`.
+
 /// ...
 ///
-void oversampling(int horizontal, int vertical);
+enum
+{
+    // Static, left-aligned horizontally, baseline-aligned vertically.
+    TEXT_DEFAULT            = 0x0000,
+
+    // Text mesh type.
+    TEXT_STATIC             = 0x0001,
+    TEXT_TRANSIENT          = 0x0002,
+    TEXT_DYNAMIC            = 0x0004,
+
+    // Horizontal alignment.
+    TEXT_H_ALIGN_LEFT       = 0x0008,
+    TEXT_H_ALIGN_CENTER     = 0x0010,
+    TEXT_H_ALIGN_RIGHT      = 0x0020,
+
+    // Vertical alignment.
+    TEXT_V_ALIGN_BASELINE   = 0x0040,
+    TEXT_V_ALIGN_MIDDLE     = 0x0080,
+    TEXT_V_ALIGN_CAP_HEIGHT = 0x0100,
+};
+
+/// ... `color` call is also valid within the begin / end pair.
+///
+void begin_text(int id, int atlas, int flags);
+
+/// ...
+///
+void end_text(void);
+
+/// ...
+///
+void alignment(int flags);
+
+/// ...
+///
+void line_height(float factor);
+
+/// ...
+///
+void text(const char* string);
 
 
 // -----------------------------------------------------------------------------
@@ -595,7 +655,7 @@ void viewport(int x, int y, int width, int height);
 
 /// Shortcut for `viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL)`.
 ///
-void full_viewport();
+void full_viewport(void);
 
 
 // -----------------------------------------------------------------------------
