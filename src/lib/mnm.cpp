@@ -1989,6 +1989,15 @@ public:
         texture.height = height;
     }
 
+    void destroy_texture(uint16_t id)
+    {
+        ASSERT(id < m_textures.size());
+
+        MutexScope lock(m_mutex);
+
+        m_textures[id].destroy();
+    }
+
     void schedule_read(uint16_t id, bgfx::ViewId pass, uint32_t frame, bgfx::Encoder* encoder, void* data)
     {
         MutexScope lock(m_mutex);
@@ -2190,6 +2199,21 @@ static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_
 // ATLAS RECORDING / BUILDING / CACHING
 // -----------------------------------------------------------------------------
 
+/*class RectPacker
+{
+public:
+
+private:
+    std::vector<>
+};*/
+
+struct GlyphRect
+{
+    float x0, y0, x1, y1; // Pixel (updatable) or texture (immutable) coordinates.
+    float xoff, yoff, xadvance;
+    float xoff2, yoff2;
+};
+
 class Atlas_
 {
 public:
@@ -2197,9 +2221,14 @@ public:
 
     bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
 
-    void reset(uint16_t flags)
+    void reset(uint16_t flags, TextureCache& textures)
     {
-        *this = {}; // TODO : Explicitly destroy the texture.
+        if (m_atlas_texture != UINT16_MAX)
+        {
+            textures.destroy_texture(m_atlas_texture);
+        }
+
+        *this = {};
 
         m_flags = flags;
     }
@@ -2253,24 +2282,79 @@ public:
 
     void update()
     {
-        if (!)
+        ASSERT(is_updatable() || !m_locked);
+
+        if (m_requests.empty() || m_locked)
         {
             return;
         }
 
-        // std::sort(m_requests.begin(), m_requests.end());
-        // m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
+        std::sort(m_requests.begin(), m_requests.end());
+        m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
 
-        pack_new_codepoints();
+        //pack_new_codepoints();
 
-        m_dirty = false;
+        if (!is_updatable())
+        {
+            m_locked = true;
+        }
     }
 
 private:
-    // Returns `true` if any new codepoint was added.
-    bool pack_new_codepoints()
+    inline uint8_t horizontal_oversampling() const
     {
-        
+        constexpr uint32_t H_OVERSAMPLE_MASK  = ATLAS_H_OVERSAMPLE_2X | ATLAS_H_OVERSAMPLE_3X | ATLAS_H_OVERSAMPLE_4X;
+        constexpr uint32_t H_OVERSAMPLE_SHIFT = 3;
+
+        const uint8_t value = static_cast<uint8_t>((H_OVERSAMPLE_MASK >> H_OVERSAMPLE_SHIFT) + 1);
+        ASSERT(value >= 1 && value <= 4);
+
+        return value;
+    }
+
+
+    inline uint8_t vertical_oversampling() const
+    {
+        constexpr uint32_t V_OVERSAMPLE_MASK  = ATLAS_V_OVERSAMPLE_2X;
+        constexpr uint32_t V_OVERSAMPLE_SHIFT = 6;
+
+        const uint8_t value = static_cast<uint8_t>((V_OVERSAMPLE_MASK >> V_OVERSAMPLE_SHIFT) + 1);
+        ASSERT(value >= 1 && value <= 2);
+
+        return value;
+    }
+
+    uint32_t get_new_codepoints_info()
+    {
+        const float scale        = stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
+        const float oversample_h = horizontal_oversampling();
+        const float oversample_v = horizontal_oversampling();
+        uint32_t    area         = 0;
+        int         x0, y0, x1, y1;
+
+
+
+        for (uint32_t codepoint : m_requests)
+        {
+            if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
+            {
+                stbtt_GetGlyphBitmapBoxSubpixel(
+                    &m_font_info,
+                    index,
+                    scale * oversample_h,
+                    scale * oversample_v,
+                    0.0f, 0.0f,
+                    &x0, &y0, &x1, &y1
+                );
+            }
+            else
+            {
+                // TODO : Reassign/mark empty glyph.
+                ASSERT(false);
+            }
+        }
+
+        return area + m_glyph_area;
     }
 
     bool bake_bitmap()
@@ -2294,15 +2378,18 @@ private:
     }
 
 private:
+    stbtt_fontinfo              m_font_info = {};
+    stbrp_context               m_pack_ctx  = {};
     HashMap<uint32_t, uint16_t> m_codepoints;
-    Vector<stbtt_packedchar>    m_packed_glyphs;        // TODO : Replace with own packed info.
+    Vector<GlyphRect>           m_packed_glyphs;
     Vector<stbrp_rect>          m_packed_rects;         // Only kept around if atlas is updatable.
     Vector<uint32_t>            m_requests;
     float                       m_cap_height    = 0.0f; // In pixels.
     float                       m_line_height   = 0.0f; // In pixels.
-    uint16_t                    m_flags         = 0;
-    uint16_t                    m_atlas_size    = 0;
+    uint32_t                    m_glyph_area    = 0;
+    uint16_t                    m_atlas_size[2] = { 0, 0 };
     uint16_t                    m_atlas_texture = UINT16_MAX;
+    uint16_t                    m_flags         = 0;
     bool                        m_locked        = false;
 };
 
