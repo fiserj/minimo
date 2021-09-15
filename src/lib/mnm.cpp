@@ -17,6 +17,8 @@
 #include <unordered_map>          // unordered_map
 #include <vector>                 // vector
 
+#include <bx/platform.h>          // BX_PLATFORM_*
+
 #if BX_PLATFORM_LINUX || BX_PLATFORM_OSX
 #   include <strings.h>           // strcasecmp
 #endif
@@ -4235,7 +4237,7 @@ void save_string(const char* file_name, const char* string)
     ASSERT(file_name);
     ASSERT(string);
 
-    save_bytes(file_name, string, strlen(string));
+    save_bytes(file_name, string, static_cast<int>(strlen(string)));
 }
 
 void unload(void* file_content)
