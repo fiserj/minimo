@@ -2197,14 +2197,80 @@ public:
 
     bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
 
+    void reset(uint16_t flags)
+    {
+        *this = {}; // TODO : Explicitly destroy the texture.
+
+        m_flags = flags;
+    }
+
     void add_glyph_range(uint32_t first, uint32_t last)
     {
-        // ...
+        if (!is_updatable() || is_locked())
+        {
+            ASSERT(false && "Atlas is not updatable.");
+            return;
+        }
+
+        ASSERT(last >= first);
+
+        size_t i = m_requests.size();
+        m_requests.resize(i + static_cast<size_t>(last - first + 1));
+
+        for (uint32_t codepoint = first; codepoint <= last; codepoint++, i++)
+        {
+            if (!m_codepoints.count(codepoint))
+            {
+                m_requests[i] = codepoint;
+            }
+        }
     }
 
     void add_glyphs_from_string(const char* string)
     {
-        // ...
+        if (!is_updatable() || is_locked())
+        {
+            ASSERT(false && "Atlas is not updatable.");
+            return;
+        }
+
+        uint32_t codepoint;
+        uint32_t state = 0;
+
+        for (; *string; string++)
+        {
+            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+            {
+                if (!m_codepoints.count(codepoint))
+                {
+                    m_requests.push_back(codepoint);
+                }
+            }
+        }
+
+        ASSERT(state == UTF8_ACCEPT);
+    }
+
+    void update()
+    {
+        if (!)
+        {
+            return;
+        }
+
+        // std::sort(m_requests.begin(), m_requests.end());
+        // m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
+
+        pack_new_codepoints();
+
+        m_dirty = false;
+    }
+
+private:
+    // Returns `true` if any new codepoint was added.
+    bool pack_new_codepoints()
+    {
+        
     }
 
     bool bake_bitmap()
@@ -2228,15 +2294,16 @@ public:
     }
 
 private:
-
-private:
-    HashMap<uint32_t, uint16_t> m_glyphs;
-    Vector<stbtt_packedchar>    m_packing; // TODO : Replace with own packed info.
-    Vector<uint32_t>            m_codepoint_requests;
-    uint16_t                    m_flags    = 0;
-    uint16_t                    m_size     = 0;
-    uint16_t                    m_texture  = UINT16_MAX;
-    bool                        m_locked   = false;
+    HashMap<uint32_t, uint16_t> m_codepoints;
+    Vector<stbtt_packedchar>    m_packed_glyphs;        // TODO : Replace with own packed info.
+    Vector<stbrp_rect>          m_packed_rects;         // Only kept around if atlas is updatable.
+    Vector<uint32_t>            m_requests;
+    float                       m_cap_height    = 0.0f; // In pixels.
+    float                       m_line_height   = 0.0f; // In pixels.
+    uint16_t                    m_flags         = 0;
+    uint16_t                    m_atlas_size    = 0;
+    uint16_t                    m_atlas_texture = UINT16_MAX;
+    bool                        m_locked        = false;
 };
 
 struct Atlas
@@ -3808,7 +3875,7 @@ void viewport(int x, int y, int width, int height)
     );
 }
 
-void full_viewport()
+void full_viewport(void)
 {
     viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
 }
