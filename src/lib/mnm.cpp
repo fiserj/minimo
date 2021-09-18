@@ -79,6 +79,8 @@ constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 enum
 {
+                   ATLAS_FREE            = 0x8000,
+
                    INSTANCING_SUPPORTED  = 0x0080, // Needs to make sure it's outside regular mesh flags.
 
                    MESH_STATIC           = 0x0000,
@@ -134,6 +136,8 @@ constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
 // -----------------------------------------------------------------------------
 // RESOURCE LIMITS
 // -----------------------------------------------------------------------------
+
+constexpr uint32_t MAX_FONTS             = 128;
 
 constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
 
@@ -2209,6 +2213,29 @@ private:
     std::vector<>
 };*/
 
+class FontDataRegistry
+{
+public:
+    FontDataRegistry()
+    {
+        m_data.fill(nullptr);
+    }
+
+    // TODO : Copy data?
+    inline void add(uint16_t id, const void* data)
+    {
+        m_data[id] = data;
+    }
+
+    inline const void* operator[](uint16_t id) const
+    {
+        return m_data[id];
+    }
+
+private:
+    Array<const void*, MAX_FONTS> m_data;
+};
+
 struct GlyphRect
 {
     float x0, y0, x1, y1; // Pixel (updatable) or texture (immutable) coordinates.
@@ -2216,14 +2243,16 @@ struct GlyphRect
     float xoff2, yoff2;
 };
 
-class Atlas_
+class Atlas
 {
 public:
+    bool is_free() const { return m_flags & ATLAS_FREE; }
+
     bool is_locked() const { return m_locked; }
 
     bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
 
-    void reset(uint16_t flags, TextureCache& textures)
+    void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
         if (m_atlas_texture != UINT16_MAX)
         {
@@ -2232,7 +2261,11 @@ public:
 
         *this = {};
 
-        m_flags = flags;
+        m_font_data     = font;
+        m_cap_height    = size;
+        m_line_height   = 1.25f;
+        m_atlas_texture = texture;
+        m_flags         = flags;
     }
 
     void add_glyph_range(uint32_t first, uint32_t last)
@@ -2282,7 +2315,7 @@ public:
         ASSERT(state == UTF8_ACCEPT);
     }
 
-    void update()
+    void update(TextureCache&)
     {
         ASSERT(is_updatable() || !m_locked);
 
@@ -2380,160 +2413,170 @@ private:
     }
 
 private:
-    stbtt_fontinfo              m_font_info = {};
-    stbrp_context               m_pack_ctx  = {};
+    stbtt_fontinfo              m_font_info     = {};
+    stbrp_context               m_pack_ctx      = {};
     HashMap<uint32_t, uint16_t> m_codepoints;
     Vector<GlyphRect>           m_packed_glyphs;
     Vector<stbrp_rect>          m_packed_rects;         // Only kept around if atlas is updatable.
     Vector<uint32_t>            m_requests;
+    const void*                 m_font_data     = nullptr;
     float                       m_cap_height    = 0.0f; // In pixels.
     float                       m_line_height   = 0.0f; // In pixels.
     uint32_t                    m_glyph_area    = 0;
     uint16_t                    m_atlas_size[2] = { 0, 0 };
     uint16_t                    m_atlas_texture = UINT16_MAX;
-    uint16_t                    m_flags         = 0;
+    uint16_t                    m_flags         = ATLAS_FREE;
     bool                        m_locked        = false;
 };
 
-struct Atlas
-{
-    HashMap<uint32_t, uint16_t> glyphs;
-    Vector<stbtt_packedchar>    packing;
-    uint16_t                    texture = UINT16_MAX;
-};
+// struct Atlas
+// {
+//     HashMap<uint32_t, uint16_t> glyphs;
+//     Vector<stbtt_packedchar>    packing;
+//     uint16_t                    texture = UINT16_MAX;
+// };
 
-class AtlasRecorder
-{
-public:
-    void begin(uint16_t id, uint16_t flags, float size, const void* data)
-    {
-        ASSERT(!is_recording());
+// class AtlasRecorder
+// {
+// public:
+//     void begin(uint16_t id, uint16_t flags, float size, const void* data)
+//     {
+//         ASSERT(!is_recording());
 
-        m_recording = true;
-        m_glyphs.clear();
+//         m_recording = true;
+//         m_glyphs.clear();
 
-        m_id    = id;
-        m_flags = flags;
-        m_size  = size;
-        m_data  = data;
-    }
+//         m_id    = id;
+//         m_flags = flags;
+//         m_size  = size;
+//         m_data  = data;
+//     }
 
-    void end()
-    {
-        ASSERT(is_recording());
+//     void end()
+//     {
+//         ASSERT(is_recording());
 
-        std::sort(m_glyphs.begin(), m_glyphs.end());
+//         std::sort(m_glyphs.begin(), m_glyphs.end());
 
-        m_glyphs.erase(std::unique(m_glyphs.begin(), m_glyphs.end()), m_glyphs.end());
+//         m_glyphs.erase(std::unique(m_glyphs.begin(), m_glyphs.end()), m_glyphs.end());
 
-        m_recording = false;
-    }
+//         m_recording = false;
+//     }
 
-    void add_glyph_range(int first, int last)
-    {
-        ASSERT(last >= first);
+//     void add_glyph_range(int first, int last)
+//     {
+//         ASSERT(last >= first);
 
-        size_t i = m_glyphs.size();
-        m_glyphs.resize(i + static_cast<size_t>(last - first + 1));
+//         size_t i = m_glyphs.size();
+//         m_glyphs.resize(i + static_cast<size_t>(last - first + 1));
 
-        for (int glyph = first; glyph <= last; glyph++, i++)
-        {
-            m_glyphs[i] = glyph;
-        }
-    }
+//         for (int glyph = first; glyph <= last; glyph++, i++)
+//         {
+//             m_glyphs[i] = glyph;
+//         }
+//     }
 
-    void add_glyphs_from_string(const char* string)
-    {
-        uint32_t codepoint;
-        uint32_t state = 0;
+//     void add_glyphs_from_string(const char* string)
+//     {
+//         uint32_t codepoint;
+//         uint32_t state = 0;
 
-        for (; *string; string++)
-        {
-            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
-            {
-                m_glyphs.push_back(static_cast<int>(codepoint));
-            }
-        }
+//         for (; *string; string++)
+//         {
+//             if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+//             {
+//                 m_glyphs.push_back(static_cast<int>(codepoint));
+//             }
+//         }
 
-        ASSERT(state == UTF8_ACCEPT);
-    }
+//         ASSERT(state == UTF8_ACCEPT);
+//     }
 
-    inline bool is_recording() const { return m_recording; }
+//     inline bool is_recording() const { return m_recording; }
 
-    inline float size() const { return m_size; }
+//     inline float size() const { return m_size; }
 
-    inline uint16_t id() const { return m_id; }
+//     inline uint16_t id() const { return m_id; }
 
-    inline uint16_t flags() const { return m_flags; }
+//     inline uint16_t flags() const { return m_flags; }
 
-    bool bake_glyphs(Atlas& atlas, uint8_t* buffer, uint16_t size) const
-    {
-        stbtt_pack_context ctx = {};
+//     bool bake_glyphs(Atlas& atlas, uint8_t* buffer, uint16_t size) const
+//     {
+//         stbtt_pack_context ctx = {};
 
-        stbtt_PackBegin(&ctx, buffer, size, size, 0, 1, nullptr);
-        stbtt_PackSetOversampling(&ctx, 2, 1);
+//         stbtt_PackBegin(&ctx, buffer, size, size, 0, 1, nullptr);
+//         stbtt_PackSetOversampling(&ctx, 2, 1);
 
-        atlas.packing.resize(m_glyphs.size());
+//         atlas.packing.resize(m_glyphs.size());
 
-        stbtt_pack_range range            = {};
-        range.font_size                   = STBTT_POINT_SIZE(m_size);
-        range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
-        range.num_chars                   = static_cast<int>(m_glyphs.size());
-        range.chardata_for_range          = atlas.packing.data();
+//         stbtt_pack_range range            = {};
+//         range.font_size                   = STBTT_POINT_SIZE(m_size);
+//         range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
+//         range.num_chars                   = static_cast<int>(m_glyphs.size());
+//         range.chardata_for_range          = atlas.packing.data();
 
-        const int success = stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
+//         const int success = stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
 
-        stbtt_PackEnd(&ctx);
+//         stbtt_PackEnd(&ctx);
 
-        if (success == 1)
-        {
-            for (size_t i = 0; i < m_glyphs.size(); i++)
-            {
-                atlas.glyphs.insert({ m_glyphs[i], static_cast<uint16_t>(i) });
-            }
-        }
+//         if (success == 1)
+//         {
+//             for (size_t i = 0; i < m_glyphs.size(); i++)
+//             {
+//                 atlas.glyphs.insert({ m_glyphs[i], static_cast<uint16_t>(i) });
+//             }
+//         }
 
-        return success == 1;
-    }
+//         return success == 1;
+//     }
 
-private:
-    Vector<int>  m_glyphs;
-    const void*  m_data      = nullptr;
-    float        m_size      = 0.0f;
-    uint16_t     m_id        = UINT16_MAX;
-    uint16_t     m_flags     = UINT16_MAX;
-    bool         m_recording = false;
-};
+// private:
+//     Vector<int>  m_glyphs;
+//     const void*  m_data      = nullptr;
+//     float        m_size      = 0.0f;
+//     uint16_t     m_id        = UINT16_MAX;
+//     uint16_t     m_flags     = UINT16_MAX;
+//     bool         m_recording = false;
+// };
 
 class AtlasCache
 {
 public:
-    bool add_atlas(const AtlasRecorder& recorder, TextureCache& textures)
+    AtlasCache()
     {
-        ASSERT(!recorder.is_recording());
+        m_indices.fill(UINT16_MAX);
+    }
 
-        Atlas           atlas;
-        Vector<uint8_t> buffer;
-        uint16_t        size = 128;
+    Atlas* operator[](uint16_t id)
+    {
+        ASSERT(id < m_indices.size());
 
-        // TODO : This trial-and-error is a bit wasteful, and we should really
-        //        just compute the exact size instead, but that'd mean ditching
-        //        all the functionality already provided in `stbtt_Pack*`.
-        for (;; size *= 2)
+        if (m_indices[id] != UINT16_MAX)
         {
-            buffer.resize(size * size);
+            return &m_atlases[m_indices[id]];
+        }
 
-            if (recorder.bake_glyphs(atlas, buffer.data(), size))
+        MutexScope lock(m_mutex);
+
+        for (size_t i = 0; i < m_atlases.size(); i++)
+        {
+            if (m_atlases[i].is_free())
             {
-                break;
+                m_indices[id] = static_cast<uint16_t>(i);
+
+                return &m_atlases[i];
             }
         }
 
-        return true;
+        ASSERT(false && "No more free atlas slots.");
+
+        return nullptr;
     }
 
 private:
-    Mutex m_mutex;
+    Mutex                             m_mutex;
+    Array<Atlas, MAX_TEXTURE_ATLASES> m_atlases;
+    Array<uint16_t, MAX_TEXTURES>     m_indices;
 };
 
 
@@ -3109,6 +3152,7 @@ struct GlobalContext
     DefaultUniforms     default_uniforms;
     UniformCache        uniform_cache;
     MemoryCache         memory_cache;
+    FontDataRegistry    font_data_registry;
 
     Window              window;
 
@@ -3124,7 +3168,6 @@ struct GlobalContext
 
 struct LocalContext
 {
-    AtlasRecorder       atlas_recorder;
     MeshRecorder        mesh_recorder;
     InstanceRecorder    instance_recorder;
 
@@ -3138,6 +3181,8 @@ struct LocalContext
     Timer               frame_time;
 
     bgfx::Encoder*      encoder             = nullptr;
+
+    Atlas*              active_atlas        = nullptr;
 
     bgfx::ViewId        active_pass         = 0;
 
@@ -3859,20 +3904,30 @@ void instances(int id)
 // PUBLIC API IMPLEMENTATION - FONT ATLASING
 // -----------------------------------------------------------------------------
 
-void begin_atlas(int id, int flags, float size, const void* data)
+void create_font(int id, const void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
-    ASSERT(flags == (flags & (ATLAS_DEFAULT | ATLAS_MONOSPACED)));
-    ASSERT(size >= 5.0f && size <= 4096.0f);
+    ASSERT(id > 0 && id < mnm::MAX_FONTS);
     ASSERT(data);
 
-    ASSERT(!mnm::t_ctx->atlas_recorder.is_recording());
+    mnm::g_ctx.font_data_registry.add(static_cast<uint16_t>(id), data);
+}
 
-    mnm::t_ctx->atlas_recorder.begin(
+void begin_atlas(int id, int flags, int font, float size)
+{
+    using namespace mnm;
+
+    // TODO : Check `flags`.
+    ASSERT(id > 0 && id < MAX_TEXTURES);
+    ASSERT(font > 0 && font < MAX_FONTS);
+    ASSERT(size >= 5.0f && size <= 4096.0f);
+
+    t_ctx->active_atlas = g_ctx.atlas_cache[static_cast<uint16_t>(id)];
+    t_ctx->active_atlas->reset(
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
+        g_ctx.font_data_registry[font],
         size,
-        data
+        g_ctx.texture_cache
     );
 }
 
@@ -3880,15 +3935,10 @@ void end_atlas()
 {
     using namespace mnm;
 
-    ASSERT(t_ctx->atlas_recorder.is_recording());
+    ASSERT(t_ctx->active_atlas);
 
-    t_ctx->atlas_recorder.end();
-
-    // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.atlas_cache.add_atlas(
-        t_ctx->atlas_recorder,
-        g_ctx. texture_cache
-    );
+    t_ctx->active_atlas->update(g_ctx.texture_cache);
+    t_ctx->active_atlas = nullptr;
 }
 
 void glyph_range(int first, int last)
@@ -3896,15 +3946,17 @@ void glyph_range(int first, int last)
     ASSERT(first >= 0);
     ASSERT(first <= last);
     ASSERT(last  <= UINT16_MAX);
+    ASSERT(mnm::t_ctx->active_atlas);
 
-    mnm::t_ctx->atlas_recorder.add_glyph_range(first, last);
+    mnm::t_ctx->active_atlas->add_glyph_range(static_cast<uint32_t>(first), static_cast<uint32_t>(last));
 }
 
 void glyphs_from_string(const char* string)
 {
     ASSERT(string);
+    ASSERT(mnm::t_ctx->active_atlas);
 
-    mnm::t_ctx->atlas_recorder.add_glyphs_from_string(string);
+    mnm::t_ctx->active_atlas->add_glyphs_from_string(string);
 }
 
 
