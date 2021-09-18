@@ -2205,14 +2205,6 @@ static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_
 // ATLAS RECORDING / BUILDING / CACHING
 // -----------------------------------------------------------------------------
 
-/*class RectPacker
-{
-public:
-
-private:
-    std::vector<>
-};*/
-
 class FontDataRegistry
 {
 public:
@@ -2243,6 +2235,101 @@ struct GlyphRect
     float xoff2, yoff2;
 };
 
+class RectPacker
+{
+public:
+    void clear()
+    {
+        *this = {};
+    }
+
+    inline void reserve_extra(size_t n)
+    {
+        m_rects.reserve(m_rects.size() + n);
+    }
+
+    inline void add(int id, int width, int height)
+    {
+        m_rects.push_back({ id, width, height, 0, 0, 0 });
+
+        m_area += static_cast<uint32_t>(width * height);
+    }
+
+    bool pack(bool allow_resizing)
+    {
+        if (m_context.width == 0 && m_context.height == 0)
+        {
+            allow_resizing = true;
+        }
+
+        if (allow_resizing)
+        {
+            pick_optimal_size();
+        }
+
+        int res = stbrp_pack_rects(&m_context, m_rects.data(), static_cast<int>(m_rects.size()));
+        return res == 1;
+    }
+
+    uint32_t width() const
+    {
+        return static_cast<uint32_t>(m_context.width);
+    }
+
+    uint32_t height() const
+    {
+        return static_cast<uint32_t>(m_context.height);
+    }
+
+    // inline const Vector<stbrp_rect>& rects() const
+    // {
+    //     return m_rects;
+    // }
+
+private:
+    void pick_optimal_size(float extra_area = 0.05f)
+    {
+        const uint32_t min_area = static_cast<uint32_t>(static_cast<float>(m_area) * (1.0f + extra_area));
+        uint32_t       size[]   = { 64, 64 };
+
+        for (int i = 0; i < 6; i++)
+        for (int j = 0; j < 2; j++)
+        {
+            const uint32_t area = size[0] * size[1];
+
+            if (area >= min_area)
+            {
+                resize(size[0], size[1]);
+                return;
+            }
+
+            size[j] *= 2;
+        }
+
+        // Rectangle still too small, but we don't want to go beyond 4096 x 4096.
+        resize(size[0], size[1]);
+    }
+
+    void resize(uint32_t width, uint32_t height)
+    {
+        m_nodes.resize(width);
+
+        stbrp_init_target(
+            &m_context,
+            static_cast<int>(width),
+            static_cast<int>(height),
+            m_nodes.data(),
+            static_cast<int>(m_nodes.size())
+        );
+    }
+
+private:
+    stbrp_context      m_context = {};
+    Vector<stbrp_rect> m_rects;
+    Vector<stbrp_node> m_nodes;
+    uint32_t           m_area = 0;
+};
+
 class Atlas
 {
 public:
@@ -2261,16 +2348,18 @@ public:
 
         *this = {};
 
-        m_font_data     = font;
         m_cap_height    = size;
         m_line_height   = 1.25f;
         m_atlas_texture = texture;
         m_flags         = flags;
+
+        // TODO : Check return value.
+        (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
     }
 
     void add_glyph_range(uint32_t first, uint32_t last)
     {
-        if (!is_updatable() || is_locked())
+        if (!is_updatable() && is_locked())
         {
             ASSERT(false && "Atlas is not updatable.");
             return;
@@ -2292,7 +2381,7 @@ public:
 
     void add_glyphs_from_string(const char* string)
     {
-        if (!is_updatable() || is_locked())
+        if (!is_updatable() && is_locked())
         {
             ASSERT(false && "Atlas is not updatable.");
             return;
@@ -2317,9 +2406,9 @@ public:
 
     void update(TextureCache&)
     {
-        ASSERT(is_updatable() || !m_locked);
+        ASSERT(is_updatable() || !is_locked());
 
-        if (m_requests.empty() || m_locked)
+        if (m_requests.empty() || is_locked())
         {
             return;
         }
@@ -2327,7 +2416,16 @@ public:
         std::sort(m_requests.begin(), m_requests.end());
         m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
 
-        //pack_new_codepoints();
+        gather_new_codepoint_rects();
+
+        m_rect_packer.pack(is_updatable() || !is_locked());
+
+        // if (m_rect_packer.area() > m_atlas_size[0] * m_atlas_size[1] * 1.1)
+        // {
+            
+        // }
+
+        // stbrp_pack_rects();
 
         if (!is_updatable())
         {
@@ -2336,50 +2434,72 @@ public:
     }
 
 private:
+    int16_t cap_height() const
+    {
+        if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
+        {
+            if (ttUSHORT(m_font_info.data + table) >= 2) // Version.
+            {
+                return ttSHORT(m_font_info.data + table + 88);
+            }
+        }
+
+        // TODO : Estimate cap height from capital `H` bounding box?
+        ASSERT(false && "Can't determine cap height.");
+
+        return 0;
+    }
+
     inline uint8_t horizontal_oversampling() const
     {
         constexpr uint32_t H_OVERSAMPLE_MASK  = ATLAS_H_OVERSAMPLE_2X | ATLAS_H_OVERSAMPLE_3X | ATLAS_H_OVERSAMPLE_4X;
         constexpr uint32_t H_OVERSAMPLE_SHIFT = 3;
 
-        const uint8_t value = static_cast<uint8_t>((H_OVERSAMPLE_MASK >> H_OVERSAMPLE_SHIFT) + 1);
+        const uint8_t value = static_cast<uint8_t>(((m_flags & H_OVERSAMPLE_MASK) >> H_OVERSAMPLE_SHIFT) + 1);
         ASSERT(value >= 1 && value <= 4);
 
         return value;
     }
-
 
     inline uint8_t vertical_oversampling() const
     {
         constexpr uint32_t V_OVERSAMPLE_MASK  = ATLAS_V_OVERSAMPLE_2X;
         constexpr uint32_t V_OVERSAMPLE_SHIFT = 6;
 
-        const uint8_t value = static_cast<uint8_t>((V_OVERSAMPLE_MASK >> V_OVERSAMPLE_SHIFT) + 1);
+        const uint8_t value = static_cast<uint8_t>(((m_flags & V_OVERSAMPLE_MASK) >> V_OVERSAMPLE_SHIFT) + 1);
         ASSERT(value >= 1 && value <= 2);
 
         return value;
     }
 
-    uint32_t get_new_codepoints_info()
+    void gather_new_codepoint_rects()
     {
-        const float scale        = stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
-        const float oversample_h = horizontal_oversampling();
-        const float oversample_v = horizontal_oversampling();
-        uint32_t    area         = 0;
-        int         x0, y0, x1, y1;
+        const int     oversample_h = horizontal_oversampling();
+        const int     oversample_v = vertical_oversampling  ();
+        const float   scale        = m_cap_height / cap_height(); // stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
+        const float   scale_x      = scale * static_cast<float>(oversample_h);
+        const float   scale_y      = scale * static_cast<float>(oversample_v);
+        constexpr int padding      = 1;
 
-
+        m_rect_packer.reserve_extra(m_requests.size());
 
         for (uint32_t codepoint : m_requests)
         {
             if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
             {
+                int x0, y0, x1, y1;
                 stbtt_GetGlyphBitmapBoxSubpixel(
                     &m_font_info,
                     index,
-                    scale * oversample_h,
-                    scale * oversample_v,
+                    scale_x, scale_y,
                     0.0f, 0.0f,
                     &x0, &y0, &x1, &y1
+                );
+
+                m_rect_packer.add(
+                    static_cast<int>(codepoint),
+                    x1 - x0 + padding + oversample_h - 1,
+                    y1 - y0 + padding + oversample_v - 1
                 );
             }
             else
@@ -2388,8 +2508,6 @@ private:
                 ASSERT(false);
             }
         }
-
-        return area + m_glyph_area;
     }
 
     bool bake_bitmap()
@@ -2414,15 +2532,13 @@ private:
 
 private:
     stbtt_fontinfo              m_font_info     = {};
-    stbrp_context               m_pack_ctx      = {};
     HashMap<uint32_t, uint16_t> m_codepoints;
-    Vector<GlyphRect>           m_packed_glyphs;
-    Vector<stbrp_rect>          m_packed_rects;         // Only kept around if atlas is updatable.
+
+    RectPacker                  m_rect_packer;
+    Vector<uint8_t>             m_atlas_bitmap;
     Vector<uint32_t>            m_requests;
-    const void*                 m_font_data     = nullptr;
     float                       m_cap_height    = 0.0f; // In pixels.
     float                       m_line_height   = 0.0f; // In pixels.
-    uint32_t                    m_glyph_area    = 0;
     uint16_t                    m_atlas_size[2] = { 0, 0 };
     uint16_t                    m_atlas_texture = UINT16_MAX;
     uint16_t                    m_flags         = ATLAS_FREE;
@@ -3931,7 +4047,7 @@ void begin_atlas(int id, int flags, int font, float size)
     );
 }
 
-void end_atlas()
+void end_atlas(void)
 {
     using namespace mnm;
 
