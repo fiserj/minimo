@@ -2255,6 +2255,7 @@ public:
         m_area += static_cast<uint32_t>(width * height);
     }
 
+    // This should probably return number of packed (or non-packed) rectangles.
     bool pack(bool allow_resizing)
     {
         if (m_context.width == 0 && m_context.height == 0)
@@ -2264,30 +2265,37 @@ public:
 
         if (allow_resizing)
         {
-            pick_optimal_size();
+            auto_resize();
         }
 
+        // TODO : Repeat (one more time only?) with larger size. This should
+        //        probably only happen if the rectangles are very oddly shaped.
         int res = stbrp_pack_rects(&m_context, m_rects.data(), static_cast<int>(m_rects.size()));
         return res == 1;
     }
 
     uint32_t width() const
     {
-        return static_cast<uint32_t>(m_context.width);
+        return static_cast<uint32_t>(m_context.width + 1);
     }
 
     uint32_t height() const
     {
-        return static_cast<uint32_t>(m_context.height);
+        return static_cast<uint32_t>(m_context.height + 1);
     }
 
-    // inline const Vector<stbrp_rect>& rects() const
-    // {
-    //     return m_rects;
-    // }
+    inline Vector<stbrp_rect>& rects()
+    {
+        return m_rects;
+    }
+
+    inline const Vector<stbrp_rect>& rects() const
+    {
+        return m_rects;
+    }
 
 private:
-    void pick_optimal_size(float extra_area = 0.05f)
+    void auto_resize(float extra_area = 0.05f)
     {
         const uint32_t min_area = static_cast<uint32_t>(static_cast<float>(m_area) * (1.0f + extra_area));
         uint32_t       size[]   = { 64, 64 };
@@ -2295,12 +2303,15 @@ private:
         for (int i = 0; i < 6; i++)
         for (int j = 0; j < 2; j++)
         {
-            const uint32_t area = size[0] * size[1];
-
-            if (area >= min_area)
+            if (size[0] - 1 > width() || size[1] - 1 > height())
             {
-                resize(size[0], size[1]);
-                return;
+                const uint32_t area = (size[0] - 1) * (size[1] - 1);
+
+                if (area >= min_area)
+                {
+                    resize(size[0], size[1]);
+                    return;
+                }
             }
 
             size[j] *= 2;
@@ -2312,12 +2323,12 @@ private:
 
     void resize(uint32_t width, uint32_t height)
     {
-        m_nodes.resize(width);
+        m_nodes.resize(width - 1);
 
         stbrp_init_target(
             &m_context,
-            static_cast<int>(width),
-            static_cast<int>(height),
+            static_cast<int>(width - 1),
+            static_cast<int>(height - 1),
             m_nodes.data(),
             static_cast<int>(m_nodes.size())
         );
@@ -2418,14 +2429,11 @@ public:
 
         gather_new_codepoint_rects();
 
+        m_requests.clear();
+
         m_rect_packer.pack(is_updatable() || !is_locked());
 
-        // if (m_rect_packer.area() > m_atlas_size[0] * m_atlas_size[1] * 1.1)
-        // {
-            
-        // }
-
-        // stbrp_pack_rects();
+        bake_codepoints();
 
         if (!is_updatable())
         {
@@ -2434,6 +2442,108 @@ public:
     }
 
 private:
+    struct Bitmap
+    {
+        Vector<uint8_t> data;
+        uint16_t        width  = 0;
+        uint16_t        height = 0;
+
+        void resize(uint16_t new_width, uint16_t new_height)
+        {
+            ASSERT(new_width  >= width );
+            ASSERT(new_height >= height);
+
+            if (new_width  != width ||
+                new_height != height)
+            {
+                Vector<uint8_t> new_data(new_width * new_height, 0);
+
+                for (uint16_t y = 0; y < height; y++)
+                {
+                    (void)memcpy(
+                        new_data.data() + y * new_width,
+                        data    .data() + y *     width,
+                        width
+                    );
+                }
+
+                width  = new_width;
+                height = new_height;
+                data.swap(new_data);
+            }
+        }
+    };
+
+    void bake_codepoints()
+    {
+        // TODO : We have to only bake the newly added glyphs, not everything!
+
+        m_bitmap.resize(m_rect_packer.width(), m_rect_packer.height());
+
+        stbtt_pack_context ctx = {};
+        ctx.padding         = 1;
+        ctx.h_oversample    = horizontal_oversampling();
+        ctx.v_oversample    = vertical_oversampling();
+        ctx.width           = m_bitmap.width;
+        ctx.height          = m_bitmap.height;
+        ctx.pixels          = m_bitmap.data.data();
+        ctx.stride_in_bytes = m_bitmap.width;
+        ctx.skip_missing    = 0;
+
+        Vector<stbtt_packedchar> packed_chars(m_rect_packer.rects().size(), stbtt_packedchar {});
+
+        Vector<int> codepoints;
+        for (const auto& rect : m_rect_packer.rects())
+        {
+            codepoints.push_back(rect.id);
+        }
+
+        const float testScale1 = m_cap_height / cap_height();
+
+        int ascent, descent;
+        stbtt_GetFontVMetrics(&m_font_info, &ascent, &descent, nullptr);
+        const float testHeight = (ascent - descent) * testScale1;
+
+        const float testScale2 = stbtt_ScaleForPixelHeight(&m_font_info, testHeight);
+
+        stbtt_pack_range range = {};
+        range.font_size = testHeight;
+        range.num_chars = codepoints.size();
+        range.array_of_unicode_codepoints = codepoints.data();
+        range.chardata_for_range = packed_chars.data();
+        range.h_oversample = horizontal_oversampling();
+        range.v_oversample = vertical_oversampling();
+
+        stbtt_PackFontRangesRenderIntoRects(&ctx, &m_font_info, &range, 1, m_rect_packer.rects().data());
+
+        stbi_write_png("TEST.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+
+        // for (const stbrp_rect& rect : m_rect_packer.rects())
+        // {
+        //     if (int index = stbtt_FindGlyphIndex(&m_font_info, rect.id))
+        //     {
+        //         // int x0, y0, x1, y1;
+        //         // stbtt_GetGlyphBitmapBoxSubpixel(
+        //         //     &m_font_info,
+        //         //     index,
+        //         //     scale_x, scale_y,
+        //         //     0.0f, 0.0f,
+        //         //     &x0, &y0, &x1, &y1
+        //         // );
+
+        //         // m_rect_packer.add(
+        //         //     static_cast<int>(codepoint),
+        //         //     x1 - x0 + padding + oversample_h - 1,
+        //         //     y1 - y0 + padding + oversample_v - 1
+        //         // );
+        //     }
+        //     else
+        //     {
+        //         ASSERT(false && "This shoud never happen.")
+        //     }
+        // }
+    }
+
     int16_t cap_height() const
     {
         if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
@@ -2488,11 +2598,10 @@ private:
             if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
             {
                 int x0, y0, x1, y1;
-                stbtt_GetGlyphBitmapBoxSubpixel(
+                stbtt_GetGlyphBitmapBox(
                     &m_font_info,
                     index,
                     scale_x, scale_y,
-                    0.0f, 0.0f,
                     &x0, &y0, &x1, &y1
                 );
 
@@ -2535,11 +2644,12 @@ private:
     HashMap<uint32_t, uint16_t> m_codepoints;
 
     RectPacker                  m_rect_packer;
-    Vector<uint8_t>             m_atlas_bitmap;
+    // Vector<uint8_t>             m_atlas_bitmap;
+    Bitmap                      m_bitmap;
     Vector<uint32_t>            m_requests;
     float                       m_cap_height    = 0.0f; // In pixels.
     float                       m_line_height   = 0.0f; // In pixels.
-    uint16_t                    m_atlas_size[2] = { 0, 0 };
+    // uint16_t                    m_atlas_size[2] = { 0, 0 };
     uint16_t                    m_atlas_texture = UINT16_MAX;
     uint16_t                    m_flags         = ATLAS_FREE;
     bool                        m_locked        = false;
