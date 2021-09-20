@@ -2427,9 +2427,19 @@ public:
         m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
 
         // !!! TEST
-        gather_rects();
+        ASSERT(m_pack_rects.size() == m_char_quads.size());
 
-        pack_rects();
+        const size_t count  = m_requests  .size();
+        const size_t offset = m_pack_rects.size();
+
+        m_pack_rects.resize(offset + count, stbrp_rect       {});
+        m_char_quads.resize(offset + count, stbtt_packedchar {});
+
+        gather_rects(offset);
+
+        pack_rects(offset, count);
+
+        render_rects(offset);
 
         m_requests.clear();
         // !!! TEST
@@ -2449,6 +2459,7 @@ public:
     }
 
 private:
+#if 0
     struct Bitmap
     {
         Vector<uint8_t> data;
@@ -2481,7 +2492,6 @@ private:
         }
     };
 
-    #if 0
     void bake_codepoints()
     {
         // TODO : We have to only bake the newly added glyphs, not everything!
@@ -2551,7 +2561,7 @@ private:
         //     }
         // }
     }
-    #endif // 0
+#endif // 0
 
     int16_t cap_height() const
     {
@@ -2636,16 +2646,8 @@ private:
     //     }
     // }
 
-    void gather_rects()
+    void gather_rects(size_t offset)
     {
-        ASSERT(m_pack_rects.size() == m_char_quads.size());
-
-        const size_t count  = m_requests  .size();
-        const size_t offset = m_pack_rects.size();
-
-        m_pack_rects.resize(offset + count, stbrp_rect       {});
-        m_char_quads.resize(offset + count, stbtt_packedchar {});
-
         stbtt_pack_context ctx            = {};
         ctx.padding                       = m_padding;
         ctx.h_oversample                  = horizontal_oversampling();
@@ -2670,7 +2672,7 @@ private:
         );
     }
 
-    void pack_rects()
+    void pack_rects(size_t offset, size_t count)
     {
         const uint32_t max_size = bgfx::getCaps()->limits.maxTextureSize;
         uint16_t       size[]   = { 64, 64 };
@@ -2681,6 +2683,8 @@ private:
         {
             min_area += static_cast<uint32_t>(rect.w * rect.h);
         }
+
+        min_area = static_cast<uint32_t>(min_area * 1.05);
 
         for (int j = 0;; j = (j + 1) % 2)
         {
@@ -2703,13 +2707,15 @@ private:
             size[j] *= 2;
         }
 
+        size[0] *= 2;
+
         if (size[0] != m_bitmap_width ||
             size[1] != m_bitmap_height)
         {
             Vector<uint8_t> data(size[0] * size[1], 0);
 
             // TODO : Reuse `bimg::imageCopy`?
-            for (uint16_t y = 0; y < size[1]; y++)
+            for (uint16_t y = 0; y < m_bitmap_height; y++)
             {
                 (void)memcpy(
                     data         .data() + y * size[0],
@@ -2722,14 +2728,56 @@ private:
             m_bitmap_height = size[1];
             m_bitmap_data.swap(data);
 
+            m_pack_nodes.resize(m_bitmap_width - m_padding);
+
             stbrp_init_target(
                 &m_pack_ctx,
-                m_bitmap_width,
-                m_bitmap_height,
+                m_bitmap_width - m_padding,
+                m_bitmap_height - m_padding,
                 m_pack_nodes.data(),
                 static_cast<int>(m_pack_nodes.size())
             );
         }
+
+        const int res = stbrp_pack_rects(
+            &m_pack_ctx,
+            m_pack_rects.data() + offset,
+            static_cast<int>(count)
+        );
+        int abc = 123;
+    }
+
+    void render_rects(size_t offset)
+    {
+        stbtt_pack_context ctx            = {};
+        ctx.padding                       = m_padding;
+        ctx.h_oversample                  = horizontal_oversampling();
+        ctx.v_oversample                  = vertical_oversampling  ();
+        ctx.skip_missing                  = 0;
+        ctx.width                         = m_bitmap_width;
+        ctx.height                        = m_bitmap_height;
+        ctx.stride_in_bytes               = m_bitmap_width;
+        ctx.pixels                        = m_bitmap_data.data();
+
+        stbtt_pack_range range            = {};
+        range.font_size                   = font_scale();
+        range.h_oversample                = horizontal_oversampling();
+        range.v_oversample                = vertical_oversampling  ();
+        range.chardata_for_range          = m_char_quads.data() + offset;
+        range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
+        range.num_chars                   = static_cast<int>(m_requests.size());
+
+        stbi_write_png("TEST2a.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+
+        const int res = stbtt_PackFontRangesRenderIntoRects(
+            &ctx,
+            &m_font_info,
+            &range,
+            1,
+            m_pack_rects.data() + offset
+        );
+
+        stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
     }
 
 private:
