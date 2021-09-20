@@ -2352,17 +2352,16 @@ public:
 
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
-        if (m_atlas_texture != UINT16_MAX)
+        if (m_texture != UINT16_MAX)
         {
-            textures.destroy_texture(m_atlas_texture);
+            textures.destroy_texture(m_texture);
         }
 
         *this = {};
 
-        m_cap_height    = size;
-        m_line_height   = 1.25f;
-        m_atlas_texture = texture;
-        m_flags         = flags;
+        m_font_size = size;
+        m_texture   = texture;
+        m_flags     = flags;
 
         // TODO : Check return value.
         (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
@@ -2427,13 +2426,21 @@ public:
         std::sort(m_requests.begin(), m_requests.end());
         m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
 
-        gather_new_codepoint_rects();
+        // !!! TEST
+        gather_rects();
+
+        pack_rects();
 
         m_requests.clear();
+        // !!! TEST
 
-        m_rect_packer.pack(is_updatable() || !is_locked());
+        // gather_new_codepoint_rects();
 
-        bake_codepoints();
+        // m_requests.clear();
+
+        // m_rect_packer.pack(is_updatable() || !is_locked());
+
+        // bake_codepoints();
 
         if (!is_updatable())
         {
@@ -2474,6 +2481,7 @@ private:
         }
     };
 
+    #if 0
     void bake_codepoints()
     {
         // TODO : We have to only bake the newly added glyphs, not everything!
@@ -2543,6 +2551,7 @@ private:
         //     }
         // }
     }
+    #endif // 0
 
     int16_t cap_height() const
     {
@@ -2558,6 +2567,14 @@ private:
         ASSERT(false && "Can't determine cap height.");
 
         return 0;
+    }
+
+    inline float font_scale() const
+    {
+        int ascent, descent;
+        stbtt_GetFontVMetrics(&m_font_info, &ascent, &descent, nullptr);
+
+        return (ascent - descent) * m_font_size / cap_height();
     }
 
     inline uint8_t horizontal_oversampling() const
@@ -2582,77 +2599,176 @@ private:
         return value;
     }
 
-    void gather_new_codepoint_rects()
+    // void gather_new_codepoint_rects()
+    // {
+    //     const int     oversample_h = horizontal_oversampling();
+    //     const int     oversample_v = vertical_oversampling  ();
+    //     const float   scale        = m_cap_height / cap_height(); // stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
+    //     const float   scale_x      = scale * static_cast<float>(oversample_h);
+    //     const float   scale_y      = scale * static_cast<float>(oversample_v);
+    //     constexpr int padding      = 1;
+
+    //     m_rect_packer.reserve_extra(m_requests.size());
+
+    //     for (uint32_t codepoint : m_requests)
+    //     {
+    //         if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
+    //         {
+    //             int x0, y0, x1, y1;
+    //             stbtt_GetGlyphBitmapBox(
+    //                 &m_font_info,
+    //                 index,
+    //                 scale_x, scale_y,
+    //                 &x0, &y0, &x1, &y1
+    //             );
+
+    //             m_rect_packer.add(
+    //                 static_cast<int>(codepoint),
+    //                 x1 - x0 + padding + oversample_h - 1,
+    //                 y1 - y0 + padding + oversample_v - 1
+    //             );
+    //         }
+    //         else
+    //         {
+    //             // TODO : Reassign/mark empty glyph.
+    //             ASSERT(false);
+    //         }
+    //     }
+    // }
+
+    void gather_rects()
     {
-        const int     oversample_h = horizontal_oversampling();
-        const int     oversample_v = vertical_oversampling  ();
-        const float   scale        = m_cap_height / cap_height(); // stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
-        const float   scale_x      = scale * static_cast<float>(oversample_h);
-        const float   scale_y      = scale * static_cast<float>(oversample_v);
-        constexpr int padding      = 1;
+        ASSERT(m_pack_rects.size() == m_char_quads.size());
 
-        m_rect_packer.reserve_extra(m_requests.size());
+        const size_t count  = m_requests  .size();
+        const size_t offset = m_pack_rects.size();
 
-        for (uint32_t codepoint : m_requests)
+        m_pack_rects.resize(offset + count, stbrp_rect       {});
+        m_char_quads.resize(offset + count, stbtt_packedchar {});
+
+        stbtt_pack_context ctx            = {};
+        ctx.padding                       = m_padding;
+        ctx.h_oversample                  = horizontal_oversampling();
+        ctx.v_oversample                  = vertical_oversampling  ();
+        ctx.skip_missing                  = 0;
+
+        stbtt_pack_range range            = {};
+        range.font_size                   = font_scale();
+        range.h_oversample                = horizontal_oversampling();
+        range.v_oversample                = vertical_oversampling  ();
+        range.chardata_for_range          = m_char_quads.data() + offset;
+        range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
+        range.num_chars                   = static_cast<int>(m_requests.size());
+
+        // TODO : Utilize return value.
+        (void)stbtt_PackFontRangesGatherRects(
+            &ctx,
+            &m_font_info,
+            &range,
+            1,
+            m_pack_rects.data() + offset
+        );
+    }
+
+    void pack_rects()
+    {
+        const uint32_t max_size = bgfx::getCaps()->limits.maxTextureSize;
+        uint16_t       size[]   = { 64, 64 };
+        uint32_t       min_area = 0;
+
+        // TODO : This could be done only on the new requests' rects.
+        for (const stbrp_rect& rect : m_pack_rects)
         {
-            if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
-            {
-                int x0, y0, x1, y1;
-                stbtt_GetGlyphBitmapBox(
-                    &m_font_info,
-                    index,
-                    scale_x, scale_y,
-                    &x0, &y0, &x1, &y1
-                );
-
-                m_rect_packer.add(
-                    static_cast<int>(codepoint),
-                    x1 - x0 + padding + oversample_h - 1,
-                    y1 - y0 + padding + oversample_v - 1
-                );
-            }
-            else
-            {
-                // TODO : Reassign/mark empty glyph.
-                ASSERT(false);
-            }
+            min_area += static_cast<uint32_t>(rect.w * rect.h);
         }
-    }
 
-    bool bake_bitmap()
-    {
-        // Workflow:
-        // 1) Identify new glyphs to bake.
-        // 2) Try to pack their bitmap rectangles.
-        //    a) If can't fit everything, increase the size and repack everything from scratch.
-        // 3) Bake the bitmaps.
-        // 4) Update the texture.
-        // NOTE : Repacking would invalidate texture coordinates of baked text meshes; need to think about that.
+        for (int j = 0;; j = (j + 1) % 2)
+        {
+            if (size[0] > m_bitmap_width || size[1] > m_bitmap_height)
+            {
+                const uint32_t area = (size[0] - m_padding) * (size[1] - m_padding);
 
-        // ...
+                if (area >= min_area)
+                {
+                    break;
+                }
+            }
 
-        return true;
-    }
+            if (size[0] == max_size && size[1] == max_size)
+            {
+                ASSERT(false && "Maximum atlas size reached."); // TODO : Convert to `WARNING`.
+                break;
+            }
 
-    void update_texture()
-    {
-        // ...
+            size[j] *= 2;
+        }
+
+        if (size[0] != m_bitmap_width ||
+            size[1] != m_bitmap_height)
+        {
+            Vector<uint8_t> data(size[0] * size[1], 0);
+
+            // TODO : Reuse `bimg::imageCopy`?
+            for (uint16_t y = 0; y < size[1]; y++)
+            {
+                (void)memcpy(
+                    data         .data() + y * size[0],
+                    m_bitmap_data.data() + y * m_bitmap_width,
+                    m_bitmap_width
+                );
+            }
+
+            m_bitmap_width  = size[0];
+            m_bitmap_height = size[1];
+            m_bitmap_data.swap(data);
+
+            stbrp_init_target(
+                &m_pack_ctx,
+                m_bitmap_width,
+                m_bitmap_height,
+                m_pack_nodes.data(),
+                static_cast<int>(m_pack_nodes.size())
+            );
+        }
     }
 
 private:
     stbtt_fontinfo              m_font_info     = {};
+    float                       m_font_size     = 0.0f; // Cap height, in pixels.
+
+    Vector<uint32_t>            m_requests;
+
+    // Packing.
+    stbrp_context               m_pack_ctx      = {};
+    Vector<stbrp_rect>          m_pack_rects;
+    Vector<stbrp_node>          m_pack_nodes;
+
+    // Packed data.
+    Vector<stbtt_packedchar>    m_char_quads;
     HashMap<uint32_t, uint16_t> m_codepoints;
 
-    RectPacker                  m_rect_packer;
-    // Vector<uint8_t>             m_atlas_bitmap;
-    Bitmap                      m_bitmap;
-    Vector<uint32_t>            m_requests;
-    float                       m_cap_height    = 0.0f; // In pixels.
-    float                       m_line_height   = 0.0f; // In pixels.
-    // uint16_t                    m_atlas_size[2] = { 0, 0 };
-    uint16_t                    m_atlas_texture = UINT16_MAX;
+    // Bitmap.
+    Vector<uint8_t>             m_bitmap_data;
+    uint16_t                    m_bitmap_width  = 0;
+    uint16_t                    m_bitmap_height = 0;
+
+    uint16_t                    m_texture       = UINT16_MAX;
     uint16_t                    m_flags         = ATLAS_FREE;
+    uint8_t                     m_padding       = 1;
     bool                        m_locked        = false;
+
+
+
+    // RectPacker                  m_rect_packer;
+    // // Vector<uint8_t>             m_atlas_bitmap;
+    // Bitmap                      m_bitmap;
+    // Vector<uint32_t>            m_requests;
+    // float                       m_cap_height    = 0.0f; // In pixels.
+    // float                       m_line_height   = 0.0f; // In pixels.
+    // // uint16_t                    m_atlas_size[2] = { 0, 0 };
+    // uint16_t                    m_atlas_texture = UINT16_MAX;
+    // uint16_t                    m_flags         = ATLAS_FREE;
+    // bool                        m_locked        = false;
 };
 
 // struct Atlas
