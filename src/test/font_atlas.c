@@ -19,9 +19,9 @@ static void setup(void)
     glyph_range(0x020, 0x07e);
     end_atlas();
 
-    // begin_text(TEXT_ID, ATLAS_ID, TEXT_H_ALIGN_CENTER);
-    // text("Hello, World!");
-    // end_text();
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_H_ALIGN_CENTER);
+    text("Hello, World!");
+    end_text();
 }
 
 static void draw(void)

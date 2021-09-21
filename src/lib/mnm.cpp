@@ -1775,7 +1775,7 @@ public:
         InstanceData &data = m_data[recorder.id()];
         data.is_transform = recorder.is_transform();
         bgfx::allocInstanceDataBuffer(&data.buffer, count, stride);
-        memcpy(data.buffer.data, recorder.buffer().data(), recorder.buffer().size());
+        (void)memcpy(data.buffer.data, recorder.buffer().data(), recorder.buffer().size());
 
         return true;
     }
@@ -1965,7 +1965,7 @@ public:
 
                 for (uint16_t y = 0; y < height; y++)
                 {
-                    memcpy(dst, src, width * format.size);
+                    (void)memcpy(dst, src, width * format.size);
 
                     src += stride;
                     dst += width * format.size;
@@ -2465,29 +2465,21 @@ public:
         if (m_bitmap_width  != pack_size[0] ||
             m_bitmap_height != pack_size[1])
         {
-            Vector<uint8_t> data(pack_size[0] * pack_size[1], 0);
-
-            // TODO : Reuse `bimg::imageCopy`?
-            for (uint16_t y = 0; y < m_bitmap_height; y++)
-            {
-                (void)memcpy(
-                    data         .data() + y * pack_size[0],
-                    m_bitmap_data.data() + y * m_bitmap_width,
-                    m_bitmap_width
-                );
-            }
-
             m_bitmap_width  = pack_size[0];
             m_bitmap_height = pack_size[1];
-            m_bitmap_data.swap(data);
+
+            m_bitmap_data.clear ();
+            m_bitmap_data.resize(pack_size[0] * pack_size[1], 0);
+
+            // TODO : We need to change the range to cover all glyphs now, since
+            //        we've cleared the bitmap (can't easily copy the old bitmap
+            //        in, if it's a failed attempt).
         }
 
         ctx.width           = m_bitmap_width;
         ctx.height          = m_bitmap_height;
         ctx.stride_in_bytes = m_bitmap_width;
         ctx.pixels          = m_bitmap_data.data();
-
-        stbi_write_png("TEST2a.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
 
         const int res = stbtt_PackFontRangesRenderIntoRects(
             &ctx,
@@ -2613,12 +2605,6 @@ private:
         {
             if (inout_pack_size[0] > 0 && inout_pack_size[1] > 0)
             {
-                // TODO : Look into `stbrp_pack_rects` to see if this is actually needed.
-                for (size_t i = offset; i < offset + count; i++)
-                {
-                    m_pack_rects[i].was_packed = 0;
-                }
-
                 if (1 == stbrp_pack_rects(
                     &m_pack_ctx,
                     m_pack_rects.data() + offset,
@@ -2714,6 +2700,39 @@ private:
     Mutex                             m_mutex;
     Array<Atlas, MAX_TEXTURE_ATLASES> m_atlases;
     Array<uint16_t, MAX_TEXTURES>     m_indices;
+};
+
+
+// -----------------------------------------------------------------------------
+// TEXT MESH RECORDING
+// -----------------------------------------------------------------------------
+
+class TextMeshRecorder
+{
+public:
+    void begin(uint16_t id, uint16_t flags, Atlas* atlas)
+    {
+        // ...
+    }
+
+    void end()
+    {
+        // ...
+    }
+
+    void add_text()
+    {
+        
+    }
+
+    inline bool is_recording() const
+    {
+        return m_recording;
+    }
+
+private:
+    Atlas* m_atlas     = nullptr;
+    bool   m_recording = false;
 };
 
 
@@ -3307,6 +3326,7 @@ struct LocalContext
 {
     MeshRecorder        mesh_recorder;
     InstanceRecorder    instance_recorder;
+    TextMeshRecorder    text_mesh_recorder;
 
     FramebufferRecorder framebuffer_recorder;
 
@@ -4094,6 +4114,39 @@ void glyphs_from_string(const char* string)
     ASSERT(mnm::t_ctx->active_atlas);
 
     mnm::t_ctx->active_atlas->add_glyphs_from_string(string);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXT MESHES
+// -----------------------------------------------------------------------------
+
+void begin_text(int id, int atlas, int flags)
+{
+    using namespace mnm;
+
+    ASSERT(!t_ctx->text_mesh_recorder.is_recording());
+
+    t_ctx->text_mesh_recorder.begin(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags),
+        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)] // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
+    );
+}
+
+void end_text(void)
+{
+    ASSERT(mnm::t_ctx->text_mesh_recorder.is_recording());
+
+    // ...
+}
+
+void text(const char* string)
+{
+    ASSERT(string);
+    ASSERT(mnm::t_ctx->text_mesh_recorder.is_recording());
+
+    // ...
 }
 
 
