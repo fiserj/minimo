@@ -2435,22 +2435,70 @@ public:
         m_pack_rects.resize(offset + count, stbrp_rect       {});
         m_char_quads.resize(offset + count, stbtt_packedchar {});
 
-        gather_rects(offset);
+        stbtt_pack_context ctx            = {};
+        ctx.padding                       = m_padding;
+        ctx.h_oversample                  = horizontal_oversampling();
+        ctx.v_oversample                  = vertical_oversampling  ();
+        ctx.skip_missing                  = 0;
 
-        pack_rects(offset, count);
+        stbtt_pack_range range            = {};
+        range.font_size                   = font_scale();
+        range.h_oversample                = horizontal_oversampling();
+        range.v_oversample                = vertical_oversampling  ();
+        range.chardata_for_range          = m_char_quads.data() + offset;
+        range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
+        range.num_chars                   = static_cast<int>(m_requests.size());
 
-        render_rects(offset);
+        (void)stbtt_PackFontRangesGatherRects(
+            &ctx,
+            &m_font_info,
+            &range,
+            1,
+            m_pack_rects.data() + offset
+        );
+
+        uint32_t pack_size[] = { m_bitmap_width, m_bitmap_height };
+        pack_rects(offset, count, pack_size);
+
+        if (m_bitmap_width  != pack_size[0] ||
+            m_bitmap_height != pack_size[1])
+        {
+            Vector<uint8_t> data(pack_size[0] * pack_size[1], 0);
+
+            // TODO : Reuse `bimg::imageCopy`?
+            for (uint16_t y = 0; y < m_bitmap_height; y++)
+            {
+                (void)memcpy(
+                    data         .data() + y * pack_size[0],
+                    m_bitmap_data.data() + y * m_bitmap_width,
+                    m_bitmap_width
+                );
+            }
+
+            m_bitmap_width  = pack_size[0];
+            m_bitmap_height = pack_size[1];
+            m_bitmap_data.swap(data);
+        }
+
+        ctx.width           = m_bitmap_width;
+        ctx.height          = m_bitmap_height;
+        ctx.stride_in_bytes = m_bitmap_width;
+        ctx.pixels          = m_bitmap_data.data();
+
+        stbi_write_png("TEST2a.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+
+        const int res = stbtt_PackFontRangesRenderIntoRects(
+            &ctx,
+            &m_font_info,
+            &range,
+            1,
+            m_pack_rects.data() + offset
+        );
+
+        stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
 
         m_requests.clear();
         // !!! TEST
-
-        // gather_new_codepoint_rects();
-
-        // m_requests.clear();
-
-        // m_rect_packer.pack(is_updatable() || !is_locked());
-
-        // bake_codepoints();
 
         if (!is_updatable())
         {
@@ -2459,110 +2507,6 @@ public:
     }
 
 private:
-#if 0
-    struct Bitmap
-    {
-        Vector<uint8_t> data;
-        uint16_t        width  = 0;
-        uint16_t        height = 0;
-
-        void resize(uint16_t new_width, uint16_t new_height)
-        {
-            ASSERT(new_width  >= width );
-            ASSERT(new_height >= height);
-
-            if (new_width  != width ||
-                new_height != height)
-            {
-                Vector<uint8_t> new_data(new_width * new_height, 0);
-
-                for (uint16_t y = 0; y < height; y++)
-                {
-                    (void)memcpy(
-                        new_data.data() + y * new_width,
-                        data    .data() + y *     width,
-                        width
-                    );
-                }
-
-                width  = new_width;
-                height = new_height;
-                data.swap(new_data);
-            }
-        }
-    };
-
-    void bake_codepoints()
-    {
-        // TODO : We have to only bake the newly added glyphs, not everything!
-
-        m_bitmap.resize(m_rect_packer.width(), m_rect_packer.height());
-
-        stbtt_pack_context ctx = {};
-        ctx.padding         = 1;
-        ctx.h_oversample    = horizontal_oversampling();
-        ctx.v_oversample    = vertical_oversampling();
-        ctx.width           = m_bitmap.width;
-        ctx.height          = m_bitmap.height;
-        ctx.pixels          = m_bitmap.data.data();
-        ctx.stride_in_bytes = m_bitmap.width;
-        ctx.skip_missing    = 0;
-
-        Vector<stbtt_packedchar> packed_chars(m_rect_packer.rects().size(), stbtt_packedchar {});
-
-        Vector<int> codepoints;
-        for (const auto& rect : m_rect_packer.rects())
-        {
-            codepoints.push_back(rect.id);
-        }
-
-        const float testScale1 = m_cap_height / cap_height();
-
-        int ascent, descent;
-        stbtt_GetFontVMetrics(&m_font_info, &ascent, &descent, nullptr);
-        const float testHeight = (ascent - descent) * testScale1;
-
-        const float testScale2 = stbtt_ScaleForPixelHeight(&m_font_info, testHeight);
-
-        stbtt_pack_range range = {};
-        range.font_size = testHeight;
-        range.num_chars = codepoints.size();
-        range.array_of_unicode_codepoints = codepoints.data();
-        range.chardata_for_range = packed_chars.data();
-        range.h_oversample = horizontal_oversampling();
-        range.v_oversample = vertical_oversampling();
-
-        stbtt_PackFontRangesRenderIntoRects(&ctx, &m_font_info, &range, 1, m_rect_packer.rects().data());
-
-        stbi_write_png("TEST.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
-
-        // for (const stbrp_rect& rect : m_rect_packer.rects())
-        // {
-        //     if (int index = stbtt_FindGlyphIndex(&m_font_info, rect.id))
-        //     {
-        //         // int x0, y0, x1, y1;
-        //         // stbtt_GetGlyphBitmapBoxSubpixel(
-        //         //     &m_font_info,
-        //         //     index,
-        //         //     scale_x, scale_y,
-        //         //     0.0f, 0.0f,
-        //         //     &x0, &y0, &x1, &y1
-        //         // );
-
-        //         // m_rect_packer.add(
-        //         //     static_cast<int>(codepoint),
-        //         //     x1 - x0 + padding + oversample_h - 1,
-        //         //     y1 - y0 + padding + oversample_v - 1
-        //         // );
-        //     }
-        //     else
-        //     {
-        //         ASSERT(false && "This shoud never happen.")
-        //     }
-        // }
-    }
-#endif // 0
-
     int16_t cap_height() const
     {
         if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
@@ -2609,86 +2553,14 @@ private:
         return value;
     }
 
-    // void gather_new_codepoint_rects()
-    // {
-    //     const int     oversample_h = horizontal_oversampling();
-    //     const int     oversample_v = vertical_oversampling  ();
-    //     const float   scale        = m_cap_height / cap_height(); // stbtt_ScaleForPixelHeight(&m_font_info, m_cap_height);
-    //     const float   scale_x      = scale * static_cast<float>(oversample_h);
-    //     const float   scale_y      = scale * static_cast<float>(oversample_v);
-    //     constexpr int padding      = 1;
-
-    //     m_rect_packer.reserve_extra(m_requests.size());
-
-    //     for (uint32_t codepoint : m_requests)
-    //     {
-    //         if (int index = stbtt_FindGlyphIndex(&m_font_info, static_cast<int>(codepoint)))
-    //         {
-    //             int x0, y0, x1, y1;
-    //             stbtt_GetGlyphBitmapBox(
-    //                 &m_font_info,
-    //                 index,
-    //                 scale_x, scale_y,
-    //                 &x0, &y0, &x1, &y1
-    //             );
-
-    //             m_rect_packer.add(
-    //                 static_cast<int>(codepoint),
-    //                 x1 - x0 + padding + oversample_h - 1,
-    //                 y1 - y0 + padding + oversample_v - 1
-    //             );
-    //         }
-    //         else
-    //         {
-    //             // TODO : Reassign/mark empty glyph.
-    //             ASSERT(false);
-    //         }
-    //     }
-    // }
-
-    void gather_rects(size_t offset)
-    {
-        stbtt_pack_context ctx            = {};
-        ctx.padding                       = m_padding;
-        ctx.h_oversample                  = horizontal_oversampling();
-        ctx.v_oversample                  = vertical_oversampling  ();
-        ctx.skip_missing                  = 0;
-
-        stbtt_pack_range range            = {};
-        range.font_size                   = font_scale();
-        range.h_oversample                = horizontal_oversampling();
-        range.v_oversample                = vertical_oversampling  ();
-        range.chardata_for_range          = m_char_quads.data() + offset;
-        range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
-        range.num_chars                   = static_cast<int>(m_requests.size());
-
-        // TODO : Utilize return value.
-        (void)stbtt_PackFontRangesGatherRects(
-            &ctx,
-            &m_font_info,
-            &range,
-            1,
-            m_pack_rects.data() + offset
-        );
-    }
-
-    void pack_rects(size_t offset, size_t count)
+    bool pick_next_size(uint32_t min_area, uint32_t* inout_pack_size) const
     {
         const uint32_t max_size = bgfx::getCaps()->limits.maxTextureSize;
-        uint16_t       size[]   = { 64, 64 };
-        uint32_t       min_area = 0;
-
-        // TODO : This could be done only on the new requests' rects.
-        for (const stbrp_rect& rect : m_pack_rects)
-        {
-            min_area += static_cast<uint32_t>(rect.w * rect.h);
-        }
-
-        min_area = static_cast<uint32_t>(min_area * 1.05);
+        uint32_t       size[2]  = { 64, 64 };
 
         for (int j = 0;; j = (j + 1) % 2)
         {
-            if (size[0] > m_bitmap_width || size[1] > m_bitmap_height)
+            if (size[0] > inout_pack_size[0] || size[1] > inout_pack_size[1])
             {
                 const uint32_t area = (size[0] - m_padding) * (size[1] - m_padding);
 
@@ -2701,83 +2573,69 @@ private:
             if (size[0] == max_size && size[1] == max_size)
             {
                 ASSERT(false && "Maximum atlas size reached."); // TODO : Convert to `WARNING`.
-                break;
+                return false;
             }
 
             size[j] *= 2;
         }
 
-        size[0] *= 2;
+        inout_pack_size[0] = size[0];
+        inout_pack_size[1] = size[1];
 
-        if (size[0] != m_bitmap_width ||
-            size[1] != m_bitmap_height)
-        {
-            Vector<uint8_t> data(size[0] * size[1], 0);
-
-            // TODO : Reuse `bimg::imageCopy`?
-            for (uint16_t y = 0; y < m_bitmap_height; y++)
-            {
-                (void)memcpy(
-                    data         .data() + y * size[0],
-                    m_bitmap_data.data() + y * m_bitmap_width,
-                    m_bitmap_width
-                );
-            }
-
-            m_bitmap_width  = size[0];
-            m_bitmap_height = size[1];
-            m_bitmap_data.swap(data);
-
-            m_pack_nodes.resize(m_bitmap_width - m_padding);
-
-            stbrp_init_target(
-                &m_pack_ctx,
-                m_bitmap_width - m_padding,
-                m_bitmap_height - m_padding,
-                m_pack_nodes.data(),
-                static_cast<int>(m_pack_nodes.size())
-            );
-        }
-
-        const int res = stbrp_pack_rects(
-            &m_pack_ctx,
-            m_pack_rects.data() + offset,
-            static_cast<int>(count)
-        );
-        int abc = 123;
+        return true;
     }
 
-    void render_rects(size_t offset)
+    void pack_rects(size_t offset, size_t count, uint32_t* inout_pack_size)
     {
-        stbtt_pack_context ctx            = {};
-        ctx.padding                       = m_padding;
-        ctx.h_oversample                  = horizontal_oversampling();
-        ctx.v_oversample                  = vertical_oversampling  ();
-        ctx.skip_missing                  = 0;
-        ctx.width                         = m_bitmap_width;
-        ctx.height                        = m_bitmap_height;
-        ctx.stride_in_bytes               = m_bitmap_width;
-        ctx.pixels                        = m_bitmap_data.data();
+        uint32_t    min_area   = 0;
+        const float extra_area = 1.05f;
 
-        stbtt_pack_range range            = {};
-        range.font_size                   = font_scale();
-        range.h_oversample                = horizontal_oversampling();
-        range.v_oversample                = vertical_oversampling  ();
-        range.chardata_for_range          = m_char_quads.data() + offset;
-        range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
-        range.num_chars                   = static_cast<int>(m_requests.size());
+        for (const stbrp_rect& rect : m_pack_rects)
+        {
+            min_area += static_cast<uint32_t>(rect.w * rect.h);
+        }
 
-        stbi_write_png("TEST2a.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+        min_area = static_cast<uint32_t>(static_cast<float>(min_area) * extra_area);
 
-        const int res = stbtt_PackFontRangesRenderIntoRects(
-            &ctx,
-            &m_font_info,
-            &range,
-            1,
-            m_pack_rects.data() + offset
-        );
+        for (;;)
+        {
+            if (inout_pack_size[0] > 0 && inout_pack_size[1] > 0)
+            {
+                // TODO : Look into `stbrp_pack_rects` to see if this is actually needed.
+                for (size_t i = offset; i < offset + count; i++)
+                {
+                    m_pack_rects[i].was_packed = 0;
+                }
 
-        stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+                if (1 == stbrp_pack_rects(
+                    &m_pack_ctx,
+                    m_pack_rects.data() + offset,
+                    static_cast<int>(count)
+                ))
+                {
+                    break;
+                }
+            }
+
+            if (pick_next_size(min_area, inout_pack_size))
+            {
+                m_pack_nodes.resize(inout_pack_size[0] - m_padding);
+
+                stbrp_init_target(
+                    &m_pack_ctx,
+                    inout_pack_size[0] - m_padding,
+                    inout_pack_size[1] - m_padding,
+                    m_pack_nodes.data(),
+                    static_cast<int>(m_pack_nodes.size())
+                );
+            }
+            else
+            {
+                ASSERT(false && "Maximum atlas size reached and all glyphs "
+                    "still can't be packed."); // TODO : Convert to `WARNING`.
+                break;
+            }
+        }
     }
 
 private:
@@ -2804,130 +2662,7 @@ private:
     uint16_t                    m_flags         = ATLAS_FREE;
     uint8_t                     m_padding       = 1;
     bool                        m_locked        = false;
-
-
-
-    // RectPacker                  m_rect_packer;
-    // // Vector<uint8_t>             m_atlas_bitmap;
-    // Bitmap                      m_bitmap;
-    // Vector<uint32_t>            m_requests;
-    // float                       m_cap_height    = 0.0f; // In pixels.
-    // float                       m_line_height   = 0.0f; // In pixels.
-    // // uint16_t                    m_atlas_size[2] = { 0, 0 };
-    // uint16_t                    m_atlas_texture = UINT16_MAX;
-    // uint16_t                    m_flags         = ATLAS_FREE;
-    // bool                        m_locked        = false;
 };
-
-// struct Atlas
-// {
-//     HashMap<uint32_t, uint16_t> glyphs;
-//     Vector<stbtt_packedchar>    packing;
-//     uint16_t                    texture = UINT16_MAX;
-// };
-
-// class AtlasRecorder
-// {
-// public:
-//     void begin(uint16_t id, uint16_t flags, float size, const void* data)
-//     {
-//         ASSERT(!is_recording());
-
-//         m_recording = true;
-//         m_glyphs.clear();
-
-//         m_id    = id;
-//         m_flags = flags;
-//         m_size  = size;
-//         m_data  = data;
-//     }
-
-//     void end()
-//     {
-//         ASSERT(is_recording());
-
-//         std::sort(m_glyphs.begin(), m_glyphs.end());
-
-//         m_glyphs.erase(std::unique(m_glyphs.begin(), m_glyphs.end()), m_glyphs.end());
-
-//         m_recording = false;
-//     }
-
-//     void add_glyph_range(int first, int last)
-//     {
-//         ASSERT(last >= first);
-
-//         size_t i = m_glyphs.size();
-//         m_glyphs.resize(i + static_cast<size_t>(last - first + 1));
-
-//         for (int glyph = first; glyph <= last; glyph++, i++)
-//         {
-//             m_glyphs[i] = glyph;
-//         }
-//     }
-
-//     void add_glyphs_from_string(const char* string)
-//     {
-//         uint32_t codepoint;
-//         uint32_t state = 0;
-
-//         for (; *string; string++)
-//         {
-//             if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
-//             {
-//                 m_glyphs.push_back(static_cast<int>(codepoint));
-//             }
-//         }
-
-//         ASSERT(state == UTF8_ACCEPT);
-//     }
-
-//     inline bool is_recording() const { return m_recording; }
-
-//     inline float size() const { return m_size; }
-
-//     inline uint16_t id() const { return m_id; }
-
-//     inline uint16_t flags() const { return m_flags; }
-
-//     bool bake_glyphs(Atlas& atlas, uint8_t* buffer, uint16_t size) const
-//     {
-//         stbtt_pack_context ctx = {};
-
-//         stbtt_PackBegin(&ctx, buffer, size, size, 0, 1, nullptr);
-//         stbtt_PackSetOversampling(&ctx, 2, 1);
-
-//         atlas.packing.resize(m_glyphs.size());
-
-//         stbtt_pack_range range            = {};
-//         range.font_size                   = STBTT_POINT_SIZE(m_size);
-//         range.array_of_unicode_codepoints = const_cast<int*>(m_glyphs.data());
-//         range.num_chars                   = static_cast<int>(m_glyphs.size());
-//         range.chardata_for_range          = atlas.packing.data();
-
-//         const int success = stbtt_PackFontRanges(&ctx, static_cast<const unsigned char*>(m_data), 0, &range, 1); // TODO : Expose font index?
-
-//         stbtt_PackEnd(&ctx);
-
-//         if (success == 1)
-//         {
-//             for (size_t i = 0; i < m_glyphs.size(); i++)
-//             {
-//                 atlas.glyphs.insert({ m_glyphs[i], static_cast<uint16_t>(i) });
-//             }
-//         }
-
-//         return success == 1;
-//     }
-
-// private:
-//     Vector<int>  m_glyphs;
-//     const void*  m_data      = nullptr;
-//     float        m_size      = 0.0f;
-//     uint16_t     m_id        = UINT16_MAX;
-//     uint16_t     m_flags     = UINT16_MAX;
-//     bool         m_recording = false;
-// };
 
 class AtlasCache
 {
