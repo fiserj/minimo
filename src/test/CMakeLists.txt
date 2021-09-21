@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    texture_readback.c
+    font_atlas.c
 )
 
 target_include_directories(${NAME} PRIVATE

@@ -512,10 +512,10 @@ enum
     ATLAS_SDF             = 0x0004,
 
     // Oversampling for better quality.
-    ATLAS_H_OVERSAMPLE_2x = 0x0008,
-    ATLAS_H_OVERSAMPLE_3x = 0x0010,
-    ATLAS_H_OVERSAMPLE_4x = 0x0018,
-    ATLAS_V_OVERSAMPLE_2x = 0x0020,
+    ATLAS_H_OVERSAMPLE_2X = 0x0008,
+    ATLAS_H_OVERSAMPLE_3X = 0x0010,
+    ATLAS_H_OVERSAMPLE_4X = 0x0018,
+    ATLAS_V_OVERSAMPLE_2X = 0x0040,
 };
 
 /// One font/size per atlas. Texture size is calculated automatically to fit.
