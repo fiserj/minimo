@@ -2363,6 +2363,8 @@ public:
         m_texture   = texture;
         m_flags     = flags;
 
+        // TODO : Padding should probably reflect whether an SDF atlas is required.
+
         // TODO : Check return value.
         (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
     }
@@ -2414,7 +2416,7 @@ public:
         ASSERT(state == UTF8_ACCEPT);
     }
 
-    void update(TextureCache&)
+    void update(TextureCache& texture_cache)
     {
         ASSERT(is_updatable() || !is_locked());
 
@@ -2496,6 +2498,16 @@ public:
         );
 
         stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
+
+        // TODO : We should only update the texture if the size didn't change.
+        texture_cache.add_texture(
+            m_texture,
+            TEXTURE_R8,
+            m_bitmap_width,
+            m_bitmap_height,
+            0,
+            m_bitmap_data.data()
+        );
 
         m_requests.clear();
         // !!! TEST
