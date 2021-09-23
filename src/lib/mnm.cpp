@@ -2501,6 +2501,11 @@ public:
             m_bitmap_data.data()
         );
 
+        for (size_t i = 0; i < m_requests.size(); i++)
+        {
+            m_codepoints.insert({ m_requests[i], static_cast<uint16_t>(offset + i) });
+        }
+
         m_requests.clear();
         // !!! TEST
 
@@ -2508,6 +2513,43 @@ public:
         {
             m_locked = true;
         }
+    }
+
+    void get_text_quads(const char* string, stbtt_aligned_quad* out_quads)
+    {
+        uint32_t codepoint;
+        uint32_t state = 0;
+
+        // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
+        //        flag check glyph presence and update on the fly.
+
+        float x = 0.0f;
+        float y = 0.0f;
+
+        for (; *string; string++)
+        {
+            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+            {
+                const auto it = m_codepoints.find(codepoint);
+                ASSERT(it != m_codepoints.end());
+
+                // TODO : For updatable atlases, we'll have to replace this with
+                //        routine that returns the pixel coordinates, not texture
+                //        ones, so that we can guarantee old meshes stay valid even
+                //        if the atlas gets updated and repacked.
+                stbtt_GetPackedQuad(
+                    m_char_quads.data(),
+                    m_bitmap_width,
+                    m_bitmap_height,
+                    it->second,
+                    &x, &y,
+                    out_quads++,
+                    false // align_to_integer // TODO ??? Expose to the user ???
+                );
+            }
+        }
+
+        ASSERT(state == UTF8_ACCEPT);
     }
 
 private:
@@ -2707,22 +2749,41 @@ private:
 // TEXT MESH RECORDING
 // -----------------------------------------------------------------------------
 
+// TODO : Probably either sublcass `MeshRecorder` or have it as a member.
 class TextMeshRecorder
 {
 public:
     void begin(uint16_t id, uint16_t flags, Atlas* atlas)
     {
+        ASSERT(!is_recording());
+        ASSERT(atlas);
+
+        // TODO : Reset alignment, etc.
         // ...
+
+        m_atlas     = atlas;
+        m_recording = true;
     }
 
     void end()
     {
+        ASSERT(is_recording());
+
         // ...
+
+        m_atlas     = nullptr;
+        m_recording = false;
     }
 
-    void add_text()
+    void add_text(const char* string)
     {
-        
+        ASSERT(is_recording());
+
+        Vector<stbtt_aligned_quad> quads(strlen(string)); // TODO !!! Replace with utf8_strlen !!!
+
+        m_atlas->get_text_quads(string, quads.data());
+
+        // TODO : Transform the quads into correct position and convert them into triangles.
     }
 
     inline bool is_recording() const
@@ -4146,7 +4207,7 @@ void text(const char* string)
     ASSERT(string);
     ASSERT(mnm::t_ctx->text_mesh_recorder.is_recording());
 
-    // ...
+    mnm::t_ctx->text_mesh_recorder.add_text(string);
 }
 
 
