@@ -266,6 +266,37 @@ enum
     KEEP_CPU_GEOMETRY        = 0x1000, // TODO : Add support.
 };
 
+/// Mesh draw state flags. Subset of the most comonly used ones from BGFX.
+///
+enum
+{
+    STATE_BLEND_ADD          = 0x0001,
+    STATE_BLEND_ALPHA        = 0x0002,
+    STATE_BLEND_MAX          = 0x0003,
+    STATE_BLEND_MIN          = 0x0004,
+
+    STATE_CULL_CCW           = 0x0010,
+    STATE_CULL_CW            = 0x0020,
+
+    STATE_DEPTH_TEST_GEQUAL  = 0x0040,
+    STATE_DEPTH_TEST_GREATER = 0x0080,
+    STATE_DEPTH_TEST_LEQUAL  = 0x00c0,
+    STATE_DEPTH_TEST_LESS    = 0x0100,
+
+    STATE_MSAA               = 0x0200,
+
+    STATE_WRITE_A            = 0x0400,
+    STATE_WRITE_RGB          = 0x0800,
+    STATE_WRITE_Z            = 0x1000,
+
+    STATE_DEFAULT            = STATE_CULL_CW         |
+                               STATE_DEPTH_TEST_LESS |
+                               STATE_MSAA            |
+                               STATE_WRITE_A         |
+                               STATE_WRITE_RGB       |
+                               STATE_WRITE_Z         ,
+};
+
 /// Starts mesh geometry recording. Mesh type, primitive type and attributes
 /// recorded per-vertex are specified via flags. Once recorded, a mesh can be
 /// submitted arbitrary number of times, but transient meshes (and their IDs)
@@ -329,6 +360,11 @@ void mesh(int id);
 /// @param[in] flags Vertex attribute flags.
 ///
 void alias(int flags);
+
+/// Sets state for next submitted mesh call, after which it gets reset.
+/// `STATE_DEFAULT` by default.
+///
+void state(int flags);
 
 
 // -----------------------------------------------------------------------------
