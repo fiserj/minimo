@@ -89,7 +89,9 @@ enum
 
                    PRIMITIVE_TRIANGLES   = 0x0000,
 
-                   VERTEX_COLOR_R        = 0x0100, // Needs to make sure it's outside regular mesh flags.
+                   SAMPLER_COLOR_R       = 0x0100, // Needs to make sure it's outside regular mesh flags.
+
+                   TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
 
                    VERTEX_POSITION       = 0x0000,
 };
@@ -473,6 +475,7 @@ struct DrawState
     bgfx::TextureHandle      texture      = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
     bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
+    uint16_t                 flags        = STATE_DEFAULT;
 };
 
 
@@ -577,13 +580,13 @@ public:
 
 private:
     static_assert(
-        (VERTEX_ATTRIB_MASK & (INSTANCING_SUPPORTED | VERTEX_COLOR_R)) == 0,
+        (VERTEX_ATTRIB_MASK & (INSTANCING_SUPPORTED | SAMPLER_COLOR_R)) == 0,
         "Invalid BUILTIN_MASK bitmask assumption."
     );
 
     // TODO : This will likely have to be reworked in the future to support additional default layouts
     //        (e.g., an SDF font).
-    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | VERTEX_COLOR_R;
+    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | SAMPLER_COLOR_R;
 
     static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
 
@@ -1209,8 +1212,7 @@ private:
 
         inline const VertexPushFunc& operator[](uint16_t flags) const
         {
-            // Clear mesh type and primitive type flags, except the quad primitive bit.
-            return m_funcs[flags & ~MESH_TYPE_MASK & (~PRIMITIVE_TYPE_MASK | PRIMITIVE_QUADS)];
+            return m_funcs[flags & (VERTEX_ATTRIB_MASK | PRIMITIVE_QUADS)];
         }
 
     private:
@@ -1820,6 +1822,75 @@ private:
 // GEOMETRY SUBMISSION
 // -----------------------------------------------------------------------------
 
+static inline uint64_t translate_draw_state_flags(uint16_t flags)
+{
+    if (flags == STATE_DEFAULT)
+    {
+        static_assert(
+            STATE_DEFAULT      == (STATE_WRITE_RGB            |
+                                   STATE_WRITE_A              |
+                                   STATE_WRITE_Z              |
+                                   STATE_DEPTH_TEST_LESS      |
+                                   STATE_CULL_CW              |
+                                   STATE_MSAA                 ) &&
+
+            BGFX_STATE_DEFAULT == (BGFX_STATE_WRITE_RGB       |
+                                   BGFX_STATE_WRITE_A         |
+                                   BGFX_STATE_WRITE_Z         |
+                                   BGFX_STATE_DEPTH_TEST_LESS |
+                                   BGFX_STATE_CULL_CW         |
+                                   BGFX_STATE_MSAA            ),
+
+            "BGFX and MiNiMo default draw states don't match."
+        );
+
+        return BGFX_STATE_DEFAULT;
+    }
+
+    constexpr uint32_t BLEND_STATE_MASK       = STATE_BLEND_ADD | STATE_BLEND_ALPHA | STATE_BLEND_MAX | STATE_BLEND_MIN;
+    constexpr uint32_t BLEND_STATE_SHIFT      = 0;
+
+    constexpr uint32_t CULL_STATE_MASK        = STATE_CULL_CCW | STATE_CULL_CW;
+    constexpr uint32_t CULL_STATE_SHIFT       = 4;
+
+    constexpr uint32_t DEPTH_TEST_STATE_MASK  = STATE_DEPTH_TEST_GEQUAL | STATE_DEPTH_TEST_GREATER | STATE_DEPTH_TEST_LEQUAL | STATE_DEPTH_TEST_LESS;
+    constexpr uint32_t DEPTH_TEST_STATE_SHIFT = 6;
+
+    constexpr uint64_t blend_table[] =
+    {
+        0,
+        BGFX_STATE_BLEND_ADD,
+        BGFX_STATE_BLEND_ALPHA,
+        BGFX_STATE_BLEND_LIGHTEN,
+        BGFX_STATE_BLEND_DARKEN,
+    };
+
+    constexpr uint64_t cull_table[] =
+    {
+        0,
+        BGFX_STATE_CULL_CCW,
+        BGFX_STATE_CULL_CW,
+    };
+
+    constexpr uint64_t depth_test_table[] =
+    {
+        0,
+        BGFX_STATE_DEPTH_TEST_GEQUAL,
+        BGFX_STATE_DEPTH_TEST_GREATER,
+        BGFX_STATE_DEPTH_TEST_LEQUAL,
+        BGFX_STATE_DEPTH_TEST_LESS,
+    };
+
+    return
+        blend_table     [(flags & BLEND_STATE_MASK     ) >> BLEND_STATE_SHIFT         ] |
+        cull_table      [(flags & CULL_STATE_MASK      ) >> CULL_STATE_SHIFT          ] |
+        depth_test_table[(flags & DEPTH_TEST_STATE_MASK) >> DEPTH_TEST_STATE_SHIFT    ] |
+        (                (flags & STATE_MSAA           ) ?  BGFX_STATE_MSAA        : 0) |
+        (                (flags & STATE_WRITE_A        ) ?  BGFX_STATE_WRITE_A     : 0) |
+        (                (flags & STATE_WRITE_RGB      ) ?  BGFX_STATE_WRITE_RGB   : 0) |
+        (                (flags & STATE_WRITE_Z        ) ?  BGFX_STATE_WRITE_Z     : 0);
+}
+
 static void submit_mesh
 (
     const Mesh&                                mesh,
@@ -1870,11 +1941,11 @@ static void submit_mesh
 
         encoder.setTransform(&transform);
 
-        encoder.setState(
-            BGFX_STATE_DEFAULT |
-            BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | // TODO : Only enable this when asked for.
-            primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
-        );
+        uint64_t flags = translate_draw_state_flags(state.flags);
+
+        flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
+
+        encoder.setState(flags);
 
         ASSERT(bgfx::isValid(state.program));
         encoder.submit(state.pass, state.program);
@@ -2790,6 +2861,7 @@ public:
         // ...
 
         const uint16_t mesh_flags = 0
+            | TEXT_MESH
             | ((flags & TEXT_STATIC   ) ? MESH_STATIC    : 0) // TODO : Just shift it.
             | ((flags & TEXT_DYNAMIC  ) ? MESH_DYNAMIC   : 0)
             | ((flags & TEXT_TRANSIENT) ? MESH_TRANSIENT : 0)
@@ -2800,7 +2872,7 @@ public:
             ;
 
         m_recorder.begin(id, mesh_flags);
-        m_recorder.color(0x00ffffff);
+        m_recorder.color(0xffffffff);
 
         m_atlas     = atlas;
         m_recording = true;
@@ -3623,7 +3695,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                                },
             {                VERTEX_TEXCOORD                       , "position_texcoord"                                      },
 
-            { VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_COLOR_R      , "position_color_texcoord"  , "position_color_r_texcoord" },
+            { VERTEX_COLOR | VERTEX_TEXCOORD | SAMPLER_COLOR_R     , "position_color_texcoord"  , "position_color_r_texcoord" },
             { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color"            },
         };
 
@@ -4050,10 +4122,16 @@ void mesh(int id)
         // TODO : Figure out how to do this without this ugliness.
         if (state.sampler.idx == g_ctx.default_uniforms.color_texture_r.idx)
         {
-            mesh_flags |= VERTEX_COLOR_R;
+            mesh_flags |= SAMPLER_COLOR_R;
         }
 
         state.program = g_ctx.program_cache.builtin(mesh_flags);
+    }
+
+    if (mesh_flags & TEXT_MESH && state.flags == STATE_DEFAULT)
+    {
+        // NOTE : Maybe we just want ensure the blending is added?
+        state.flags = STATE_BLEND_ALPHA | STATE_WRITE_RGB;
     }
 
     submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
@@ -4062,6 +4140,11 @@ void mesh(int id)
 void alias(int flags)
 {
     mnm::t_ctx->draw_state.vertex_alias = { static_cast<uint16_t>(flags) };
+}
+
+void state(int flags)
+{
+    mnm::t_ctx->draw_state.flags = static_cast<uint16_t>(flags);
 }
 
 
