@@ -4135,6 +4135,8 @@ void mesh(int id)
     }
 
     submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
+
+    state = {};
 }
 
 void alias(int flags)
