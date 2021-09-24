@@ -32,10 +32,12 @@ static void draw(void)
     }
 
     identity();
-    ortho(-aspect(), aspect(), -1.0f, 1.0f, 1.0f, -1.0f);
+    ortho(0.0f, pixel_width(), pixel_height(), 0.0f, 1.0f, -1.0f);
     projection();
 
     identity();
+    translate(100.0f, 100.0f, 0.0f);
+    texture(ATLAS_ID);
     mesh(TEXT_ID);
 }
 

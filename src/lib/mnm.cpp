@@ -1847,7 +1847,15 @@ static void submit_mesh
         encoder.setTransform(&transform);
 
         encoder.setState(
-            BGFX_STATE_DEFAULT |
+            // BGFX_STATE_DEFAULT |
+            // !!! TEST
+            BGFX_STATE_WRITE_RGB | 
+            BGFX_STATE_WRITE_A | 
+            BGFX_STATE_WRITE_Z | 
+            // BGFX_STATE_DEPTH_TEST_LESS |
+            // BGFX_STATE_CULL_CW |
+            BGFX_STATE_MSAA | 
+            // !!! TEST
             primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
         );
 
@@ -2515,6 +2523,7 @@ public:
         }
     }
 
+    // TODO : This needs to be mutexed, if the atlas allows updates.
     void get_text_quads(const char* string, stbtt_aligned_quad* out_quads)
     {
         uint32_t codepoint;
@@ -2749,7 +2758,9 @@ private:
 // TEXT MESH RECORDING
 // -----------------------------------------------------------------------------
 
-// TODO : Probably either sublcass `MeshRecorder` or have it as a member.
+// TODO : Probably either sublcass `MeshRecorder` or add the text related
+//        functionality in it, so that only one recorder per thread context
+//        is needed (they can't record at the same time anyway).
 class TextMeshRecorder
 {
 public:
@@ -2761,6 +2772,19 @@ public:
         // TODO : Reset alignment, etc.
         // ...
 
+        const uint16_t mesh_flags = 0
+            | ((flags & TEXT_STATIC   ) ? MESH_STATIC    : 0) // TODO : Just shift it.
+            | ((flags & TEXT_DYNAMIC  ) ? MESH_DYNAMIC   : 0)
+            | ((flags & TEXT_TRANSIENT) ? MESH_TRANSIENT : 0)
+            | PRIMITIVE_QUADS
+            | VERTEX_POSITION
+            | VERTEX_TEXCOORD
+            | VERTEX_COLOR // TODO : Expose to the user.
+            ;
+
+        m_recorder.begin(id, mesh_flags);
+        m_recorder.color(0xffffffff);
+
         m_atlas     = atlas;
         m_recording = true;
     }
@@ -2769,7 +2793,7 @@ public:
     {
         ASSERT(is_recording());
 
-        // ...
+        m_recorder.end();
 
         m_atlas     = nullptr;
         m_recording = false;
@@ -2779,9 +2803,30 @@ public:
     {
         ASSERT(is_recording());
 
-        Vector<stbtt_aligned_quad> quads(strlen(string)); // TODO !!! Replace with utf8_strlen !!!
+        Vector<stbtt_aligned_quad> quads(strlen(string), stbtt_aligned_quad {}); // TODO !!! Replace with utf8_strlen !!!
 
+        // TODO : Pass the recorder and transform directly to the atlas, so that no temporaries are necessary.
         m_atlas->get_text_quads(string, quads.data());
+
+        for (const stbtt_aligned_quad& quad : quads)
+        {
+            // TODO : Make sure the texcoords are OK for both OpenGL and other APIs.
+
+            m_recorder.texcoord(         quad.s0, quad.t0);
+            m_recorder.vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
+
+            m_recorder.texcoord(         quad.s0, quad.t1);
+            m_recorder.vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
+
+            m_recorder.texcoord(         quad.s1, quad.t1);
+            m_recorder.vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
+
+            m_recorder.texcoord(         quad.s1, quad.t0);
+            m_recorder.vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
+
+            // float x0,y0,s0,t0; // top-left
+            // float x1,y1,s1,t1; // bottom-right
+        }
 
         // TODO : Transform the quads into correct position and convert them into triangles.
     }
@@ -2791,9 +2836,15 @@ public:
         return m_recording;
     }
 
+    inline const MeshRecorder& mesh_recorder() const
+    {
+        return m_recorder;
+    }
+
 private:
-    Atlas* m_atlas     = nullptr;
-    bool   m_recording = false;
+    MeshRecorder m_recorder;
+    Atlas*       m_atlas     = nullptr;
+    bool         m_recording = false;
 };
 
 
@@ -4197,9 +4248,14 @@ void begin_text(int id, int atlas, int flags)
 
 void end_text(void)
 {
-    ASSERT(mnm::t_ctx->text_mesh_recorder.is_recording());
+    using namespace mnm;
 
-    // ...
+    ASSERT(t_ctx->text_mesh_recorder.is_recording());
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    (void)g_ctx.mesh_cache.add_mesh(t_ctx->text_mesh_recorder.mesh_recorder(), g_ctx.layout_cache);
+
+    t_ctx->text_mesh_recorder.end();
 }
 
 void text(const char* string)
