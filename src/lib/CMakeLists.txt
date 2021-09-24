@@ -53,13 +53,14 @@ set_target_properties(${NAME} PROPERTIES
 
 include(cmake/add_shader_dependency.cmake)
 
-add_shader_dependency(${NAME} "shaders/position.vs"               )
-add_shader_dependency(${NAME} "shaders/position.fs"               )
-add_shader_dependency(${NAME} "shaders/position_color.vs"         )
-add_shader_dependency(${NAME} "shaders/position_color.fs"         )
-add_shader_dependency(${NAME} "shaders/position_color_texcoord.vs")
-add_shader_dependency(${NAME} "shaders/position_color_texcoord.fs")
-add_shader_dependency(${NAME} "shaders/position_texcoord.vs"      )
-add_shader_dependency(${NAME} "shaders/position_texcoord.fs"      )
+add_shader_dependency(${NAME} "shaders/position.vs"                 )
+add_shader_dependency(${NAME} "shaders/position.fs"                 )
+add_shader_dependency(${NAME} "shaders/position_color.vs"           )
+add_shader_dependency(${NAME} "shaders/position_color.fs"           )
+add_shader_dependency(${NAME} "shaders/position_color_texcoord.vs"  )
+add_shader_dependency(${NAME} "shaders/position_color_texcoord.fs"  )
+add_shader_dependency(${NAME} "shaders/position_color_r_texcoord.fs")
+add_shader_dependency(${NAME} "shaders/position_texcoord.vs"        )
+add_shader_dependency(${NAME} "shaders/position_texcoord.fs"        )
 
 add_shader_dependency(${NAME} "shaders/instancing_position_color.vs")

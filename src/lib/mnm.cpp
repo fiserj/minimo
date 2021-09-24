@@ -89,6 +89,8 @@ enum
 
                    PRIMITIVE_TRIANGLES   = 0x0000,
 
+                   VERTEX_COLOR_R        = 0x0100, // Needs to make sure it's outside regular mesh flags.
+
                    VERTEX_POSITION       = 0x0000,
 };
 
@@ -352,16 +354,32 @@ public:
 
 struct DefaultUniforms
 {
-    bgfx::UniformHandle color_texture = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle color_texture_rgba = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle color_texture_r    = BGFX_INVALID_HANDLE;
 
     void init()
     {
-        color_texture = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
+        color_texture_rgba = bgfx::createUniform("s_tex_color_rgba", bgfx::UniformType::Sampler);
+        color_texture_r    = bgfx::createUniform("s_tex_color_r"   , bgfx::UniformType::Sampler);
     }
 
     void clear()
     {
-        destroy_if_valid(color_texture);
+        destroy_if_valid(color_texture_rgba);
+        destroy_if_valid(color_texture_r   );
+    }
+
+    inline bgfx::UniformHandle default_sampler(bgfx::TextureFormat::Enum format) const
+    {
+        switch (format)
+        {
+        case bgfx::TextureFormat::RGBA8:
+            return color_texture_rgba;
+        case bgfx::TextureFormat::R8:
+            return color_texture_r;
+        default:
+            return BGFX_INVALID_HANDLE;
+        }
     }
 };
 
@@ -558,7 +576,14 @@ public:
     }
 
 private:
-    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED;
+    static_assert(
+        (VERTEX_ATTRIB_MASK & (INSTANCING_SUPPORTED | VERTEX_COLOR_R)) == 0,
+        "Invalid BUILTIN_MASK bitmask assumption."
+    );
+
+    // TODO : This will likely have to be reworked in the future to support additional default layouts
+    //        (e.g., an SDF font).
+    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | VERTEX_COLOR_R;
 
     static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
 
@@ -1843,19 +1868,11 @@ static void submit_mesh
             encoder.setTexture(0, state.sampler, state.texture);
         }
 
-        // encoder.setTransform(transform_offset + item.transform);
         encoder.setTransform(&transform);
 
         encoder.setState(
-            // BGFX_STATE_DEFAULT |
-            // !!! TEST
-            BGFX_STATE_WRITE_RGB | 
-            BGFX_STATE_WRITE_A | 
-            BGFX_STATE_WRITE_Z | 
-            // BGFX_STATE_DEPTH_TEST_LESS |
-            // BGFX_STATE_CULL_CW |
-            BGFX_STATE_MSAA | 
-            // !!! TEST
+            BGFX_STATE_DEFAULT |
+            BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA) | // TODO : Only enable this when asked for.
             primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT]
         );
 
@@ -2783,7 +2800,7 @@ public:
             ;
 
         m_recorder.begin(id, mesh_flags);
-        m_recorder.color(0xffffffff);
+        m_recorder.color(0x00ffffff);
 
         m_atlas     = atlas;
         m_recording = true;
@@ -3585,6 +3602,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         BGFX_EMBEDDED_SHADER(position_texcoord_fs        ),
         BGFX_EMBEDDED_SHADER(position_texcoord_vs        ),
 
+        BGFX_EMBEDDED_SHADER(position_color_r_texcoord_fs),
+
         BGFX_EMBEDDED_SHADER(instancing_position_color_vs),
 
         BGFX_EMBEDDED_SHADER_END()
@@ -3599,12 +3618,13 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
         programs[] =
         {
-            { 0                                                    , "position"                                    },
-            { VERTEX_COLOR                                         , "position_color"                              },
-            { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                     },
-            {                VERTEX_TEXCOORD                       , "position_texcoord"                           },
+            { 0                                                    , "position"                                               },
+            { VERTEX_COLOR                                         , "position_color"                                         },
+            { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                                },
+            {                VERTEX_TEXCOORD                       , "position_texcoord"                                      },
 
-            { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color" },
+            { VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_COLOR_R      , "position_color_texcoord"  , "position_color_r_texcoord" },
+            { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color"            },
         };
 
         char vs_name[32];
@@ -4027,6 +4047,12 @@ void mesh(int id)
 
     if (!bgfx::isValid(state.program))
     {
+        // TODO : Figure out how to do this without this ugliness.
+        if (state.sampler.idx == g_ctx.default_uniforms.color_texture_r.idx)
+        {
+            mesh_flags |= VERTEX_COLOR_R;
+        }
+
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
@@ -4076,8 +4102,10 @@ void texture(int id)
     {
         // TODO : Samplers should be set by default state and only overwritten when
         //        non-default shader is used.
-        t_ctx->draw_state.texture = g_ctx.texture_cache[static_cast<uint16_t>(id)].handle;
-        t_ctx->draw_state.sampler = g_ctx.default_uniforms.color_texture;
+        const Texture& texture = g_ctx.texture_cache[static_cast<uint16_t>(id)];
+
+        t_ctx->draw_state.texture = texture.handle;
+        t_ctx->draw_state.sampler = g_ctx.default_uniforms.default_sampler(texture.format);
     }
     else
     {
