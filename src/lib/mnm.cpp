@@ -2265,36 +2265,59 @@ enum
     UTF8_REJECT,
 };
 
-static constexpr uint8_t UTF8_DATA[] =
+static constexpr uint8_t s_utf8_data[] =
 {
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 00..1f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 20..3f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 40..5f
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 60..7f
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, // 80..9f
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7, // a0..bf
-    8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, // c0..df
-    0xa,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x3,0x4,0x3,0x3, // e0..ef
-    0xb,0x6,0x6,0x6,0x5,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8,0x8, // f0..ff
-    0x0,0x1,0x2,0x3,0x5,0x8,0x7,0x1,0x1,0x1,0x4,0x6,0x1,0x1,0x1,0x1, // s0..s0
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1,1,1,1,1,1, // s1..s2
-    1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1, // s3..s4
-    1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,3,1,3,1,1,1,1,1,1, // s5..s6
-    1,3,1,1,1,1,1,3,1,3,1,1,1,1,1,1,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // s7..s8
+    // The first part of the table maps bytes to character classes that
+    // to reduce the size of the transition table and create bitmasks.
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+
+    // The second part is a transition table that maps a combination
+    // of a state of the automaton and a character class to a state.
+    0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
+    12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
+    12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
+    12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
+    12,36,12,12,12,12,12,12,12,12,12,12,
 };
 
-static inline uint32_t decode_utf8(uint32_t* state, uint32_t* codepoint, uint32_t byte)
+static inline uint32_t utf8_decode(uint32_t* state, uint32_t* codepoint, uint32_t byte)
 {
-    uint32_t type = UTF8_DATA[byte];
+    uint32_t type = s_utf8_data[byte];
 
-    *codepoint = (*state != UTF8_ACCEPT)
-        ? (byte & 0x3fu) | (*codepoint << 6)
-        : (0xff >> type) & (byte);
+    *codepoint = (*state != UTF8_ACCEPT) ? (byte & 0x3fu) | (*codepoint << 6) : (0xff >> type) & (byte);
 
-    *state = UTF8_DATA[256 + (*state * 16) + type];
+    *state = s_utf8_data[256 + *state + type];
 
     return *state;
 }
+
+// static uint32_t utf8_strlen(const char* string)
+// {
+//     ASSERT(string);
+
+//     uint32_t codepoint;
+//     uint32_t state  = 0;
+//     uint32_t length = 0;
+
+//     for (; *string; string++)
+//     {
+//         if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+//         {
+//             length++;
+//         }
+//     }
+
+//     ASSERT(state == UTF8_ACCEPT);
+
+//     return length;
+// }
 
 
 // -----------------------------------------------------------------------------
@@ -2500,7 +2523,7 @@ public:
 
         for (; *string; string++)
         {
-            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
                 if (!m_codepoints.count(codepoint))
                 {
@@ -2612,20 +2635,23 @@ public:
     }
 
     // TODO : This needs to be mutexed, if the atlas allows updates.
-    void get_text_quads(const char* string, stbtt_aligned_quad* out_quads)
+    uint32_t record_quads(const char* string, MeshRecorder& recorder)
     {
-        uint32_t codepoint;
-        uint32_t state = 0;
-
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
         //        flag check glyph presence and update on the fly.
+
+        uint32_t codepoint;
+        uint32_t state = 0;
+        uint32_t count = 0;
 
         float x = 0.0f;
         float y = 0.0f;
 
+        stbtt_aligned_quad quad = {};
+
         for (; *string; string++)
         {
-            if (UTF8_ACCEPT == decode_utf8(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
                 const auto it = m_codepoints.find(codepoint);
                 ASSERT(it != m_codepoints.end());
@@ -2640,13 +2666,29 @@ public:
                     m_bitmap_height,
                     it->second,
                     &x, &y,
-                    out_quads++,
+                    &quad,
                     false // align_to_integer // TODO ??? Expose to the user ???
                 );
+
+                recorder.texcoord(         quad.s0, quad.t0);
+                recorder.vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
+
+                recorder.texcoord(         quad.s0, quad.t1);
+                recorder.vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
+
+                recorder.texcoord(         quad.s1, quad.t1);
+                recorder.vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
+
+                recorder.texcoord(         quad.s1, quad.t0);
+                recorder.vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
+
+                count++;
             }
         }
 
         ASSERT(state == UTF8_ACCEPT);
+
+        return count;
     }
 
 private:
@@ -2891,30 +2933,8 @@ public:
     {
         ASSERT(m_recorder);
 
-        Vector<stbtt_aligned_quad> quads(strlen(string), stbtt_aligned_quad {}); // TODO !!! Replace with utf8_strlen !!!
-
         // TODO : Pass the recorder and transform directly to the atlas, so that no temporaries are necessary.
-        m_atlas->get_text_quads(string, quads.data());
-
-        for (const stbtt_aligned_quad& quad : quads)
-        {
-            // TODO : Make sure the texcoords are OK for both OpenGL and other APIs.
-
-            m_recorder->texcoord(         quad.s0, quad.t0);
-            m_recorder->vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
-
-            m_recorder->texcoord(         quad.s0, quad.t1);
-            m_recorder->vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
-
-            m_recorder->texcoord(         quad.s1, quad.t1);
-            m_recorder->vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
-
-            m_recorder->texcoord(         quad.s1, quad.t0);
-            m_recorder->vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
-
-            // float x0,y0,s0,t0; // top-left
-            // float x1,y1,s1,t1; // bottom-right
-        }
+        m_atlas->record_quads(string, *m_recorder);
 
         // TODO : Transform the quads into correct position and convert them into triangles.
     }
