@@ -2846,16 +2846,17 @@ private:
 // TEXT MESH RECORDING
 // -----------------------------------------------------------------------------
 
-// TODO : Probably either sublcass `MeshRecorder` or add the text related
-//        functionality in it, so that only one recorder per thread context
-//        is needed (they can't record at the same time anyway).
-class TextMeshRecorder
+class TextRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, Atlas* atlas)
+    void begin(uint16_t id, uint16_t flags, Atlas* atlas, MeshRecorder* recorder)
     {
-        ASSERT(!is_recording());
+        ASSERT(!m_atlas);
+        ASSERT(!m_recorder);
+
         ASSERT(atlas);
+        ASSERT(recorder);
+        ASSERT(!recorder->is_recording());
 
         // TODO : Reset alignment, etc.
         // ...
@@ -2871,26 +2872,24 @@ public:
             | VERTEX_COLOR // TODO : Expose to the user.
             ;
 
-        m_recorder.begin(id, mesh_flags);
-        m_recorder.color(0xffffffff);
+        m_atlas    = atlas;
+        m_recorder = recorder;
 
-        m_atlas     = atlas;
-        m_recording = true;
+        m_recorder->begin(id, mesh_flags);
     }
 
     void end()
     {
-        ASSERT(is_recording());
+        ASSERT(m_recorder);
 
-        m_recorder.end();
+        m_recorder->end();
 
-        m_atlas     = nullptr;
-        m_recording = false;
+        *this = {};
     }
 
     void add_text(const char* string)
     {
-        ASSERT(is_recording());
+        ASSERT(m_recorder);
 
         Vector<stbtt_aligned_quad> quads(strlen(string), stbtt_aligned_quad {}); // TODO !!! Replace with utf8_strlen !!!
 
@@ -2901,17 +2900,17 @@ public:
         {
             // TODO : Make sure the texcoords are OK for both OpenGL and other APIs.
 
-            m_recorder.texcoord(         quad.s0, quad.t0);
-            m_recorder.vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
+            m_recorder->texcoord(         quad.s0, quad.t0);
+            m_recorder->vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
 
-            m_recorder.texcoord(         quad.s0, quad.t1);
-            m_recorder.vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
+            m_recorder->texcoord(         quad.s0, quad.t1);
+            m_recorder->vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
 
-            m_recorder.texcoord(         quad.s1, quad.t1);
-            m_recorder.vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
+            m_recorder->texcoord(         quad.s1, quad.t1);
+            m_recorder->vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
 
-            m_recorder.texcoord(         quad.s1, quad.t0);
-            m_recorder.vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
+            m_recorder->texcoord(         quad.s1, quad.t0);
+            m_recorder->vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
 
             // float x0,y0,s0,t0; // top-left
             // float x1,y1,s1,t1; // bottom-right
@@ -2920,20 +2919,14 @@ public:
         // TODO : Transform the quads into correct position and convert them into triangles.
     }
 
-    inline bool is_recording() const
-    {
-        return m_recording;
-    }
-
-    inline const MeshRecorder& mesh_recorder() const
+    inline const MeshRecorder* mesh_recorder() const
     {
         return m_recorder;
     }
 
 private:
-    MeshRecorder m_recorder;
-    Atlas*       m_atlas     = nullptr;
-    bool         m_recording = false;
+    MeshRecorder* m_recorder = nullptr;
+    Atlas*        m_atlas    = nullptr;
 };
 
 
@@ -3526,8 +3519,8 @@ struct GlobalContext
 struct LocalContext
 {
     MeshRecorder        mesh_recorder;
+    TextRecorder        text_recorder;
     InstanceRecorder    instance_recorder;
-    TextMeshRecorder    text_mesh_recorder;
 
     FramebufferRecorder framebuffer_recorder;
 
@@ -4350,12 +4343,13 @@ void begin_text(int id, int atlas, int flags)
 {
     using namespace mnm;
 
-    ASSERT(!t_ctx->text_mesh_recorder.is_recording());
+    ASSERT(!t_ctx->text_recorder.mesh_recorder());
 
-    t_ctx->text_mesh_recorder.begin(
+    t_ctx->text_recorder.begin(
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
-        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)] // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
+        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)],
+        &t_ctx->mesh_recorder // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
     );
 }
 
@@ -4363,20 +4357,20 @@ void end_text(void)
 {
     using namespace mnm;
 
-    ASSERT(t_ctx->text_mesh_recorder.is_recording());
+    ASSERT(t_ctx->text_recorder.mesh_recorder());
 
     // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.mesh_cache.add_mesh(t_ctx->text_mesh_recorder.mesh_recorder(), g_ctx.layout_cache);
+    (void)g_ctx.mesh_cache.add_mesh(*t_ctx->text_recorder.mesh_recorder(), g_ctx.layout_cache);
 
-    t_ctx->text_mesh_recorder.end();
+    t_ctx->text_recorder.end();
 }
 
 void text(const char* string)
 {
     ASSERT(string);
-    ASSERT(mnm::t_ctx->text_mesh_recorder.is_recording());
+    ASSERT(mnm::t_ctx->text_recorder.mesh_recorder());
 
-    mnm::t_ctx->text_mesh_recorder.add_text(string);
+    mnm::t_ctx->text_recorder.add_text(string);
 }
 
 

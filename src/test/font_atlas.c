@@ -20,7 +20,10 @@ static void setup(void)
     end_atlas();
 
     begin_text(TEXT_ID, ATLAS_ID, TEXT_H_ALIGN_CENTER);
-    text("Hello, World!");
+    {
+        color(0xffffffff);
+        text("Hello, World!");
+    }
     end_text();
 }
 
