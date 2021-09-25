@@ -40,7 +40,6 @@ static void draw(void)
 
     identity();
     translate(100.0f, 100.0f, 0.0f);
-    texture(ATLAS_ID);
     mesh(TEXT_ID);
 }
 

@@ -1104,12 +1104,13 @@ private:
 class MeshRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags)
+    void begin(uint16_t id, uint16_t flags, uint32_t extra_data = 0)
     {
         ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT16_MAX));
 
-        m_id    = id;
-        m_flags = flags;
+        m_id         = id;
+        m_flags      = flags;
+        m_extra_data = extra_data;
 
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
@@ -1174,6 +1175,8 @@ public:
     inline uint16_t id() const { return m_id; }
 
     inline uint16_t flags() const { return m_flags; }
+
+    inline uint32_t extra_data() const { return m_extra_data; }
 
     inline uint32_t vertex_count() const { return m_vertex_count; }
 
@@ -1288,6 +1291,7 @@ protected:
     VertexPushFunc                          m_vertex_func      = nullptr;
     uint32_t                                m_vertex_count     = 0;
     uint32_t                                m_invocation_count = 0;
+    uint32_t                                m_extra_data       = 0;
     uint16_t                                m_id               = UINT16_MAX;
     uint16_t                                m_flags            = UINT16_MAX;
 
@@ -1394,6 +1398,7 @@ union IndexBufferUnion
 struct Mesh
 {
     uint32_t          element_count = 0;
+    uint32_t          extra_data    = 0;
     uint16_t          flags         = MESH_INVALID;
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
@@ -1456,6 +1461,7 @@ public:
         mesh.destroy();
 
         mesh.element_count = recorder.vertex_count();
+        mesh.extra_data    = recorder.extra_data();
         mesh.flags         = recorder.flags();
 
         switch (new_type)
@@ -2891,7 +2897,7 @@ private:
 class TextRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, Atlas* atlas, MeshRecorder* recorder)
+    void begin(uint16_t id, uint16_t flags, uint16_t atlas_id, Atlas* atlas, MeshRecorder* recorder)
     {
         ASSERT(!m_atlas);
         ASSERT(!m_recorder);
@@ -2917,7 +2923,7 @@ public:
         m_atlas    = atlas;
         m_recorder = recorder;
 
-        m_recorder->begin(id, mesh_flags);
+        m_recorder->begin(id, mesh_flags, atlas_id);
     }
 
     void end()
@@ -4130,6 +4136,20 @@ void mesh(int id)
         }
     }
 
+    if (mesh_flags & TEXT_MESH)
+    {
+        if (!bgfx::isValid(state.texture))
+        {
+            texture(mesh.extra_data);
+        }
+
+        if (state.flags == STATE_DEFAULT)
+        {
+            // NOTE : Maybe we just want ensure the blending is added?
+            state.flags = STATE_BLEND_ALPHA | STATE_WRITE_RGB;
+        }
+    }
+
     if (!bgfx::isValid(state.program))
     {
         // TODO : Figure out how to do this without this ugliness.
@@ -4139,12 +4159,6 @@ void mesh(int id)
         }
 
         state.program = g_ctx.program_cache.builtin(mesh_flags);
-    }
-
-    if (mesh_flags & TEXT_MESH && state.flags == STATE_DEFAULT)
-    {
-        // NOTE : Maybe we just want ensure the blending is added?
-        state.flags = STATE_BLEND_ALPHA | STATE_WRITE_RGB;
     }
 
     submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
@@ -4368,6 +4382,7 @@ void begin_text(int id, int atlas, int flags)
     t_ctx->text_recorder.begin(
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
+        static_cast<uint16_t>(atlas),
         g_ctx.atlas_cache[static_cast<uint16_t>(atlas)],
         &t_ctx->mesh_recorder // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
     );
