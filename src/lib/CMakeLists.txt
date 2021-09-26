@@ -44,7 +44,7 @@ if(MSVC)
 endif()
 
 set_target_properties(${NAME} PROPERTIES
-    CXX_STANDARD 17 # Needed for `__has_include`.
+    CXX_STANDARD 20 # 17 needed for `__has_include` (hard requirement), 20 for `span` (laziness at this point).
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"

@@ -12,6 +12,7 @@
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
+#include <span>                   // span
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
@@ -108,9 +109,17 @@ constexpr uint16_t PRIMITIVE_TYPE_MASK    = PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE
 
 constexpr uint16_t PRIMITIVE_TYPE_SHIFT   = 2;
 
-constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
+constexpr uint16_t TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CENTER | TEXT_H_ALIGN_RIGHT;
 
-constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
+constexpr uint16_t TEXT_H_ALIGN_SHIFT     = 4;
+
+constexpr uint16_t TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
+
+constexpr uint16_t TEXT_TYPE_SHIFT        = 1;
+
+constexpr uint16_t TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
+
+constexpr uint16_t TEXT_V_ALIGN_SHIFT     = 7;
 
 constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
 
@@ -119,6 +128,10 @@ constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
 constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
 
 constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
+
+constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
+
+constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
 
 constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
 
@@ -179,6 +192,12 @@ using Array = std::array<T, Size>;
 
 template <typename T>
 using Atomic = std::atomic<T>;
+
+template <typename T>
+using DynamicSpan = std::span<T>;
+
+template <typename T, uint32_t Size>
+using FixedSpan = std::span<T, Size>;
 
 using Mutex = std::mutex;
 
@@ -1164,6 +1183,13 @@ public:
     }
 
     inline const Vector<uint8_t>& position_buffer() const
+    {
+        ASSERT(is_recording());
+
+        return m_position_buffer;
+    }
+
+    inline Vector<uint8_t>& position_buffer()
     {
         ASSERT(is_recording());
 
@@ -2641,10 +2667,12 @@ public:
     }
 
     // TODO : This needs to be mutexed, if the atlas allows updates.
-    uint32_t record_quads(const char* string, MeshRecorder& recorder)
+    DynamicSpan<Vec3> record_quads(const char* string, MeshRecorder& recorder)
     {
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
         //        flag check glyph presence and update on the fly.
+
+        const size_t offset = recorder.position_buffer().size();
 
         uint32_t codepoint;
         uint32_t state = 0;
@@ -2693,8 +2721,12 @@ public:
         }
 
         ASSERT(state == UTF8_ACCEPT);
+        ASSERT((recorder.position_buffer().size() - offset) % (6 * sizeof(Vec3)) == 0); // 2 triangles per quad added.
 
-        return count;
+        Vec3*        data = reinterpret_cast<Vec3*>(recorder.position_buffer().data() + offset);
+        const size_t size = (recorder.position_buffer().size() - offset) / sizeof(Vec3);
+
+        return DynamicSpan<Vec3>(data, size);
     }
 
 private:
@@ -2906,20 +2938,15 @@ public:
         ASSERT(recorder);
         ASSERT(!recorder->is_recording());
 
-        // TODO : Reset alignment, etc.
-        // ...
+        const uint16_t mesh_flags =
+            TEXT_MESH       |
+            PRIMITIVE_QUADS |
+            VERTEX_POSITION |
+            VERTEX_TEXCOORD |
+            VERTEX_COLOR    |
+            ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
 
-        const uint16_t mesh_flags = 0
-            | TEXT_MESH
-            | ((flags & TEXT_STATIC   ) ? MESH_STATIC    : 0) // TODO : Just shift it.
-            | ((flags & TEXT_DYNAMIC  ) ? MESH_DYNAMIC   : 0)
-            | ((flags & TEXT_TRANSIENT) ? MESH_TRANSIENT : 0)
-            | PRIMITIVE_QUADS
-            | VERTEX_POSITION
-            | VERTEX_TEXCOORD
-            | VERTEX_COLOR // TODO : Expose to the user.
-            ;
-
+        m_flags    = flags;
         m_atlas    = atlas;
         m_recorder = recorder;
 
@@ -2935,14 +2962,16 @@ public:
         *this = {};
     }
 
-    void add_text(const char* string)
+    void add_text(const char* string, const Mat4& transform)
     {
         ASSERT(m_recorder);
 
-        // TODO : Pass the recorder and transform directly to the atlas, so that no temporaries are necessary.
-        m_atlas->record_quads(string, *m_recorder);
+        DynamicSpan<Vec3> vertices = m_atlas->record_quads(string, *m_recorder);
 
-        // TODO : Transform the quads into correct position and convert them into triangles.
+        if (h_alignment() != TEXT_H_ALIGN_LEFT || v_alignment() != TEXT_V_ALIGN_BASELINE)
+        {
+            // TODO : Adjust the transform and apply it to all the vertices span.
+        }
     }
 
     inline const MeshRecorder* mesh_recorder() const
@@ -2951,8 +2980,34 @@ public:
     }
 
 private:
+    inline uint16_t h_alignment() const
+    {
+        constexpr uint16_t alignment[] =
+        {
+            TEXT_H_ALIGN_LEFT  ,
+            TEXT_H_ALIGN_CENTER,
+            TEXT_H_ALIGN_RIGHT ,
+        };
+
+        return alignment[(m_flags & TEXT_H_ALIGN_MASK) >> TEXT_H_ALIGN_SHIFT];
+    }
+
+    inline uint16_t v_alignment() const
+    {
+        constexpr uint16_t alignment[] =
+        {
+            TEXT_V_ALIGN_BASELINE  ,
+            TEXT_V_ALIGN_MIDDLE    ,
+            TEXT_V_ALIGN_CAP_HEIGHT,
+        };
+
+        return alignment[(m_flags & TEXT_V_ALIGN_MASK) >> TEXT_V_ALIGN_SHIFT];
+    }
+
+private:
     MeshRecorder* m_recorder = nullptr;
     Atlas*        m_atlas    = nullptr;
+    uint16_t      m_flags    = 0;
 };
 
 
@@ -4383,8 +4438,8 @@ void begin_text(int id, int atlas, int flags)
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
         static_cast<uint16_t>(atlas),
-        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)],
-        &t_ctx->mesh_recorder // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
+        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)], // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
+        &t_ctx->mesh_recorder
     );
 }
 
@@ -4402,10 +4457,12 @@ void end_text(void)
 
 void text(const char* string)
 {
-    ASSERT(string);
-    ASSERT(mnm::t_ctx->text_recorder.mesh_recorder());
+    using namespace mnm;
 
-    mnm::t_ctx->text_recorder.add_text(string);
+    ASSERT(string);
+    ASSERT(t_ctx->text_recorder.mesh_recorder());
+
+    t_ctx->text_recorder.add_text(string, t_ctx->matrix_stack.top());
 }
 
 
