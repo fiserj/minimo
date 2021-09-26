@@ -582,7 +582,7 @@ void glyphs_from_string(const char* string);
 ///
 enum
 {
-    // Static, left-aligned horizontally, baseline-aligned vertically.
+    // Static, left-aligned horizontally, baseline-aligned vertically, Y axis up.
     TEXT_DEFAULT            = 0x0000,
 
     // Text mesh type.
@@ -599,6 +599,10 @@ enum
     TEXT_V_ALIGN_BASELINE   = 0x0040,
     TEXT_V_ALIGN_MIDDLE     = 0x0080,
     TEXT_V_ALIGN_CAP_HEIGHT = 0x0100,
+
+    // Y axis direction.
+    TEXT_Y_AXIS_UP          = 0x0200,
+    TEXT_Y_AXIS_DOWN        = 0x0400,
 };
 
 /// ... `color` call is also valid within the begin / end pair.
