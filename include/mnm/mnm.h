@@ -621,7 +621,7 @@ void alignment(int flags);
 ///
 void line_height(float factor);
 
-/// ...
+/// TODO : Convert to `start..end` API if only single function is used ?
 ///
 void text(const char* string);
 

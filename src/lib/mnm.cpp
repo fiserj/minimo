@@ -2978,6 +2978,28 @@ public:
         *this = {};
     }
 
+    void set_alignment(uint16_t flags)
+    {
+        ASSERT(m_recorder);
+
+        if (flags & TEXT_H_ALIGN_MASK)
+        {
+            m_flags = (m_flags & ~TEXT_H_ALIGN_MASK) | (flags & TEXT_H_ALIGN_MASK);
+        }
+
+        if (flags & TEXT_V_ALIGN_MASK)
+        {
+            m_flags = (m_flags & ~TEXT_V_ALIGN_MASK) | (flags & TEXT_V_ALIGN_MASK);
+        }
+    }
+
+    void set_line_height(float factor)
+    {
+        ASSERT(m_recorder);
+
+        m_line_height = factor;
+    }
+
     void add_text(const char* string, const Mat4& transform)
     {
         ASSERT(m_recorder);
@@ -3061,9 +3083,10 @@ private:
     }
 
 private:
-    MeshRecorder* m_recorder = nullptr;
-    Atlas*        m_atlas    = nullptr;
-    uint16_t      m_flags    = 0;
+    MeshRecorder* m_recorder    = nullptr;
+    Atlas*        m_atlas       = nullptr;
+    float         m_line_height = 1.5f;
+    uint16_t      m_flags       = 0;
 };
 
 
@@ -4509,6 +4532,20 @@ void end_text(void)
     (void)g_ctx.mesh_cache.add_mesh(*t_ctx->text_recorder.mesh_recorder(), g_ctx.layout_cache);
 
     t_ctx->text_recorder.end();
+}
+
+void alignment(int flags)
+{
+    ASSERT(mnm::t_ctx->text_recorder.mesh_recorder());
+
+    mnm::t_ctx->text_recorder.set_alignment(static_cast<uint16_t>(flags));
+}
+
+void line_height(float factor)
+{
+    ASSERT(mnm::t_ctx->text_recorder.mesh_recorder());
+
+    mnm::t_ctx->text_recorder.set_line_height(factor);
 }
 
 void text(const char* string)
