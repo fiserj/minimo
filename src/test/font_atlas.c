@@ -19,7 +19,7 @@ static void setup(void)
     glyph_range(0x020, 0x07e);
     end_atlas();
 
-    begin_text(TEXT_ID, ATLAS_ID, TEXT_H_ALIGN_CENTER);
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_DEFAULT | TEXT_Y_AXIS_UP);
     {
         color(0xffffffff);
         text("Hello, World!");
@@ -35,11 +35,13 @@ static void draw(void)
     }
 
     identity();
-    ortho(0.0f, pixel_width(), pixel_height(), 0.0f, 1.0f, -1.0f);
+    // ortho(0.0f, pixel_width(), pixel_height(), 0.0f, 1.0f, -1.0f);
+    ortho(0.0f, pixel_width(), 0.0f, pixel_height(), 1.0f, -1.0f);
     projection();
 
     identity();
-    translate(100.0f, 100.0f, 0.0f);
+    translate(pixel_width() * 0.5f, 0.0f, 0.0f);
+    // translate(0.0f, 20.0f * dpi(), 0.0f);
     mesh(TEXT_ID);
 }
 

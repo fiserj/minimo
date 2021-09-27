@@ -2671,6 +2671,7 @@ public:
         }
     }
 
+    template <bool YAxisDown>
     void get_packed_quad(const stbtt_packedchar& b, float &inout_xpos, float ypos, stbtt_aligned_quad& q)
     {
         // TODO : Figure out whether to user-enable alignment to integer coordintes.
@@ -2679,9 +2680,18 @@ public:
         const float iph = 1.0f / m_bitmap_height;
 
         q.x0 = inout_xpos + b.xoff;
-        q.y0 =       ypos + b.yoff;
         q.x1 = inout_xpos + b.xoff2;
-        q.y1 =       ypos + b.yoff2;
+
+        if constexpr (YAxisDown)
+        {
+            q.y0 = ypos + b.yoff;
+            q.y1 = ypos + b.yoff2;
+        }
+        else
+        {
+            q.y0 = ypos - b.yoff;
+            q.y1 = ypos - b.yoff2;
+        }
 
         q.s0 = b.x0 * ipw;
         q.t0 = b.y0 * iph;
@@ -2691,7 +2701,30 @@ public:
         inout_xpos += b.xadvance;
     }
 
+    float text_width(const char* string) const
+    {
+        uint32_t codepoint;
+        uint32_t state = 0;
+        float    width = 0.0f;
+
+        for (; *string; string++)
+        {
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            {
+                const auto it = m_codepoints.find(codepoint);
+                ASSERT(it != m_codepoints.end());
+
+                width += m_char_quads[it->second].xadvance;
+            }
+        }
+
+        ASSERT(state == UTF8_ACCEPT);
+
+        return width;
+    }
+
     // TODO : This needs to be mutexed, if the atlas allows updates.
+    template <bool YAxisDown>
     DynamicSpan<Vec3> record_quads(const char* string, MeshRecorder& recorder)
     {
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
@@ -2720,7 +2753,7 @@ public:
                 //        routine that returns the pixel coordinates, not texture
                 //        ones, so that we can guarantee old meshes stay valid even
                 //        if the atlas gets updated and repacked.
-                get_packed_quad(m_char_quads[it->second], x, y, quad);
+                get_packed_quad<YAxisDown>(m_char_quads[it->second], x, y, quad);
 
                 recorder.texcoord(         quad.s0, quad.t0);
                 recorder.vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
@@ -3004,40 +3037,39 @@ public:
     {
         ASSERT(m_recorder);
 
-        DynamicSpan<Vec3> vertices = m_atlas->record_quads(string, *m_recorder);
+        DynamicSpan<Vec3> vertices = y_axis() == TEXT_Y_AXIS_DOWN
+            ? m_atlas->record_quads<true >(string, *m_recorder)
+            : m_atlas->record_quads<false>(string, *m_recorder);
 
-        if (h_alignment() != TEXT_H_ALIGN_LEFT || v_alignment() != TEXT_V_ALIGN_BASELINE)
+        Vec3 offset = { 0.0f, 0.0f, 0.0f };
+
+        float x_min =  FLT_MAX;
+        float x_max = -FLT_MAX;
+
+        if (h_alignment() != TEXT_H_ALIGN_LEFT)
         {
-            Vec3 offset = { 0.0f, 0.0f, 0.0f };
-
-            float x_min =  FLT_MAX;
-            float x_max = -FLT_MAX;
-
-            if (h_alignment() != TEXT_H_ALIGN_LEFT)
+            for (const Vec3& vertex : vertices)
             {
-                for (const Vec3& vertex : vertices)
-                {
-                    x_min = std::min(x_min, vertex.X);
-                    x_max = std::max(x_max, vertex.X);
-                }
-
-                switch (h_alignment())
-                {
-                case TEXT_H_ALIGN_CENTER:
-                    offset.X = (x_min + x_max) * -0.5f;
-                    break;
-                case TEXT_H_ALIGN_RIGHT:
-                    offset.X = -x_max;
-                    break;
-                default:
-                    ASSERT(false && "Invalid enum value.");
-                }
+                x_min = std::min(x_min, vertex.X);
+                x_max = std::max(x_max, vertex.X);
             }
 
-            if (v_alignment() != TEXT_V_ALIGN_BASELINE)
+            switch (h_alignment())
             {
-                
+            case TEXT_H_ALIGN_CENTER:
+                offset.X = (x_min + x_max) * -0.5f;
+                break;
+            case TEXT_H_ALIGN_RIGHT:
+                offset.X = -x_max;
+                break;
+            default:
+                ASSERT(false && "Invalid enum value.");
             }
+        }
+
+        if (v_alignment() != TEXT_V_ALIGN_BASELINE)
+        {
+            
         }
     }
 
@@ -3075,8 +3107,8 @@ private:
     {
         constexpr uint16_t alignment[] =
         {
-            TEXT_Y_AXIS_UP  ,
             TEXT_Y_AXIS_DOWN,
+            TEXT_Y_AXIS_UP  ,
         };
 
         return alignment[(m_flags & TEXT_Y_AXIS_MASK) >> TEXT_Y_AXIS_SHIFT];
