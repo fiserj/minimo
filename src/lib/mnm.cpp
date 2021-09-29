@@ -2335,27 +2335,6 @@ static inline uint32_t utf8_decode(uint32_t* state, uint32_t* codepoint, uint32_
     return *state;
 }
 
-// static uint32_t utf8_strlen(const char* string)
-// {
-//     ASSERT(string);
-
-//     uint32_t codepoint;
-//     uint32_t state  = 0;
-//     uint32_t length = 0;
-
-//     for (; *string; string++)
-//     {
-//         if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
-//         {
-//             length++;
-//         }
-//     }
-
-//     ASSERT(state == UTF8_ACCEPT);
-
-//     return length;
-// }
-
 
 // -----------------------------------------------------------------------------
 // ATLAS RECORDING / BUILDING / CACHING
@@ -2384,127 +2363,16 @@ private:
     Array<const void*, MAX_FONTS> m_data;
 };
 
-struct GlyphRect
-{
-    float x0, y0, x1, y1; // Pixel (updatable) or texture (immutable) coordinates.
-    float xoff, yoff, xadvance;
-    float xoff2, yoff2;
-};
-
-class RectPacker
-{
-public:
-    void clear()
-    {
-        *this = {};
-    }
-
-    inline void reserve_extra(size_t n)
-    {
-        m_rects.reserve(m_rects.size() + n);
-    }
-
-    inline void add(int id, int width, int height)
-    {
-        m_rects.push_back({ id, width, height, 0, 0, 0 });
-
-        m_area += static_cast<uint32_t>(width * height);
-    }
-
-    // This should probably return number of packed (or non-packed) rectangles.
-    bool pack(bool allow_resizing)
-    {
-        if (m_context.width == 0 && m_context.height == 0)
-        {
-            allow_resizing = true;
-        }
-
-        if (allow_resizing)
-        {
-            auto_resize();
-        }
-
-        // TODO : Repeat (one more time only?) with larger size. This should
-        //        probably only happen if the rectangles are very oddly shaped.
-        int res = stbrp_pack_rects(&m_context, m_rects.data(), static_cast<int>(m_rects.size()));
-        return res == 1;
-    }
-
-    uint32_t width() const
-    {
-        return static_cast<uint32_t>(m_context.width + 1);
-    }
-
-    uint32_t height() const
-    {
-        return static_cast<uint32_t>(m_context.height + 1);
-    }
-
-    inline Vector<stbrp_rect>& rects()
-    {
-        return m_rects;
-    }
-
-    inline const Vector<stbrp_rect>& rects() const
-    {
-        return m_rects;
-    }
-
-private:
-    void auto_resize(float extra_area = 0.05f)
-    {
-        const uint32_t min_area = static_cast<uint32_t>(static_cast<float>(m_area) * (1.0f + extra_area));
-        uint32_t       size[]   = { 64, 64 };
-
-        for (int i = 0; i < 6; i++)
-        for (int j = 0; j < 2; j++)
-        {
-            if (size[0] - 1 > width() || size[1] - 1 > height())
-            {
-                const uint32_t area = (size[0] - 1) * (size[1] - 1);
-
-                if (area >= min_area)
-                {
-                    resize(size[0], size[1]);
-                    return;
-                }
-            }
-
-            size[j] *= 2;
-        }
-
-        // Rectangle still too small, but we don't want to go beyond 4096 x 4096.
-        resize(size[0], size[1]);
-    }
-
-    void resize(uint32_t width, uint32_t height)
-    {
-        m_nodes.resize(width - 1);
-
-        stbrp_init_target(
-            &m_context,
-            static_cast<int>(width - 1),
-            static_cast<int>(height - 1),
-            m_nodes.data(),
-            static_cast<int>(m_nodes.size())
-        );
-    }
-
-private:
-    stbrp_context      m_context = {};
-    Vector<stbrp_rect> m_rects;
-    Vector<stbrp_node> m_nodes;
-    uint32_t           m_area = 0;
-};
-
 class Atlas
 {
 public:
-    bool is_free() const { return m_flags & ATLAS_FREE; }
+    inline float font_size() const { return m_font_size; }
 
-    bool is_locked() const { return m_locked; }
+    inline bool is_free() const { return m_flags & ATLAS_FREE; }
 
-    bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
+    inline bool is_locked() const { return m_locked; }
+
+    inline bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
 
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
@@ -2703,6 +2571,9 @@ public:
 
     float text_width(const char* string) const
     {
+        // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
+        //        flag check glyph presence and update on the fly.
+
         uint32_t codepoint;
         uint32_t state = 0;
         float    width = 0.0f;
@@ -2725,12 +2596,10 @@ public:
 
     // TODO : This needs to be mutexed, if the atlas allows updates.
     template <bool YAxisDown>
-    DynamicSpan<Vec3> record_quads(const char* string, MeshRecorder& recorder)
+    void record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
         //        flag check glyph presence and update on the fly.
-
-        const size_t offset = recorder.position_buffer().size();
 
         uint32_t codepoint;
         uint32_t state = 0;
@@ -2755,27 +2624,21 @@ public:
                 //        if the atlas gets updated and repacked.
                 get_packed_quad<YAxisDown>(m_char_quads[it->second], x, y, quad);
 
-                recorder.texcoord(         quad.s0, quad.t0);
-                recorder.vertex  (HMM_Vec3(quad.x0, quad.y0, 0.0f));
+                recorder.texcoord(                      quad.s0, quad.t0);
+                recorder.vertex  ((transform * HMM_Vec4(quad.x0, quad.y0, 0.0f, 1.0f)).XYZ);
 
-                recorder.texcoord(         quad.s0, quad.t1);
-                recorder.vertex  (HMM_Vec3(quad.x0, quad.y1, 0.0f));
+                recorder.texcoord(                      quad.s0, quad.t1);
+                recorder.vertex  ((transform * HMM_Vec4(quad.x0, quad.y1, 0.0f, 1.0f)).XYZ);
 
-                recorder.texcoord(         quad.s1, quad.t1);
-                recorder.vertex  (HMM_Vec3(quad.x1, quad.y1, 0.0f));
+                recorder.texcoord(                      quad.s1, quad.t1);
+                recorder.vertex  ((transform * HMM_Vec4(quad.x1, quad.y1, 0.0f, 1.0f)).XYZ);
 
-                recorder.texcoord(         quad.s1, quad.t0);
-                recorder.vertex  (HMM_Vec3(quad.x1, quad.y0, 0.0f));
+                recorder.texcoord(                      quad.s1, quad.t0);
+                recorder.vertex  ((transform * HMM_Vec4(quad.x1, quad.y0, 0.0f, 1.0f)).XYZ);
             }
         }
 
         ASSERT(state == UTF8_ACCEPT);
-        ASSERT((recorder.position_buffer().size() - offset) % (6 * sizeof(Vec3)) == 0); // 2 triangles per quad added.
-
-        Vec3*        data = reinterpret_cast<Vec3*>(recorder.position_buffer().data() + offset);
-        const size_t size = (recorder.position_buffer().size() - offset) / sizeof(Vec3);
-
-        return DynamicSpan<Vec3>(data, size);
     }
 
 private:
@@ -3037,39 +2900,44 @@ public:
     {
         ASSERT(m_recorder);
 
-        DynamicSpan<Vec3> vertices = y_axis() == TEXT_Y_AXIS_DOWN
-            ? m_atlas->record_quads<true >(string, *m_recorder)
-            : m_atlas->record_quads<false>(string, *m_recorder);
+        const float width  = m_atlas->text_width(string);
+
+        // TODO : Figure out whether it makes more sense to consider only first
+        //        line for the alignment, or the whole text as a block / paragraph.
+        //        Can also add new alignment flags.
+        const float height = m_atlas->font_size();
 
         Vec3 offset = { 0.0f, 0.0f, 0.0f };
 
-        float x_min =  FLT_MAX;
-        float x_max = -FLT_MAX;
-
-        if (h_alignment() != TEXT_H_ALIGN_LEFT)
+        switch (h_alignment())
         {
-            for (const Vec3& vertex : vertices)
-            {
-                x_min = std::min(x_min, vertex.X);
-                x_max = std::max(x_max, vertex.X);
-            }
-
-            switch (h_alignment())
-            {
-            case TEXT_H_ALIGN_CENTER:
-                offset.X = (x_min + x_max) * -0.5f;
-                break;
-            case TEXT_H_ALIGN_RIGHT:
-                offset.X = -x_max;
-                break;
-            default:
-                ASSERT(false && "Invalid enum value.");
-            }
+        case TEXT_H_ALIGN_CENTER:
+            offset.X = width * -0.5f;
+            break;
+        case TEXT_H_ALIGN_RIGHT:
+            offset.X = -width;
+            break;
+        default:;
         }
 
-        if (v_alignment() != TEXT_V_ALIGN_BASELINE)
+        switch (v_alignment())
         {
-            
+        case TEXT_V_ALIGN_MIDDLE:
+            offset.Y = height * -0.5f;
+            break;
+        case TEXT_V_ALIGN_CAP_HEIGHT:
+            offset.Y = height;
+            break;
+        default:;
+        }
+
+        if (y_axis() == TEXT_Y_AXIS_DOWN)
+        {
+            m_atlas->record_quads<true >(string, HMM_Translate(offset) * transform, *m_recorder);
+        }
+        else
+        {
+            m_atlas->record_quads<false>(string, HMM_Translate(offset) * transform, *m_recorder);
         }
     }
 
