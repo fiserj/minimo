@@ -1194,13 +1194,6 @@ public:
         return m_position_buffer;
     }
 
-    inline Vector<uint8_t>& position_buffer()
-    {
-        ASSERT(is_recording());
-
-        return m_position_buffer;
-    }
-
     inline bool is_recording() const { return m_id != UINT16_MAX; }
 
     inline uint16_t id() const { return m_id; }
@@ -2933,11 +2926,11 @@ public:
 
         if (y_axis() == TEXT_Y_AXIS_DOWN)
         {
-            m_atlas->record_quads<true >(string, HMM_Translate(offset) * transform, *m_recorder);
+            m_atlas->record_quads<true >(string, transform * HMM_Translate(offset), *m_recorder);
         }
         else
         {
-            m_atlas->record_quads<false>(string, HMM_Translate(offset) * transform, *m_recorder);
+            m_atlas->record_quads<false>(string, transform * HMM_Translate(offset), *m_recorder);
         }
     }
 
