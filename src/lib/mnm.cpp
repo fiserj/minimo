@@ -83,15 +83,11 @@ enum
 {
                    ATLAS_FREE            = 0x8000,
 
-                   INSTANCING_SUPPORTED  = 0x0080, // Needs to make sure it's outside regular mesh flags.
+                   INSTANCING_SUPPORTED  = 0x2000, // Needs to make sure it's outside regular mesh flags.
 
-                   MESH_STATIC           = 0x0000,
+                   MESH_INVALID          = 0x0006,
 
-                   MESH_INVALID          = 0x0003,
-
-                   PRIMITIVE_TRIANGLES   = 0x0000,
-
-                   SAMPLER_COLOR_R       = 0x0100, // Needs to make sure it's outside regular mesh flags.
+                   SAMPLER_COLOR_R       = 0x4000, // Needs to make sure it's outside regular mesh flags.
 
                    TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
 
@@ -102,13 +98,13 @@ enum
 // FLAG MASKS AND SHIFTS
 // -----------------------------------------------------------------------------
 
-constexpr uint16_t MESH_TYPE_MASK         = MESH_TRANSIENT | MESH_DYNAMIC;
+constexpr uint16_t MESH_TYPE_MASK         = MESH_STATIC | MESH_TRANSIENT | MESH_DYNAMIC | MESH_INVALID;
 
-constexpr uint16_t MESH_TYPE_SHIFT        = 0;
+constexpr uint16_t MESH_TYPE_SHIFT        = 1;
 
-constexpr uint16_t PRIMITIVE_TYPE_MASK    = PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP | PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
+constexpr uint16_t PRIMITIVE_TYPE_MASK    = PRIMITIVE_TRIANGLES | PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP | PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
 
-constexpr uint16_t PRIMITIVE_TYPE_SHIFT   = 2;
+constexpr uint16_t PRIMITIVE_TYPE_SHIFT   = 4;
 
 constexpr uint16_t TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CENTER | TEXT_H_ALIGN_RIGHT;
 
@@ -152,7 +148,18 @@ constexpr uint16_t UNIFORM_TYPE_SHIFT     = 0;
 
 constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
 
-constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 4;
+constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
+
+static_assert(
+    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | KEEP_CPU_GEOMETRY) &
+          (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH)),
+    "Internal mesh flags interfere with the user-exposed ones."
+);
+
+static_assert(
+    PRIMITIVE_QUADS && !(PRIMITIVE_QUADS & (PRIMITIVE_QUADS - 1)),
+    "`PRIMITIVE_QUADS` must be power of two."
+);
 
 
 // -----------------------------------------------------------------------------
@@ -224,32 +231,6 @@ using Vec4 = hmm_vec4;
 
 
 // -----------------------------------------------------------------------------
-// FLAG ENUMS
-// -----------------------------------------------------------------------------
-
-enum struct MeshType : uint16_t
-{
-    STATIC    = MESH_STATIC,
-    TRANSIENT = MESH_TRANSIENT,
-    DYNAMIC   = MESH_DYNAMIC,
-    INVALID   = MESH_INVALID,
-};
-
-static inline MeshType mesh_type(uint16_t flags)
-{
-    ASSERT(((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT) >= MESH_STATIC );
-    ASSERT(((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT) <= MESH_INVALID);
-
-    return static_cast<MeshType>((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT);
-}
-
-static uint16_t mesh_attribs(uint16_t flags)
-{
-    return (flags & VERTEX_ATTRIB_MASK);
-}
-
-
-// -----------------------------------------------------------------------------
 // GENERAL UTILITY FUNCTIONS
 // -----------------------------------------------------------------------------
 
@@ -318,6 +299,44 @@ inline void destroy_if_valid(HandleT& handle)
         bgfx::destroy(handle);
         handle = BGFX_INVALID_HANDLE;
     }
+}
+
+
+// -----------------------------------------------------------------------------
+// HELPER FUNCTIONS
+// -----------------------------------------------------------------------------
+
+static inline uint16_t mesh_type(uint16_t flags)
+{
+    constexpr uint16_t types[] =
+    {
+        MESH_STATIC,
+        MESH_TRANSIENT,
+        MESH_DYNAMIC,
+        MESH_INVALID,
+    };
+
+    return types[((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)];
+}
+
+static inline uint16_t mesh_primitive(uint16_t flags)
+{
+    constexpr uint16_t primitives[] =
+    {
+        PRIMITIVE_TRIANGLES,
+        PRIMITIVE_QUADS,
+        PRIMITIVE_TRIANGLE_STRIP,
+        PRIMITIVE_LINES,
+        PRIMITIVE_LINE_STRIP,
+        PRIMITIVE_POINTS,
+    };
+
+    return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
+}
+
+static inline uint16_t mesh_attribs(uint16_t flags)
+{
+    return (flags & VERTEX_ATTRIB_MASK);
 }
 
 
@@ -603,11 +622,6 @@ public:
     }
 
 private:
-    static_assert(
-        (VERTEX_ATTRIB_MASK & (INSTANCING_SUPPORTED | SAMPLER_COLOR_R)) == 0,
-        "Invalid BUILTIN_MASK bitmask assumption."
-    );
-
     // TODO : This will likely have to be reworked in the future to support additional default layouts
     //        (e.g., an SDF font).
     static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | SAMPLER_COLOR_R;
@@ -1117,7 +1131,7 @@ private:
     }
 
 private:
-    Vector<VertexAttribStateFuncSet> m_func_sets;
+    Vector<VertexAttribStateFuncSet> m_func_sets; // TODO : Reduce the table (indirect indexing?), most of the cells are empty.
 };
 
 
@@ -1239,7 +1253,9 @@ private:
 
         inline const VertexPushFunc& operator[](uint16_t flags) const
         {
-            return m_funcs[flags & (VERTEX_ATTRIB_MASK | PRIMITIVE_QUADS)];
+            const uint16_t quad_mask = mesh_primitive(flags) == PRIMITIVE_QUADS ? PRIMITIVE_QUADS : 0;
+
+            return m_funcs[flags & (VERTEX_ATTRIB_MASK | quad_mask)];
         }
 
     private:
@@ -1428,7 +1444,7 @@ struct Mesh
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
 
-    inline MeshType type() const
+    inline uint16_t type() const
     {
         return mesh_type(flags);
     }
@@ -1437,13 +1453,13 @@ struct Mesh
     {
         switch (type())
         {
-        case MeshType::STATIC:
+        case MESH_STATIC:
             bgfx::destroy   (positions.static_buffer);
             destroy_if_valid(attribs  .static_buffer);
             bgfx::destroy   (indices  .static_buffer);
             break;
 
-        case MeshType::DYNAMIC:
+        case MESH_DYNAMIC:
             bgfx::destroy   (positions.dynamic_buffer);
             destroy_if_valid(attribs  .dynamic_buffer);
             bgfx::destroy   (indices  .dynamic_buffer);
@@ -1473,10 +1489,10 @@ public:
 
         Mesh& mesh = m_meshes[recorder.id()];
 
-        const MeshType old_type = mesh.type();
-        const MeshType new_type = mesh_type(recorder.flags());
+        const uint16_t old_type = mesh.type();
+        const uint16_t new_type = mesh_type(recorder.flags());
 
-        if (new_type == MeshType::INVALID)
+        if (new_type == MESH_INVALID)
         {
             ASSERT(false && "Invalid registered mesh type.");
             return false;
@@ -1490,12 +1506,12 @@ public:
 
         switch (new_type)
         {
-        case MeshType::STATIC:
-        case MeshType::DYNAMIC:
+        case MESH_STATIC:
+        case MESH_DYNAMIC:
             add_persistent_mesh(mesh, recorder, layouts);
             break;
 
-        case MeshType::TRANSIENT:
+        case MESH_TRANSIENT:
             if (add_transient_mesh(mesh, recorder, layouts))
             {
                 m_transient_idxs.push_back(recorder.id());
@@ -1525,7 +1541,7 @@ public:
 
         for (uint16_t idx : m_transient_idxs)
         {
-            ASSERT(m_meshes[idx].type() == MeshType::TRANSIENT);
+            ASSERT(m_meshes[idx].type() == MESH_TRANSIENT);
 
             m_meshes[idx] = {};
         }
@@ -1600,7 +1616,7 @@ private:
 
     void add_persistent_mesh(Mesh& mesh, const MeshRecorder& recorder, const VertexLayoutCache& layout_cache)
     {
-        ASSERT(mesh.type() == MeshType::STATIC || mesh.type() == MeshType::DYNAMIC);
+        ASSERT(mesh.type() == MESH_STATIC || mesh.type() == MESH_DYNAMIC);
 
         meshopt_Stream            streams[2];
         const bgfx::VertexLayout* layouts[2];
@@ -1625,7 +1641,7 @@ private:
                 remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
             ));
 
-            if (mesh.type() == MeshType::STATIC)
+            if (mesh.type() == MESH_STATIC)
             {
                 update_persistent_vertex_buffer(
                     streams[1], *layouts[1], mesh.element_count, indexed_vertex_count, remap_table, mesh.attribs.static_buffer
@@ -1646,7 +1662,7 @@ private:
         }
 
         void* vertex_positions = nullptr;
-        if (mesh.type() == MeshType::STATIC)
+        if (mesh.type() == MESH_STATIC)
         {
             update_persistent_vertex_buffer(
                 streams[0], *layouts[0], mesh.element_count, indexed_vertex_count, remap_table, mesh.positions.static_buffer, &vertex_positions
@@ -1659,7 +1675,7 @@ private:
             );
         }
 
-        if (mesh.type() == MeshType::STATIC)
+        if (mesh.type() == MESH_STATIC)
         {
             update_persistent_index_buffer(
                 mesh.element_count,
@@ -1942,18 +1958,18 @@ static void submit_mesh
 
     switch (mesh.type())
         {
-        case MeshType::TRANSIENT:
+        case MESH_TRANSIENT:
                                           encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
             if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
             break;
 
-        case MeshType::STATIC:
+        case MESH_STATIC:
                                           encoder.setVertexBuffer(0, mesh.positions.static_buffer);
             if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
                                           encoder.setIndexBuffer (   mesh.indices  .static_buffer);
             break;
 
-        case MeshType::DYNAMIC:
+        case MESH_DYNAMIC:
                                           encoder.setVertexBuffer(0, mesh.positions.static_buffer);
             if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
                                           encoder.setIndexBuffer (   mesh.indices  .static_buffer);

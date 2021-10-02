@@ -247,20 +247,22 @@ enum
     MESH_DEFAULT             = 0x0000,
 
     // Mesh type. Static by default.
-    MESH_TRANSIENT           = 0x0001,
-    MESH_DYNAMIC             = 0x0002,
+    MESH_STATIC              = 0x0001,
+    MESH_TRANSIENT           = 0x0002,
+    MESH_DYNAMIC             = 0x0004,
 
     // Primitive type. Triangles by default.
-    PRIMITIVE_QUADS          = 0x0004,
-    PRIMITIVE_TRIANGLE_STRIP = 0x0005,
-    PRIMITIVE_LINES          = 0x0006,
-    PRIMITIVE_LINE_STRIP     = 0x0007,
-    PRIMITIVE_POINTS         = 0x0008,
+    PRIMITIVE_TRIANGLES      = 0x0008,
+    PRIMITIVE_QUADS          = 0x0010,
+    PRIMITIVE_TRIANGLE_STRIP = 0x0020,
+    PRIMITIVE_LINES          = 0x0030,
+    PRIMITIVE_LINE_STRIP     = 0x0040,
+    PRIMITIVE_POINTS         = 0x0050,
 
     // Vertex attribute flags. 3D position always on.
-    VERTEX_COLOR             = 0x0010,
-    VERTEX_NORMAL            = 0x0020,
-    VERTEX_TEXCOORD          = 0x0040,
+    VERTEX_COLOR             = 0x0080,
+    VERTEX_NORMAL            = 0x0100,
+    VERTEX_TEXCOORD          = 0x0200,
 
     // Keeps the geometry on CPU (positions only).
     KEEP_CPU_GEOMETRY        = 0x1000, // TODO : Add support.
