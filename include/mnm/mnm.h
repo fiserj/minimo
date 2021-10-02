@@ -547,12 +547,13 @@ enum
     ATLAS_MONOSPACED      = 0x0002, // TODO : Add support.
 
     // Stores distance to glyph outline rather than direct rasterization.
-    ATLAS_SDF             = 0x0004,
+    ATLAS_SDF             = 0x0004, // TODO : Add support.
 
     // Oversampling for better quality.
     ATLAS_H_OVERSAMPLE_2X = 0x0008,
     ATLAS_H_OVERSAMPLE_3X = 0x0010,
     ATLAS_H_OVERSAMPLE_4X = 0x0018,
+
     ATLAS_V_OVERSAMPLE_2X = 0x0040,
 };
 
@@ -577,8 +578,6 @@ void glyphs_from_string(const char* string);
 /// @section TEXT MESHES
 ///
 /// ...
-
-// TODO : We'll probably need to add some helper like `pixel_ortho()`.
 
 /// ...
 ///

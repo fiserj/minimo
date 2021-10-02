@@ -2594,16 +2594,28 @@ public:
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
         //        flag check glyph presence and update on the fly.
 
-        uint32_t codepoint;
-        uint32_t state = 0;
-        float    width = 0.0f;
+        uint32_t codepoint = 0;
+        uint32_t state     = 0;
+        float    width     = 0.0f;
 
         for (; *string; string++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
                 const auto it = m_codepoints.find(codepoint);
-                ASSERT(it != m_codepoints.end());
+
+                if (it == m_codepoints.end())
+                {
+                    if (m_flags & ATLAS_ALLOW_UPDATE)
+                    {
+                        return -1.0f;
+                    }
+                    else
+                    {
+                        // TODO : Probably just print some warning and skip the glyph.
+                        ASSERT(false && "Atlas is immutable.");
+                    }
+                }
 
                 width += m_char_quads[it->second].xadvance;
             }
@@ -2932,11 +2944,20 @@ public:
         m_line_height = factor;
     }
 
-    void add_text(const char* string, const Mat4& transform)
+    void add_text(const char* string, const Mat4& transform, TextureCache& texture_cache)
     {
         ASSERT(m_recorder);
 
-        const float width  = m_atlas->text_width(string);
+        float width = m_atlas->text_width(string);
+
+        if (width < 0.0f)
+        {
+            m_atlas->add_glyphs_from_string(string);
+            m_atlas->update(texture_cache);
+
+            width = m_atlas->text_width(string);
+            ASSERT(width >= 0.0f);
+        }
 
         // TODO : Figure out whether it makes more sense to consider only first
         //        line for the alignment, or the whole text as a block / paragraph.
@@ -4493,7 +4514,7 @@ void text(const char* string)
     ASSERT(string);
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
-    t_ctx->text_recorder.add_text(string, t_ctx->matrix_stack.top());
+    t_ctx->text_recorder.add_text(string, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
 }
 
 
