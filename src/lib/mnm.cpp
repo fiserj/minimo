@@ -2385,18 +2385,31 @@ public:
 
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
+        MutexScope lock(m_mutex);
+
         if (m_texture != UINT16_MAX)
         {
             textures.destroy_texture(m_texture);
         }
 
-        *this = {};
+        // NOTE : It'd be much nicer to be able to call `*this = {}`, but we
+        //        can't because of the mutex :-(.
+        m_requests   .clear();
+        m_pack_rects .clear();
+        m_pack_nodes .clear();
+        m_char_quads .clear();
+        m_codepoints .clear();
+        m_bitmap_data.clear();
 
-        m_font_size = size;
-        m_texture   = texture;
-        m_flags     = flags;
-
-        // TODO : Padding should probably reflect whether an SDF atlas is required.
+        m_font_info     = {};
+        m_pack_ctx      = {};
+        m_bitmap_width  = 0;
+        m_bitmap_height = 0;
+        m_padding       = 1; // TODO : Padding should probably reflect whether an SDF atlas is required.
+        m_locked        = false;
+        m_font_size     = size;
+        m_texture       = texture;
+        m_flags         = flags;
 
         // TODO : Check return value.
         (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
@@ -2461,7 +2474,6 @@ public:
         std::sort(m_requests.begin(), m_requests.end());
         m_requests.erase(std::unique(m_requests.begin(), m_requests.end()), m_requests.end());
 
-        // !!! TEST
         ASSERT(m_pack_rects.size() == m_char_quads.size());
 
         const size_t count  = m_requests  .size();
@@ -2540,7 +2552,6 @@ public:
         }
 
         m_requests.clear();
-        // !!! TEST
 
         if (!is_updatable())
         {
@@ -2603,9 +2614,24 @@ public:
         return width;
     }
 
-    // TODO : This needs to be mutexed, if the atlas allows updates.
     template <bool YAxisDown>
     void record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    {
+        if (!(m_flags & ATLAS_ALLOW_UPDATE))
+        {
+            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+        }
+        else
+        {
+            MutexScope lock(m_mutex);
+
+            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+        }
+    }
+
+private:
+    template <bool YAxisDown>
+    void record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
         // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
         //        flag check glyph presence and update on the fly.
@@ -2650,7 +2676,6 @@ public:
         ASSERT(state == UTF8_ACCEPT);
     }
 
-private:
     int16_t cap_height() const
     {
         if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
@@ -2777,6 +2802,8 @@ private:
     }
 
 private:
+    Mutex                       m_mutex;
+
     stbtt_fontinfo              m_font_info     = {};
     float                       m_font_size     = 0.0f; // Cap height, in pixels.
 
