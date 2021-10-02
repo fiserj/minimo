@@ -2916,7 +2916,9 @@ public:
         //        Can also add new alignment flags.
         const float height = m_atlas->font_size();
 
-        Vec3 offset = { 0.0f, 0.0f, 0.0f };
+        const float sign   = y_axis() == TEXT_Y_AXIS_DOWN ? 1.0f : -1.0f;
+
+        Vec3        offset = { 0.0f, 0.0f, 0.0f };
 
         switch (h_alignment())
         {
@@ -2932,10 +2934,10 @@ public:
         switch (v_alignment())
         {
         case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = height * -0.5f;
+            offset.Y = sign * height * 0.5f;
             break;
         case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = height;
+            offset.Y = sign * height;
             break;
         default:;
         }
