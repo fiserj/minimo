@@ -2507,20 +2507,24 @@ public:
         uint32_t pack_size[] = { m_bitmap_width, m_bitmap_height };
         pack_rects(offset, count, pack_size);
 
-        size_t render_offset = offset;
-
         if (m_bitmap_width  != pack_size[0] ||
             m_bitmap_height != pack_size[1])
         {
+            Vector<uint8_t> data(pack_size[0] * pack_size[1], 0);
+
+            for (uint32_t y = 0, src_offset = 0, dst_offset = 0; y < m_bitmap_height; y++)
+            {
+                memcpy(data.data() + dst_offset, m_bitmap_data.data() + src_offset, m_bitmap_width);
+
+                src_offset += m_bitmap_width;
+                dst_offset += pack_size[0];
+            }
+
             m_bitmap_width  = pack_size[0];
             m_bitmap_height = pack_size[1];
+            m_bitmap_data.swap(data);
 
-            m_bitmap_data.clear ();
-            m_bitmap_data.resize(pack_size[0] * pack_size[1], 0);
-
-            // TODO !!! We need to add another range (for the glyphs that were
-            //          in the atlas before the update).
-            render_offset = 0;
+            stbi_write_png("TEST2a.png", m_bitmap_width, m_bitmap_height, 1, m_bitmap_data.data(), m_bitmap_width);
         }
 
         ctx.width           = m_bitmap_width;
@@ -2532,8 +2536,8 @@ public:
             &ctx,
             &m_font_info,
             &range,
-            1, // TODO !!! 1 or 2 (if the new range is added).
-            m_pack_rects.data() + offset // TODO !!! render_offset (once the new range is added).
+            1,
+            m_pack_rects.data() + offset
         );
 
         stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
