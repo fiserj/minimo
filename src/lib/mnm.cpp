@@ -2782,6 +2782,7 @@ private:
         {
             if (inout_pack_size[0] > 0 && inout_pack_size[1] > 0)
             {
+                // NOTE : This only packs the new rectangles.
                 if (1 == stbrp_pack_rects(
                     &m_pack_ctx,
                     m_pack_rects.data() + offset,
@@ -2794,15 +2795,25 @@ private:
 
             if (pick_next_size(min_area, inout_pack_size))
             {
-                m_pack_nodes.resize(inout_pack_size[0] - m_padding);
+                if (m_pack_ctx.num_nodes == 0)
+                {
+                    m_pack_nodes.resize(inout_pack_size[0] - m_padding);
 
-                stbrp_init_target(
-                    &m_pack_ctx,
-                    inout_pack_size[0] - m_padding,
-                    inout_pack_size[1] - m_padding,
-                    m_pack_nodes.data(),
-                    static_cast<int>(m_pack_nodes.size())
-                );
+                    stbrp_init_target(
+                        &m_pack_ctx,
+                        inout_pack_size[0] - m_padding,
+                        inout_pack_size[1] - m_padding,
+                        m_pack_nodes.data(),
+                        static_cast<int>(m_pack_nodes.size())
+                    );
+                }
+                else
+                {
+                    // TODO : If `m_pack_ctx` is not empty, it means we've
+                    //        resized the atlas bitmap and have to somehow
+                    //        transfer the already packed rectangles.
+                    patch_stbrp_context(inout_pack_size[0], inout_pack_size[1]);
+                }
             }
             else
             {
@@ -2811,6 +2822,61 @@ private:
                 break;
             }
         }
+    }
+
+    void patch_stbrp_context(uint32_t width, uint32_t height)
+    {
+        stbrp_context      ctx = {};
+        Vector<stbrp_node> nodes(width - m_padding);
+
+        const auto find_node = [&](const stbrp_node* old_node)
+        {
+            stbrp_node*     new_node;
+            const uintptr_t offset = old_node - m_pack_nodes.data(); // Fine even if `nullptr`.
+
+            if (offset < m_pack_nodes.size())
+            {
+                new_node = &nodes[offset];
+            }
+            else if (old_node == &m_pack_ctx.extra[0])
+            {
+                return new_node = &ctx.extra[0];
+            }
+            else if (old_node == &m_pack_ctx.extra[1])
+            {
+                return new_node = &ctx.extra[1];
+            }
+            else
+            {
+                ASSERT(old_node == nullptr);
+                new_node = nullptr;
+            }
+
+            return new_node;
+        };
+
+        stbrp_init_target(
+            &ctx,
+            width  - m_padding,
+            height - m_padding,
+            nodes.data(),
+            static_cast<int>(nodes.size())
+        );
+
+        ctx.active_head   = find_node(m_pack_ctx.active_head  );
+        ctx.free_head     = find_node(m_pack_ctx.free_head    );
+        ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
+        ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
+
+        for (size_t i = 0; i < m_pack_nodes.size() - 1; i++)
+        {
+            nodes[i].x    =            m_pack_nodes[i].x;
+            nodes[i].y    =            m_pack_nodes[i].y;
+            nodes[i].next = find_node(m_pack_nodes[i].next);
+        }
+
+        m_pack_ctx = ctx;
+        m_pack_nodes.swap(nodes);
     }
 
 private:
