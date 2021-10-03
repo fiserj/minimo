@@ -2834,6 +2834,34 @@ private:
         }
     }
 
+#ifndef NDEBUG
+    static void check_stbrp_context_validity(const stbrp_context& ctx, const Vector<stbrp_node>& nodes)
+    {
+        const auto check_node =[&](const stbrp_node* node)
+        {
+            const bool is_in_range = node >= nodes.data() && node < nodes.data() + nodes.size();
+            const bool is_extra    = node == &ctx.extra[0] || node == &ctx.extra[1];
+            const bool is_null     = node == nullptr;
+
+            ASSERT(is_in_range || is_extra || is_null);
+        };
+
+        check_node(ctx.active_head);
+        check_node(ctx.active_head->next);
+
+        check_node(ctx.free_head);
+        check_node(ctx.free_head->next);
+
+        check_node(ctx.extra[0].next);
+        check_node(ctx.extra[1].next);
+
+        for (auto& node : nodes)
+        {
+            check_node(node.next);
+        }
+    }
+#endif // NDEBUG
+
     void patch_stbrp_context(uint32_t width, uint32_t height)
     {
         stbrp_context      ctx = {};
@@ -2893,8 +2921,12 @@ private:
             nodes[i].next = find_node(m_pack_nodes[i].next);
         }
 
-        m_pack_ctx = ctx;
+        m_pack_ctx = ctx; // TODO / FIXME !!! This breaks the pointers pointing to one of the `extra` members.
         m_pack_nodes.swap(nodes);
+
+#ifndef NDEBUG
+        check_stbrp_context_validity(m_pack_ctx, m_pack_nodes);
+#endif
     }
 
 private:
