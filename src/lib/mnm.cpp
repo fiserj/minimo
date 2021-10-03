@@ -2507,6 +2507,8 @@ public:
         uint32_t pack_size[] = { m_bitmap_width, m_bitmap_height };
         pack_rects(offset, count, pack_size);
 
+        size_t render_offset = offset;
+
         if (m_bitmap_width  != pack_size[0] ||
             m_bitmap_height != pack_size[1])
         {
@@ -2516,9 +2518,9 @@ public:
             m_bitmap_data.clear ();
             m_bitmap_data.resize(pack_size[0] * pack_size[1], 0);
 
-            // TODO : We need to change the range to cover all glyphs now, since
-            //        we've cleared the bitmap (can't easily copy the old bitmap
-            //        in, if it's a failed attempt).
+            // TODO !!! We need to add another range (for the glyphs that were
+            //          in the atlas before the update).
+            render_offset = 0;
         }
 
         ctx.width           = m_bitmap_width;
@@ -2530,8 +2532,8 @@ public:
             &ctx,
             &m_font_info,
             &range,
-            1,
-            m_pack_rects.data() + offset
+            1, // TODO !!! 1 or 2 (if the new range is added).
+            m_pack_rects.data() + offset // TODO !!! render_offset (once the new range is added).
         );
 
         stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
@@ -2795,6 +2797,10 @@ private:
 
             if (pick_next_size(min_area, inout_pack_size))
             {
+                // TODO !!! No patching should be needed (except tweaking the
+                //          context's height) if the height changed, but width
+                //          (and thus the number of nodes) stayed the same.
+
                 if (m_pack_ctx.num_nodes == 0)
                 {
                     m_pack_nodes.resize(inout_pack_size[0] - m_padding);
@@ -2865,13 +2871,21 @@ private:
 
         ctx.active_head   = find_node(m_pack_ctx.active_head  );
         ctx.free_head     = find_node(m_pack_ctx.free_head    );
+        ctx.extra[0].x    =           m_pack_ctx.extra[0].x    ;
+        ctx.extra[0].y    =           m_pack_ctx.extra[0].y    ;
         ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
+        ctx.extra[1].x    =           m_pack_ctx.extra[1].x    ;
+        ctx.extra[1].y    =           m_pack_ctx.extra[1].y    ;
         ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
 
+        // TODO !!! It's likely that some special handling will be necessary for
+        //          the last node (or thereof), if the width of the atlas was
+        //          enlarged (so that the node in the middle of the list doesn't
+        //          point to the sentinel).
         for (size_t i = 0; i < m_pack_nodes.size() - 1; i++)
         {
-            nodes[i].x    =            m_pack_nodes[i].x;
-            nodes[i].y    =            m_pack_nodes[i].y;
+            nodes[i].x    =           m_pack_nodes[i].x;
+            nodes[i].y    =           m_pack_nodes[i].y;
             nodes[i].next = find_node(m_pack_nodes[i].next);
         }
 
