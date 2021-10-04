@@ -2788,6 +2788,11 @@ private:
         {
             if (inout_pack_size[0] > 0 && inout_pack_size[1] > 0)
             {
+                // TODO : It's probably possible to revert the packing context
+                //        without having to making its full copy beforehand.
+                stbrp_context      ctx = m_pack_ctx;
+                Vector<stbrp_node> nodes(m_pack_nodes);
+
                 // NOTE : This only packs the new rectangles.
                 if (1 == stbrp_pack_rects(
                     &m_pack_ctx,
@@ -2797,6 +2802,15 @@ private:
                 {
                     break;
                 }
+                else
+                {
+                    m_pack_ctx   = ctx;
+                    m_pack_nodes = nodes;
+                }
+
+                // TODO : We could adjust `offset` and `count` so that the rects
+                //        that were successfully packed would be skipped in next
+                //        resizing attempt, but we'd have to reorder them.
             }
 
             if (pick_next_size(min_area, inout_pack_size))
