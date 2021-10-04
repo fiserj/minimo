@@ -2846,6 +2846,24 @@ private:
             ASSERT(is_in_range || is_extra || is_null);
         };
 
+        const auto count_nodes = [](const stbrp_node* node)
+        {
+            int count = 0;
+
+            while (node)
+            {
+                node = node->next;
+                count++;
+            }
+
+            return count;
+        };
+
+        const int active_nodes_count = count_nodes(ctx.active_head);
+        const int free_nodes_count   = count_nodes(ctx.free_head  );
+
+        ASSERT(2 + ctx.num_nodes == active_nodes_count + free_nodes_count);
+
         check_node(ctx.active_head);
         check_node(ctx.active_head->next);
 
@@ -2867,30 +2885,20 @@ private:
         stbrp_context      ctx = {};
         Vector<stbrp_node> nodes(width - m_padding);
 
-        const auto find_node = [&](const stbrp_node* old_node)
+        const auto find_node = [&](stbrp_node* old_node)
         {
+            // Node can either point to one of the given array members, the two
+            // `extra` nodes allocated within the `stbrp_context` structure, or
+            // be `NULL`.
             stbrp_node*     new_node;
             const uintptr_t offset = old_node - m_pack_nodes.data(); // Fine even if `nullptr`.
 
-            if (offset < m_pack_nodes.size())
-            {
-                new_node = &nodes[offset];
-            }
-            else if (old_node == &m_pack_ctx.extra[0])
-            {
-                return new_node = &ctx.extra[0];
-            }
-            else if (old_node == &m_pack_ctx.extra[1])
-            {
-                return new_node = &ctx.extra[1];
-            }
-            else
-            {
-                ASSERT(old_node == nullptr);
-                new_node = nullptr;
-            }
-
-            return new_node;
+            // We're intentionally not adjusting the nodes that point to one of
+            // the context's `extra` nodes, so that we don't have to repeatedly
+            // patch them when the context would be swapped.
+            return offset < m_pack_nodes.size()
+                ? &nodes[offset]
+                : old_node;
         };
 
         stbrp_init_target(
@@ -2903,12 +2911,18 @@ private:
 
         ctx.active_head   = find_node(m_pack_ctx.active_head  );
         ctx.free_head     = find_node(m_pack_ctx.free_head    );
-        ctx.extra[0].x    =           m_pack_ctx.extra[0].x    ;
-        ctx.extra[0].y    =           m_pack_ctx.extra[0].y    ;
         ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
-        ctx.extra[1].x    =           m_pack_ctx.extra[1].x    ;
-        ctx.extra[1].y    =           m_pack_ctx.extra[1].y    ;
         ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
+
+        // ctx.active_head   = find_node(m_pack_ctx.active_head  );
+        // ctx.free_head     = find_node(m_pack_ctx.free_head    );
+        // ctx.extra[0].x    =           m_pack_ctx.extra[0].x    ;
+        // ctx.extra[0].y    =           m_pack_ctx.extra[0].y    ;
+        // ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
+        // ctx.extra[1].x    =           m_pack_ctx.extra[1].x    ;
+        // ctx.extra[1].y    =           m_pack_ctx.extra[1].y    ;
+        // ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
+
 
         // TODO !!! It's likely that some special handling will be necessary for
         //          the last node (or thereof), if the width of the atlas was
@@ -2921,7 +2935,7 @@ private:
             nodes[i].next = find_node(m_pack_nodes[i].next);
         }
 
-        m_pack_ctx = ctx; // TODO / FIXME !!! This breaks the pointers pointing to one of the `extra` members.
+        m_pack_ctx = ctx; // We can do this safely as no nodes point to `ctx.extra`.
         m_pack_nodes.swap(nodes);
 
 #ifndef NDEBUG
