@@ -2819,9 +2819,10 @@ private:
                 }
                 else
                 {
-                    // TODO : If `m_pack_ctx` is not empty, it means we've
-                    //        resized the atlas bitmap and have to somehow
-                    //        transfer the already packed rectangles.
+                    // TODO !!! Patching doesn't seem to work when skipping
+                    //          multiple atlas sizes at once.
+
+                    // Atlas size changed (and so did the packing rectangle).
                     patch_stbrp_context(inout_pack_size[0], inout_pack_size[1]);
                 }
             }
@@ -2846,12 +2847,14 @@ private:
             ASSERT(is_in_range || is_extra || is_null);
         };
 
-        const auto count_nodes = [](const stbrp_node* node)
+        const auto count_nodes = [](const stbrp_node* node, bool check_zero)
         {
             int count = 0;
 
             while (node)
             {
+                ASSERT(!check_zero || (node->x == 0 && node->y == 0));
+
                 node = node->next;
                 count++;
             }
@@ -2859,8 +2862,8 @@ private:
             return count;
         };
 
-        const int active_nodes_count = count_nodes(ctx.active_head);
-        const int free_nodes_count   = count_nodes(ctx.free_head  );
+        const int active_nodes_count = count_nodes(ctx.active_head, false);
+        const int free_nodes_count   = count_nodes(ctx.free_head  , true );
 
         ASSERT(2 + ctx.num_nodes == active_nodes_count + free_nodes_count);
 
@@ -2882,6 +2885,10 @@ private:
 
     void patch_stbrp_context(uint32_t width, uint32_t height)
     {
+#ifndef NDEBUG
+        check_stbrp_context_validity(m_pack_ctx, m_pack_nodes);
+#endif
+
         stbrp_context      ctx = {};
         Vector<stbrp_node> nodes(width - m_padding);
 
@@ -2912,22 +2919,19 @@ private:
         ctx.active_head   = find_node(m_pack_ctx.active_head  );
         ctx.free_head     = find_node(m_pack_ctx.free_head    );
         ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
-        ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
+        ctx.extra[0].x    =           m_pack_ctx.extra[0].x    ;
+        ctx.extra[0].y    =           m_pack_ctx.extra[0].y    ;
+        // NOTE : Node `extra[1]` is a sentinel, so no need to patch it.
 
-        // ctx.active_head   = find_node(m_pack_ctx.active_head  );
-        // ctx.free_head     = find_node(m_pack_ctx.free_head    );
-        // ctx.extra[0].x    =           m_pack_ctx.extra[0].x    ;
-        // ctx.extra[0].y    =           m_pack_ctx.extra[0].y    ;
-        // ctx.extra[0].next = find_node(m_pack_ctx.extra[0].next);
-        // ctx.extra[1].x    =           m_pack_ctx.extra[1].x    ;
-        // ctx.extra[1].y    =           m_pack_ctx.extra[1].y    ;
-        // ctx.extra[1].next = find_node(m_pack_ctx.extra[1].next);
+        // TODO : It's possible that some special handling will be necessary if
+        //        the old context ran out of free nodes, but we're increasing
+        //        width. So do some special logic here (will need artifical test
+        //        as it's quite unlikely, I think).
+        if (!m_pack_ctx.free_head)
+        {
+            ASSERT(false && "Not implemented.");
+        }
 
-
-        // TODO !!! It's likely that some special handling will be necessary for
-        //          the last node (or thereof), if the width of the atlas was
-        //          enlarged (so that the node in the middle of the list doesn't
-        //          point to the sentinel).
         for (size_t i = 0; i < m_pack_nodes.size() - 1; i++)
         {
             nodes[i].x    =           m_pack_nodes[i].x;
