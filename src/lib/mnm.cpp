@@ -2751,7 +2751,7 @@ private:
             {
                 const uint32_t area = (size[0] - m_padding) * (size[1] - m_padding);
 
-                if (area >= min_area)
+                if (area >= min_area * 1.075f) // 7.5 % extra space, as the packing won't be perfect.
                 {
                     break;
                 }
@@ -2791,7 +2791,7 @@ private:
                 // TODO : It's probably possible to revert the packing context
                 //        without having to making its full copy beforehand.
                 stbrp_context      ctx = m_pack_ctx;
-                Vector<stbrp_node> nodes(m_pack_nodes);
+                Vector<stbrp_node> nodes(m_pack_nodes); // TODO : Candidate for stack-based allocator usage.
 
                 // NOTE : This only packs the new rectangles.
                 if (1 == stbrp_pack_rects(
