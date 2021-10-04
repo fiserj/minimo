@@ -91,6 +91,8 @@ enum
 
                    TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
 
+                   VERTEX_PIXCOORD       = 0x1000, // Needs to make sure it's outside regular mesh flags.
+
                    VERTEX_POSITION       = 0x0000,
 };
 
@@ -152,7 +154,7 @@ constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VER
 
 static_assert(
     0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | KEEP_CPU_GEOMETRY) &
-          (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH)),
+          (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD)),
     "Internal mesh flags interfere with the user-exposed ones."
 );
 
@@ -2565,7 +2567,7 @@ public:
         }
     }
 
-    template <bool YAxisDown>
+    template <bool YAxisDown, bool UseTexCoord>
     void get_packed_quad(const stbtt_packedchar& b, float &inout_xpos, float ypos, stbtt_aligned_quad& q)
     {
         // TODO : Figure out whether to user-enable alignment to integer coordintes.
@@ -2587,10 +2589,20 @@ public:
             q.y1 = ypos - b.yoff2;
         }
 
-        q.s0 = b.x0 * ipw;
-        q.t0 = b.y0 * iph;
-        q.s1 = b.x1 * ipw;
-        q.t1 = b.y1 * iph;
+        if constexpr (UseTexCoord)
+        {
+            q.s0 = b.x0 * ipw;
+            q.t0 = b.y0 * iph;
+            q.s1 = b.x1 * ipw;
+            q.t1 = b.y1 * iph;
+        }
+        else
+        {
+            q.s0 = b.x0;
+            q.t0 = b.y0;
+            q.s1 = b.x1;
+            q.t1 = b.y1;
+        }
 
         inout_xpos += b.xadvance;
     }
@@ -2651,8 +2663,10 @@ private:
     template <bool YAxisDown>
     void record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
-        // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
-        //        flag check glyph presence and update on the fly.
+        // NOTE : This routine assumes all needed glyphs that could be loaded
+        //        (i.e., are in the font data) already are loaded. The update
+        //        for updatable atlases is triggered in `text_width` that first
+        //        scans the string.
 
         uint32_t codepoint;
         uint32_t state = 0;
@@ -2671,11 +2685,9 @@ private:
                 const auto it = m_codepoints.find(codepoint);
                 ASSERT(it != m_codepoints.end());
 
-                // TODO : For updatable atlases, we'll have to replace this with
-                //        routine that returns the pixel coordinates, not texture
-                //        ones, so that we can guarantee old meshes stay valid even
-                //        if the atlas gets updated and repacked.
-                get_packed_quad<YAxisDown>(m_char_quads[it->second], x, y, quad);
+                is_updatable()
+                    ? get_packed_quad<YAxisDown, false>(m_char_quads[it->second], x, y, quad)
+                    : get_packed_quad<YAxisDown, true >(m_char_quads[it->second], x, y, quad);
 
                 recorder.texcoord(                      quad.s0, quad.t0);
                 recorder.vertex  ((transform * HMM_Vec4(quad.x0, quad.y0, 0.0f, 1.0f)).XYZ);
@@ -3052,6 +3064,7 @@ public:
             VERTEX_POSITION |
             VERTEX_TEXCOORD |
             VERTEX_COLOR    |
+            (atlas->is_updatable() ? VERTEX_PIXCOORD : 0) |
             ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
 
         m_flags    = flags;
@@ -3935,6 +3948,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         BGFX_EMBEDDED_SHADER(position_texcoord_vs        ),
 
         BGFX_EMBEDDED_SHADER(position_color_r_texcoord_fs),
+        BGFX_EMBEDDED_SHADER(position_color_r_pixcoord_fs),
 
         BGFX_EMBEDDED_SHADER(instancing_position_color_vs),
 
@@ -3950,13 +3964,14 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
         programs[] =
         {
-            { 0                                                    , "position"                                               },
-            { VERTEX_COLOR                                         , "position_color"                                         },
-            { VERTEX_COLOR | VERTEX_TEXCOORD                       , "position_color_texcoord"                                },
-            {                VERTEX_TEXCOORD                       , "position_texcoord"                                      },
+            { 0                                                                      , "position"                                               },
+            { VERTEX_COLOR                                                           , "position_color"                                         },
+            { VERTEX_COLOR | VERTEX_TEXCOORD                                         , "position_color_texcoord"                                },
+            {                VERTEX_TEXCOORD                                         , "position_texcoord"                                      },
 
-            { VERTEX_COLOR | VERTEX_TEXCOORD | SAMPLER_COLOR_R     , "position_color_texcoord"  , "position_color_r_texcoord" },
-            { VERTEX_COLOR                   | INSTANCING_SUPPORTED, "instancing_position_color", "position_color"            },
+            { VERTEX_COLOR | VERTEX_TEXCOORD                   | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_texcoord" },
+            { VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_pixcoord" },
+            { VERTEX_COLOR                                     | INSTANCING_SUPPORTED , "instancing_position_color", "position_color"            },
         };
 
         char vs_name[32];
