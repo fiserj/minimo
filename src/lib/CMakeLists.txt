@@ -41,6 +41,15 @@ if(MSVC)
     target_compile_definitions(${NAME} PRIVATE
         _CRT_SECURE_NO_WARNINGS
     )
+    target_compile_options(${NAME} PRIVATE
+        /Wall
+    )
+else()
+    target_compile_options(${NAME} PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
 endif()
 
 set_target_properties(${NAME} PROPERTIES
