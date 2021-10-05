@@ -264,8 +264,11 @@ enum
     VERTEX_NORMAL            = 0x0100,
     VERTEX_TEXCOORD          = 0x0200,
 
+    // Texcoord uses full float range.
+    TEXCOORD_F32             = 0x1000,
+
     // Keeps the geometry on CPU (positions only).
-    KEEP_CPU_GEOMETRY        = 0x0800, // TODO : Add support.
+    KEEP_CPU_GEOMETRY        = 0x2000, // TODO : Add support.
 };
 
 /// Mesh draw state flags. Subset of the most comonly used ones from BGFX.
