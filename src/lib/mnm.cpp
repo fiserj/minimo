@@ -42,16 +42,25 @@
 
 #define GLEQ_IMPLEMENTATION
 #define GLEQ_STATIC
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
 #include <gleq.h>                 // gleq*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define HANDMADE_MATH_IMPLEMENTATION
 #define HMM_STATIC
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
 #include <HandmadeMath.h>         // HMM_*, hmm_*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include <meshoptimizer.h>        // meshopt_*
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 #include <stb_image.h>            // stbi_load, stbi_load_from_memory, stbi_image_free
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -60,6 +69,7 @@
 #include <stb_rect_pack.h>        // stbrp_*
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>         // stbtt_*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include <TaskScheduler.h>        // ITaskSet, TaskScheduler, TaskSetPartition
 
