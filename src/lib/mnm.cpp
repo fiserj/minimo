@@ -52,6 +52,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
 #include <HandmadeMath.h>         // HMM_*, hmm_*
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -61,6 +62,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #define STB_IMAGE_STATIC
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
 #include <stb_image.h>            // stbi_load, stbi_load_from_memory, stbi_image_free
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -93,7 +95,7 @@ enum
 {
                    ATLAS_FREE            = 0x8000,
 
-                   INSTANCING_SUPPORTED  = 0x2000, // Needs to make sure it's outside regular mesh flags.
+                   INSTANCING_SUPPORTED  = 0x20000, // Needs to make sure it's outside regular mesh flags.
 
                    MESH_INVALID          = 0x0006,
 
@@ -101,7 +103,7 @@ enum
 
                    TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
 
-                   VERTEX_PIXCOORD       = 0x1000, // Needs to make sure it's outside regular mesh flags.
+                   VERTEX_PIXCOORD       = 0x10000, // Needs to make sure it's outside regular mesh flags.
 
                    VERTEX_POSITION       = 0x0000,
 };
@@ -123,8 +125,6 @@ constexpr uint16_t TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CEN
 constexpr uint16_t TEXT_H_ALIGN_SHIFT     = 4;
 
 constexpr uint16_t TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
-
-constexpr uint16_t TEXT_TYPE_SHIFT        = 1;
 
 constexpr uint16_t TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
 
@@ -163,7 +163,7 @@ constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTE
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
 static_assert(
-    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | KEEP_CPU_GEOMETRY) &
+    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | KEEP_CPU_GEOMETRY) &
           (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD)),
     "Internal mesh flags interfere with the user-exposed ones."
 );
@@ -318,7 +318,7 @@ inline void destroy_if_valid(HandleT& handle)
 // HELPER FUNCTIONS
 // -----------------------------------------------------------------------------
 
-static inline uint16_t mesh_type(uint16_t flags)
+static inline uint16_t mesh_type(uint32_t flags)
 {
     constexpr uint16_t types[] =
     {
@@ -331,7 +331,7 @@ static inline uint16_t mesh_type(uint16_t flags)
     return types[((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)];
 }
 
-static inline uint16_t mesh_primitive(uint16_t flags)
+static inline uint16_t mesh_primitive(uint32_t flags)
 {
     constexpr uint16_t primitives[] =
     {
@@ -1451,7 +1451,7 @@ struct Mesh
 {
     uint32_t          element_count = 0;
     uint32_t          extra_data    = 0;
-    uint16_t          flags         = MESH_INVALID;
+    uint32_t          flags         = MESH_INVALID;
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
@@ -1501,7 +1501,6 @@ public:
 
         Mesh& mesh = m_meshes[recorder.id()];
 
-        const uint16_t old_type = mesh.type();
         const uint16_t new_type = mesh_type(recorder.flags());
 
         if (new_type == MESH_INVALID)
@@ -2158,7 +2157,7 @@ public:
         m_textures[id].destroy();
     }
 
-    void schedule_read(uint16_t id, bgfx::ViewId pass, uint32_t frame, bgfx::Encoder* encoder, void* data)
+    void schedule_read(uint16_t id, bgfx::ViewId pass, bgfx::Encoder* encoder, void* data)
     {
         MutexScope lock(m_mutex);
 
@@ -2544,7 +2543,8 @@ public:
         ctx.stride_in_bytes = m_bitmap_width;
         ctx.pixels          = m_bitmap_data.data();
 
-        const int res = stbtt_PackFontRangesRenderIntoRects(
+        // TODO : Utilize the return value.
+        (void)stbtt_PackFontRangesRenderIntoRects(
             &ctx,
             &m_font_info,
             &range,
@@ -3968,7 +3968,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         const struct
         {
-            uint16_t    attribs;
+            uint32_t    attribs;
             const char* vs_name;
             const char* fs_name = nullptr;
         }
@@ -4511,7 +4511,6 @@ void read_texture(int id, void* data)
     g_ctx.texture_cache.schedule_read(
         static_cast<uint16_t>(id),
         t_ctx->active_pass + MAX_PASSES, // TODO : It might be better to let the user specify the pass explicitly.
-        g_ctx.frame_number,
         t_ctx->encoder,
         data
     );

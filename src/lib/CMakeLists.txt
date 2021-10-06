@@ -1,3 +1,5 @@
+cmake_policy(SET CMP0065 NEW)
+
 set(NAME ${PROJECT_NAME})
 
 set(SOURCE_FILES
@@ -46,9 +48,16 @@ if(MSVC)
     )
 else()
     target_compile_options(${NAME} PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
+        # -Wall
+        # -Wextra
+        # -Wpedantic
+        -fdata-sections
+        -ffunction-sections
+        # -Wl,--gc-sections,--print-gc-sections
+    )
+    target_link_options(${NAME} PRIVATE
+        --gc-sections
+        --print-gc-sections
     )
 endif()
 
