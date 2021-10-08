@@ -29,21 +29,36 @@
 #   define strcasecmp _stricmp
 #endif
 
+#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF
+
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 #include <bgfx/bgfx.h>            // bgfx::*
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
-#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <bx/endian.h>            // endianSwap
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define GLFW_INCLUDE_NONE
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 #include <GLFW/glfw3.h>           // glfw*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define GLEQ_IMPLEMENTATION
 #define GLEQ_STATIC
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5039);
 #include <gleq.h>                 // gleq*
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -53,16 +68,24 @@ BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <HandmadeMath.h>         // HMM_*, hmm_*
 BX_PRAGMA_DIAGNOSTIC_POP();
 
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <meshoptimizer.h>        // meshopt_*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5045);
 #include <stb_image.h>            // stbi_load, stbi_load_from_memory, stbi_image_free
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -93,19 +116,19 @@ constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 enum
 {
-                   ATLAS_FREE            = 0x8000,
+                   ATLAS_FREE            = 0x08000,
 
-                   INSTANCING_SUPPORTED  = 0x20000, // Needs to make sure it's outside regular mesh flags.
+                   INSTANCING_SUPPORTED  = 0x10000, // Needs to make sure it's outside regular mesh flags.
 
-                   MESH_INVALID          = 0x0006,
+                   MESH_INVALID          = 0x00006,
 
-                   SAMPLER_COLOR_R       = 0x4000, // Needs to make sure it's outside regular mesh flags.
+                   SAMPLER_COLOR_R       = 0x20000, // Needs to make sure it's outside regular mesh flags.
 
-                   TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
+                   TEXT_MESH             = 0x40000, // Needs to make sure it's outside regular mesh flags.
 
-                   VERTEX_PIXCOORD       = 0x10000, // Needs to make sure it's outside regular mesh flags.
+                   VERTEX_PIXCOORD       = 0x80000, // Needs to make sure it's outside regular mesh flags.
 
-                   VERTEX_POSITION       = 0x0000,
+                   VERTEX_POSITION       = 0x00000,
 };
 
 // -----------------------------------------------------------------------------
@@ -444,6 +467,7 @@ struct Uniform
 {
     bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
     uint8_t             size   = 0;
+    uint8_t             _pad[1];
 
     void destroy()
     {
@@ -531,6 +555,7 @@ struct DrawState
     bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
     bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
     uint16_t                 flags        = STATE_DEFAULT;
+    uint8_t                  _pad[10];
 };
 
 
@@ -1081,6 +1106,8 @@ public:
         add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
 
         add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+
+        add<VERTEX_COLOR | VERTEX_TEXCOORD | TEXCOORD_F32>();
     }
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
@@ -1261,6 +1288,8 @@ private:
             add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD>();
 
             add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+
+            // TODO !!! Add variants with `TEXCOORD_F32` texcoord.
         }
 
         inline const VertexPushFunc& operator[](uint16_t flags) const
@@ -1332,6 +1361,7 @@ private:
         }
 
     private:
+        // TODO : Either convert to a hash table, add a flag switch, and/or flag reduction.
         Vector<VertexPushFunc> m_funcs;
     };
 
@@ -1367,7 +1397,7 @@ public:
     {
         ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
 
-        static const uint16_t type_sizes[] =
+        constexpr uint16_t type_sizes[] =
         {
             sizeof(Mat4), // INSTANCE_TRANSFORM
             16,           // INSTANCE_DATA_16
@@ -1380,7 +1410,7 @@ public:
         };
 
         m_id            = id;
-        m_instance_size = type_sizes[type];
+        m_instance_size = type_sizes[std::max<size_t>(type, BX_COUNTOF(type_sizes) - 1)];
         m_is_transform  = type == INSTANCE_TRANSFORM;
 
         m_buffer.clear();
@@ -1455,6 +1485,7 @@ struct Mesh
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
+    uint8_t           _pad[2];
 
     inline uint16_t type() const
     {
@@ -1835,6 +1866,7 @@ struct InstanceData
 {
     bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
     bool                     is_transform = false;
+    uint8_t                  _pad[7];
 };
 
 class InstanceCache
@@ -3074,7 +3106,7 @@ public:
             VERTEX_POSITION |
             VERTEX_TEXCOORD |
             VERTEX_COLOR    |
-            (atlas->is_updatable() ? VERTEX_PIXCOORD : 0) |
+            (atlas->is_updatable() ? TEXCOORD_F32 : 0) |
             ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
 
         m_flags    = flags;
@@ -3974,14 +4006,37 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
         programs[] =
         {
-            { 0                                                                      , "position"                                               },
-            { VERTEX_COLOR                                                           , "position_color"                                         },
-            { VERTEX_COLOR | VERTEX_TEXCOORD                                         , "position_color_texcoord"                                },
-            {                VERTEX_TEXCOORD                                         , "position_texcoord"                                      },
-
-            { VERTEX_COLOR | VERTEX_TEXCOORD                   | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_texcoord" },
-            { VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_pixcoord" },
-            { VERTEX_COLOR                                     | INSTANCING_SUPPORTED , "instancing_position_color", "position_color"            },
+            {
+                VERTEX_POSITION, // Position only. It's assumed everywhere else.
+                "position"
+            },
+            {
+                VERTEX_COLOR,
+                "position_color"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD,
+                "position_color_texcoord"
+            },
+            {
+                VERTEX_TEXCOORD,
+                "position_texcoord"
+            },
+            {
+                VERTEX_COLOR | INSTANCING_SUPPORTED,
+                "instancing_position_color",
+                "position_color"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD | SAMPLER_COLOR_R,
+                "position_color_texcoord",
+                "position_color_r_texcoord"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R,
+                "position_color_texcoord",
+                "position_color_r_pixcoord"
+            },
         };
 
         char vs_name[32];
