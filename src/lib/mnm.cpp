@@ -13,7 +13,6 @@
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
-#include <span>                   // span
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
@@ -239,12 +238,6 @@ using Array = std::array<T, Size>;
 
 template <typename T>
 using Atomic = std::atomic<T>;
-
-template <typename T>
-using DynamicSpan = std::span<T>;
-
-template <typename T, uint32_t Size>
-using FixedSpan = std::span<T, Size>;
 
 using Mutex = std::mutex;
 
@@ -2960,20 +2953,19 @@ private:
         stbrp_context      ctx = {};
         Vector<stbrp_node> nodes(width - m_padding);
 
-        const auto find_node = [&](stbrp_node* old_node)
+        const auto find_node = [&](stbrp_node* node)
         {
             // Node can either point to one of the given array members, the two
             // `extra` nodes allocated within the `stbrp_context` structure, or
             // be `NULL`.
-            stbrp_node*     new_node;
-            const uintptr_t offset = old_node - m_pack_nodes.data(); // Fine even if `nullptr`.
+            const uintptr_t offset = node - m_pack_nodes.data(); // Fine even if `nullptr`.
 
             // We're intentionally not adjusting the nodes that point to one of
             // the context's `extra` nodes, so that we don't have to repeatedly
             // patch them when the context would be swapped.
             return offset < m_pack_nodes.size()
                 ? &nodes[offset]
-                : old_node;
+                : node;
         };
 
         stbrp_init_target(
@@ -3169,7 +3161,7 @@ public:
 
         const float sign   = y_axis() == TEXT_Y_AXIS_DOWN ? 1.0f : -1.0f;
 
-        Vec3        offset = { 0.0f, 0.0f, 0.0f };
+        Vec3        offset = HMM_Vec3(0.0f, 0.0f, 0.0f);
 
         switch (h_alignment())
         {
@@ -3531,7 +3523,7 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
 
         int glfw_key = INVALID_INPUT;
 
-        if (app_key >= 0 && app_key < BX_COUNTOF(special_app_keys))
+        if (app_key >= 0 && app_key < static_cast<int>(BX_COUNTOF(special_app_keys)))
         {
             glfw_key = special_app_keys[app_key];
         }
@@ -3753,7 +3745,7 @@ private:
 
                 Vector<uint8_t> buffer(length + (type == STRING));
 
-                if (fread(buffer.data(), 1, length, f) == length)
+                if (fread(buffer.data(), 1, length, f) == static_cast<size_t>(length))
                 {
                     if (type == STRING)
                     {
@@ -3939,7 +3931,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             void Execute() override
             {
-                const auto id = std::this_thread::get_id();
                 ASSERT(t_ctx == nullptr);
                 ASSERT(threadNum < t_ctxs.size());
 
@@ -4042,7 +4033,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         char vs_name[32];
         char fs_name[32];
 
-        for (int i = 0; i < BX_COUNTOF(programs); i++)
+        for (size_t i = 0; i < BX_COUNTOF(programs); i++)
         {
             strcpy(vs_name, programs[i].vs_name);
             strcat(vs_name, "_vs");
@@ -4423,7 +4414,7 @@ void mesh(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_MESHES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_MESHES);
     ASSERT(!t_ctx->mesh_recorder.is_recording());
 
     DrawState& state = t_ctx->draw_state;
@@ -4504,7 +4495,7 @@ void state(int flags)
 
 void load_texture(int id, int flags, int width, int height, int stride, const void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
     ASSERT(width > 0);
     ASSERT(height > 0);
     ASSERT((width < SIZE_EQUAL && height < SIZE_EQUAL) || (width <= SIZE_DOUBLE && width == height));
@@ -4529,7 +4520,7 @@ void texture(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
 
     if (!t_ctx->framebuffer_recorder.is_recording())
     {
@@ -4555,7 +4546,7 @@ void read_texture(int id, void* data)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
 
     if (!t_ctx->encoder)
     {
@@ -4573,7 +4564,7 @@ void read_texture(int id, void* data)
 
 int readable(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
 
     // TODO : This needs to compare value returned from `bgfx::frame`.
     return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
@@ -4588,7 +4579,7 @@ void begin_instancing(int id, int type)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
     ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
 
     ASSERT(!t_ctx->instance_recorder.is_recording());
@@ -4622,7 +4613,7 @@ void instances(int id)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
 
     // TODO : Assert that instance ID is active in the cache in the current frame.
     t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
@@ -4635,7 +4626,7 @@ void instances(int id)
 
 void create_font(int id, const void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FONTS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FONTS);
     ASSERT(data);
 
     mnm::g_ctx.font_data_registry.add(static_cast<uint16_t>(id), data);
@@ -4646,8 +4637,8 @@ void begin_atlas(int id, int flags, int font, float size)
     using namespace mnm;
 
     // TODO : Check `flags`.
-    ASSERT(id > 0 && id < MAX_TEXTURES);
-    ASSERT(font > 0 && font < MAX_FONTS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
+    ASSERT(font > 0 && static_cast<uint16_t>(font) < MAX_FONTS);
     ASSERT(size >= 5.0f && size <= 4096.0f);
 
     t_ctx->active_atlas = g_ctx.atlas_cache[static_cast<uint16_t>(id)];
@@ -4751,7 +4742,7 @@ void text(const char* string)
 
 void pass(int id)
 {
-    ASSERT(id >= 0 && id < mnm::MAX_PASSES);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < mnm::MAX_PASSES);
 
     mnm::t_ctx->active_pass = static_cast<uint16_t>(id);
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].touch();
@@ -4779,7 +4770,7 @@ void no_framebuffer(void)
 
 void framebuffer(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
 
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_framebuffer(
         mnm::g_ctx.framebuffer_cache[static_cast<uint16_t>(id)].handle
@@ -4813,7 +4804,7 @@ void full_viewport(void)
 
 void begin_framebuffer(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
 
     mnm::t_ctx->framebuffer_recorder.begin(static_cast<uint16_t>(id));
 }
@@ -4831,7 +4822,7 @@ void end_framebuffer(void)
 
 void create_uniform(int id, int flags, const char* name)
 {
-    ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_UNIFORMS);
     ASSERT(flags > 0 && flags <= (UNIFORM_SAMPLER | UNIFORM_8));
     ASSERT(name);
 
@@ -4846,7 +4837,7 @@ void uniform(int id, const void* value)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_UNIFORMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_UNIFORMS);
     ASSERT(value);
 
     // We could instead store the uniform values in the state, but that would
@@ -4862,7 +4853,7 @@ void uniform(int id, const void* value)
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
 {
-    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
     ASSERT(vs_data);
     ASSERT(vs_size > 0);
     ASSERT(fs_data);
@@ -4879,7 +4870,7 @@ void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data
 
 void shader(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
 
     mnm::t_ctx->draw_state.program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
 }

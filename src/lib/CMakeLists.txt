@@ -48,9 +48,9 @@ if(MSVC)
     )
 else()
     target_compile_options(${NAME} PRIVATE
-        # -Wall
-        # -Wextra
-        # -Wpedantic
+        -Wall
+        -Wextra
+        -Wpedantic
         -fdata-sections
         -ffunction-sections
         # -Wl,--gc-sections,--print-gc-sections
@@ -62,7 +62,7 @@ else()
 endif()
 
 set_target_properties(${NAME} PROPERTIES
-    CXX_STANDARD 20 # 17 needed for `__has_include` (hard requirement), 20 for `span` (laziness at this point).
+    CXX_STANDARD 17 # needed for `__has_include` (hard requirement)
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"
