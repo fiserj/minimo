@@ -362,7 +362,7 @@ static inline uint16_t mesh_primitive(uint32_t flags)
     return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
 }
 
-static inline uint16_t mesh_attribs(uint16_t flags)
+static inline uint16_t mesh_attribs(uint32_t flags)
 {
     return (flags & VERTEX_ATTRIB_MASK);
 }
@@ -862,7 +862,7 @@ public:
         m_handles.clear();
     }
 
-    inline void add(uint16_t flags)
+    inline void add(uint32_t flags)
     {
         add(mesh_attribs(flags), 0);
     }
@@ -882,31 +882,31 @@ public:
         add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
     }
 
-    bgfx::VertexLayoutHandle resolve_alias(uint16_t& inout_flags, uint16_t alias_flags)
+    bgfx::VertexLayoutHandle resolve_alias(uint32_t& inout_flags, uint32_t alias_flags)
     {
-        const uint16_t orig_attribs  = mesh_attribs(inout_flags);
-        const uint16_t alias_attribs = mesh_attribs(alias_flags);
+        const uint32_t orig_attribs  = mesh_attribs(inout_flags);
+        const uint32_t alias_attribs = mesh_attribs(alias_flags);
 
-        const uint16_t skips = orig_attribs & (~alias_attribs);
-        const uint16_t idx   = get_idx(orig_attribs, skips);
+        const uint32_t skips = orig_attribs & (~alias_attribs);
+        const uint32_t idx   = get_idx(orig_attribs, skips);
 
         inout_flags &= ~skips;
 
         return m_handles[idx];
     }
 
-    inline const bgfx::VertexLayout& operator[](uint16_t flags) const
+    inline const bgfx::VertexLayout& operator[](uint32_t flags) const
     {
         return m_layouts[(flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
     }
 
 private:
-    inline uint16_t get_idx(uint16_t attribs, uint16_t skips) const
+    inline uint32_t get_idx(uint32_t attribs, uint32_t skips) const
     {
         return (attribs >> VERTEX_ATTRIB_SHIFT) | (skips >> 1);
     }
 
-    void add(uint16_t attribs, uint16_t skips)
+    void add(uint32_t attribs, uint32_t skips)
     {
         ASSERT(attribs == mesh_attribs(attribs));
         ASSERT(skips == mesh_attribs(skips));
@@ -1046,9 +1046,10 @@ template <uint16_t Flags, uint16_t Attrib>
 static constexpr size_t vertex_attrib_offset()
 {
     static_assert(
-        Attrib == VERTEX_COLOR  ||
-        Attrib == VERTEX_NORMAL ||
-        Attrib == VERTEX_TEXCOORD,
+        Attrib ==  VERTEX_COLOR    ||
+        Attrib ==  VERTEX_NORMAL   ||
+        Attrib ==  VERTEX_TEXCOORD ||
+        Attrib == (VERTEX_TEXCOORD & TEXCOORD_F32),
         "Invalid Attrib."
     );
 
@@ -1174,9 +1175,9 @@ private:
 class MeshRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, uint32_t extra_data = 0)
+    void begin(uint16_t id, uint32_t flags, uint32_t extra_data = 0)
     {
-        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT16_MAX));
+        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT32_MAX));
 
         m_id         = id;
         m_flags      = flags;
@@ -1185,8 +1186,8 @@ public:
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
 
-        m_attrib_funcs     = flags != UINT16_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
-        m_vertex_func      = flags != UINT16_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
+        m_attrib_funcs     = flags != UINT32_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
+        m_vertex_func      = flags != UINT32_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
         m_vertex_count     = 0;
         m_invocation_count = 0;
     }
@@ -1195,7 +1196,7 @@ public:
     {
         ASSERT(is_recording());
 
-        begin(UINT16_MAX, UINT16_MAX);
+        begin(UINT16_MAX, UINT32_MAX);
     }
 
     inline void vertex(const Vec3& position)
@@ -1285,7 +1286,7 @@ private:
             // TODO !!! Add variants with `TEXCOORD_F32` texcoord.
         }
 
-        inline const VertexPushFunc& operator[](uint16_t flags) const
+        inline const VertexPushFunc& operator[](uint32_t flags) const
         {
             const uint16_t quad_mask = mesh_primitive(flags) == PRIMITIVE_QUADS ? PRIMITIVE_QUADS : 0;
 
@@ -3092,7 +3093,7 @@ public:
         ASSERT(recorder);
         ASSERT(!recorder->is_recording());
 
-        const uint16_t mesh_flags =
+        const uint32_t mesh_flags =
             TEXT_MESH       |
             PRIMITIVE_QUADS |
             VERTEX_POSITION |
@@ -4375,7 +4376,10 @@ void begin_mesh(int id, int flags)
 {
     ASSERT(!mnm::t_ctx->mesh_recorder.is_recording());
 
-    mnm::t_ctx->mesh_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(flags));
+    mnm::t_ctx->mesh_recorder.begin(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags) // NOTE : User exposed flags fit within 16 bits.
+    );
 }
 
 void end_mesh(void)
@@ -4424,7 +4428,7 @@ void mesh(int id)
     state.framebuffer = g_ctx.pass_cache[t_ctx->active_pass].framebuffer();
 
     const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
-    uint16_t    mesh_flags = mesh.flags;
+    uint32_t    mesh_flags = mesh.flags;
 
     if (!t_ctx->encoder)
     {
