@@ -1098,23 +1098,18 @@ class VertexAttribStateFuncTable
 public:
     VertexAttribStateFuncTable()
     {
-        // TODO : Create conversion table to be able to have `add<0b101010>` syntax.
-
-        add<VERTEX_POSITION>();
-
-        add<VERTEX_COLOR>();
-        add<VERTEX_NORMAL>();
-        add<VERTEX_TEXCOORD>();
-        add<VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-        add<VERTEX_COLOR | VERTEX_NORMAL  >();
-        add<VERTEX_COLOR | VERTEX_TEXCOORD>();
-        add<VERTEX_COLOR | VERTEX_TEXCOORD | TEXCOORD_F32>();
-        add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
-        add<VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
+        //  +-------------------------- VERTEX_COLOR
+            //  |  +----------------------- VERTEX_NORMAL
+            //  |  |  +-------------------- VERTEX_TEXCOORD
+            //  |  |  |
+            add<0, 0, 0>();
+            add<1, 0, 0>();
+            add<0, 1, 0>();
+            add<0, 0, 1>();
+            add<1, 1, 0>();
+            add<1, 0, 1>();
+            add<0, 1, 1>();
+            add<1, 1, 1>();
     }
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
@@ -1165,9 +1160,25 @@ private:
         }
     }
 
-    template <uint16_t Flags>
+    template <
+        bool HasColor,
+        bool HasNormal,
+        bool HasTexCoord,
+        bool HasTexCoordF32 = false
+    >
     void add()
     {
+        if constexpr (HasTexCoord && !HasTexCoordF32)
+        {
+            add<HasColor, HasNormal, HasTexCoord, true>();
+        }
+
+        constexpr uint16_t Flags =
+            (HasColor       ? VERTEX_COLOR    : 0) |
+            (HasNormal      ? VERTEX_NORMAL   : 0) |
+            (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
+            (HasTexCoordF32 ? TEXCOORD_F32    : 0) ;
+
         VertexAttribStateFuncSet func_set;
 
         func_set.color    = color   <Flags>;
@@ -1278,39 +1289,18 @@ private:
     public:
         VertexPushFuncTable()
         {
-            // TODO : Create conversion table to be able to have `add<0b101010> syntax.
-
-            add<VERTEX_POSITION>();
-
-            add<VERTEX_COLOR   >();
-            add<VERTEX_NORMAL  >();
-            add<VERTEX_TEXCOORD>();
-            add<VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-            add<VERTEX_COLOR  | VERTEX_NORMAL  >();
-            add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
-            add<VERTEX_COLOR  | VERTEX_TEXCOORD | TEXCOORD_F32>();
-            add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
-            add<VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-            add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-            add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-            add<PRIMITIVE_QUADS | VERTEX_POSITION>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR   >();
-            add<PRIMITIVE_QUADS | VERTEX_NORMAL  >();
-            add<PRIMITIVE_QUADS | VERTEX_TEXCOORD>();
-            add<PRIMITIVE_QUADS | VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_NORMAL  >();
-            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD>();
-            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD | TEXCOORD_F32>();
-            add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-            add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-            add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
+            //  +-------------------------- VERTEX_COLOR
+            //  |  +----------------------- VERTEX_NORMAL
+            //  |  |  +-------------------- VERTEX_TEXCOORD
+            //  |  |  |
+            add<0, 0, 0>();
+            add<1, 0, 0>();
+            add<0, 1, 0>();
+            add<0, 0, 1>();
+            add<1, 1, 0>();
+            add<1, 0, 1>();
+            add<0, 1, 1>();
+            add<1, 1, 1>();
         }
 
         inline const VertexPushFunc& operator[](uint32_t flags) const
@@ -1370,9 +1360,32 @@ private:
             }
         }
 
-        template <uint16_t Flags>
+        template <
+            bool HasColor,
+            bool HasNormal,
+            bool HasTexCoord,
+            bool HasTexCoordF32    = false,
+            bool HasPrimitiveQuads = false
+        >
         void add()
         {
+            if constexpr (!HasTexCoordF32)
+            {
+                add<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
+            }
+
+            if constexpr (!HasPrimitiveQuads)
+            {
+                add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
+            }
+
+            constexpr uint16_t Flags =
+                (HasColor          ? VERTEX_COLOR    : 0) |
+                (HasNormal         ? VERTEX_NORMAL   : 0) |
+                (HasTexCoord       ? VERTEX_TEXCOORD : 0) |
+                (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
+                (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
+
             if (m_funcs.size() <= Flags)
             {
                 m_funcs.resize(Flags + 1, nullptr);
