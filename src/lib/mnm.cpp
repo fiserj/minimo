@@ -994,11 +994,13 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
 {
     uint8_t data[32];
 
-    using ColorType    = uint32_t; // RGBA_u8.
+    using PackedColorType    = uint32_t; // As RGBA_u8.
 
-    using NormalType   = uint32_t; // Packed as RGB_u8.
+    using PackedNormalType   = uint32_t; // As RGB_u8.
 
-    using TexcoordType = uint32_t; // Packed as RG_s16.
+    using PackedTexcoordType = uint32_t; // As RG_s16.
+
+    using FullTexcoordType   = Vec2;
 
     template <typename ReturnT, size_t BytesOffset>
     const ReturnT* at() const
@@ -1006,8 +1008,8 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
         static_assert(is_pod<ReturnT>(),
             "ReturnT must be POD type.");
 
-        static_assert(BytesOffset % sizeof(ReturnT) == 0,
-            "BytesOffset must be multiple of sizeof(ReturnT).");
+        static_assert(BytesOffset % std::alignment_of<ReturnT>::value == 0,
+            "BytesOffset must be multiple of alignment of ReturnT.");
 
         return reinterpret_cast<const ReturnT*>(data + BytesOffset);
     }
@@ -1026,17 +1028,24 @@ static constexpr size_t vertex_attribs_size()
 
     if constexpr (!!(Flags & VERTEX_COLOR))
     {
-        size += sizeof(VertexAttribState::ColorType);
+        size += sizeof(VertexAttribState::PackedColorType);
     }
 
     if constexpr (!!(Flags & VERTEX_NORMAL))
     {
-        size += sizeof(VertexAttribState::NormalType);
+        size += sizeof(VertexAttribState::PackedNormalType);
     }
 
     if constexpr (!!(Flags & VERTEX_TEXCOORD))
     {
-        size += sizeof(VertexAttribState::TexcoordType);
+        if constexpr (!!(Flags & TEXCOORD_F32))
+        {
+            size += sizeof(VertexAttribState::FullTexcoordType);
+        }
+        else
+        {
+            size += sizeof(VertexAttribState::PackedTexcoordType);
+        }
     }
 
     return size;
@@ -1049,7 +1058,7 @@ static constexpr size_t vertex_attrib_offset()
         Attrib ==  VERTEX_COLOR    ||
         Attrib ==  VERTEX_NORMAL   ||
         Attrib ==  VERTEX_TEXCOORD ||
-        Attrib == (VERTEX_TEXCOORD & TEXCOORD_F32),
+        Attrib == (VERTEX_TEXCOORD | TEXCOORD_F32),
         "Invalid Attrib."
     );
 
@@ -1064,12 +1073,12 @@ static constexpr size_t vertex_attrib_offset()
 
     if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
     {
-        offset += sizeof(VertexAttribState::ColorType);
+        offset += sizeof(VertexAttribState::PackedColorType);
     }
 
     if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
     {
-        offset += sizeof(VertexAttribState::NormalType);
+        offset += sizeof(VertexAttribState::PackedNormalType);
     }
 
     return offset;
@@ -1115,7 +1124,7 @@ private:
     {
         if constexpr (!!(Flags & VERTEX_COLOR))
         {
-            *state.at<VertexAttribState::ColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
+            *state.at<VertexAttribState::PackedColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
         }
     }
 
@@ -1131,7 +1140,7 @@ private:
                 nz * 0.5f + 0.5f,
             };
 
-            bx::packRgb8(state.at<VertexAttribState::NormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
+            bx::packRgb8(state.at<VertexAttribState::PackedNormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
         }
     }
 
@@ -1140,9 +1149,15 @@ private:
     {
         if constexpr (!!(Flags & VERTEX_TEXCOORD))
         {
-            const float elems[] = { u, v };
-
-            bx::packRg16S(state.at<VertexAttribState::TexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
+            if constexpr (!!(Flags & TEXCOORD_F32))
+            {
+                *state.at<VertexAttribState::FullTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD | TEXCOORD_F32>()>() = HMM_Vec2(u, v);
+            }
+            else
+            {
+                const float elems[] = { u, v };
+                bx::packRg16S(state.at<VertexAttribState::PackedTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
+            }
         }
     }
 
