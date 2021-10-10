@@ -347,20 +347,21 @@ static inline uint16_t mesh_type(uint32_t flags)
     return types[((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)];
 }
 
-static inline uint16_t mesh_primitive(uint32_t flags)
-{
-    constexpr uint16_t primitives[] =
-    {
-        PRIMITIVE_TRIANGLES,
-        PRIMITIVE_QUADS,
-        PRIMITIVE_TRIANGLE_STRIP,
-        PRIMITIVE_LINES,
-        PRIMITIVE_LINE_STRIP,
-        PRIMITIVE_POINTS,
-    };
+// NOTE : Currently unused.
+// static inline uint16_t mesh_primitive(uint32_t flags)
+// {
+//     constexpr uint16_t primitives[] =
+//     {
+//         PRIMITIVE_TRIANGLES,
+//         PRIMITIVE_QUADS,
+//         PRIMITIVE_TRIANGLE_STRIP,
+//         PRIMITIVE_LINES,
+//         PRIMITIVE_LINE_STRIP,
+//         PRIMITIVE_POINTS,
+//     };
 
-    return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
-}
+//     return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
+// }
 
 static inline uint16_t mesh_attribs(uint32_t flags)
 {
@@ -1099,25 +1100,32 @@ public:
     VertexAttribStateFuncTable()
     {
         //  +-------------------------- VERTEX_COLOR
-            //  |  +----------------------- VERTEX_NORMAL
-            //  |  |  +-------------------- VERTEX_TEXCOORD
-            //  |  |  |
-            add<0, 0, 0>();
-            add<1, 0, 0>();
-            add<0, 1, 0>();
-            add<0, 0, 1>();
-            add<1, 1, 0>();
-            add<1, 0, 1>();
-            add<0, 1, 1>();
-            add<1, 1, 1>();
+        //  |  +----------------------- VERTEX_NORMAL
+        //  |  |  +-------------------- VERTEX_TEXCOORD
+        //  |  |  |
+        add<0, 0, 0>();
+        add<1, 0, 0>();
+        add<0, 1, 0>();
+        add<0, 0, 1>();
+        add<1, 1, 0>();
+        add<1, 0, 1>();
+        add<0, 1, 1>();
+        add<1, 1, 1>();
     }
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
     {
-        return m_func_sets[flags & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)];
+        return m_func_sets[get_index_from_flags(flags)];
     }
 
 private:
+    static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+    {
+        return
+            ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+            ((flags & TEXCOORD_F32      ) >> 9                  ) ; // Bit 3.
+    }
+
     template <uint16_t Flags>
     static void color(VertexAttribState& state, uint32_t rgba)
     {
@@ -1185,16 +1193,11 @@ private:
         func_set.normal   = normal  <Flags>;
         func_set.texcoord = texcoord<Flags>;
 
-        if (m_func_sets.size() <= Flags)
-        {
-            m_func_sets.resize(Flags + 1);
-        }
-
-        m_func_sets[Flags] = func_set;
+        m_func_sets[get_index_from_flags(Flags)] = func_set;
     }
 
 private:
-    Vector<VertexAttribStateFuncSet> m_func_sets; // TODO : Reduce the table (indirect indexing?), most of the cells are empty.
+    Array<VertexAttribStateFuncSet, 16> m_func_sets;
 };
 
 
@@ -1289,6 +1292,8 @@ private:
     public:
         VertexPushFuncTable()
         {
+            m_funcs.fill(nullptr);
+
             //  +-------------------------- VERTEX_COLOR
             //  |  +----------------------- VERTEX_NORMAL
             //  |  |  +-------------------- VERTEX_TEXCOORD
@@ -1305,12 +1310,18 @@ private:
 
         inline const VertexPushFunc& operator[](uint32_t flags) const
         {
-            const uint16_t quad_mask = mesh_primitive(flags) == PRIMITIVE_QUADS ? PRIMITIVE_QUADS : 0;
-
-            return m_funcs[flags & (VERTEX_ATTRIB_MASK | TEXCOORD_F32 | quad_mask)];
+            return m_funcs[get_index_from_flags(static_cast<uint16_t>(flags))];
         }
 
     private:
+        static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+        {
+            return
+                ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+                ((flags & TEXCOORD_F32      ) >> 9                  ) | // Bit 3.
+                ((flags & PRIMITIVE_QUADS   )                       ) ; // Bit 4.
+        }
+
         template <size_t Size>
         static inline void emulate_quad(Vector<uint8_t>& buffer)
         {
@@ -1386,17 +1397,11 @@ private:
                 (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
                 (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
 
-            if (m_funcs.size() <= Flags)
-            {
-                m_funcs.resize(Flags + 1, nullptr);
-            }
-
-            m_funcs[Flags] = vertex<Flags>;
+            m_funcs[get_index_from_flags(Flags)] = vertex<Flags>;
         }
 
     private:
-        // TODO : Either convert to a hash table, add a flag switch, and/or flag reduction.
-        Vector<VertexPushFunc> m_funcs;
+        Array<VertexPushFunc, 32> m_funcs;
     };
 
 protected:
