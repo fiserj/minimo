@@ -1098,24 +1098,28 @@ class VertexAttribStateFuncTable
 public:
     VertexAttribStateFuncTable()
     {
+        // TODO : Create conversion table to be able to have `add<0b101010>` syntax.
+
         add<VERTEX_POSITION>();
 
-        add<VERTEX_COLOR   >();
-        add<VERTEX_NORMAL  >();
+        add<VERTEX_COLOR>();
+        add<VERTEX_NORMAL>();
         add<VERTEX_TEXCOORD>();
+        add<VERTEX_TEXCOORD | TEXCOORD_F32>();
 
-        add<VERTEX_COLOR  | VERTEX_NORMAL  >();
-        add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
+        add<VERTEX_COLOR | VERTEX_NORMAL  >();
+        add<VERTEX_COLOR | VERTEX_TEXCOORD>();
+        add<VERTEX_COLOR | VERTEX_TEXCOORD | TEXCOORD_F32>();
         add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
+        add<VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
 
         add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-        add<VERTEX_COLOR | VERTEX_TEXCOORD | TEXCOORD_F32>();
+        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
     }
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
     {
-        return m_func_sets[flags & VERTEX_ATTRIB_MASK];
+        return m_func_sets[flags & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)];
     }
 
 private:
@@ -1274,38 +1278,46 @@ private:
     public:
         VertexPushFuncTable()
         {
+            // TODO : Create conversion table to be able to have `add<0b101010> syntax.
+
             add<VERTEX_POSITION>();
 
             add<VERTEX_COLOR   >();
             add<VERTEX_NORMAL  >();
             add<VERTEX_TEXCOORD>();
+            add<VERTEX_TEXCOORD | TEXCOORD_F32>();
 
             add<VERTEX_COLOR  | VERTEX_NORMAL  >();
             add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
+            add<VERTEX_COLOR  | VERTEX_TEXCOORD | TEXCOORD_F32>();
             add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
+            add<VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
 
             add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+            add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
 
             add<PRIMITIVE_QUADS | VERTEX_POSITION>();
 
             add<PRIMITIVE_QUADS | VERTEX_COLOR   >();
             add<PRIMITIVE_QUADS | VERTEX_NORMAL  >();
             add<PRIMITIVE_QUADS | VERTEX_TEXCOORD>();
+            add<PRIMITIVE_QUADS | VERTEX_TEXCOORD | TEXCOORD_F32>();
 
             add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_NORMAL  >();
             add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD>();
+            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD | TEXCOORD_F32>();
             add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+            add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
 
             add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-            // TODO !!! Add variants with `TEXCOORD_F32` texcoord.
+            add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD | TEXCOORD_F32>();
         }
 
         inline const VertexPushFunc& operator[](uint32_t flags) const
         {
             const uint16_t quad_mask = mesh_primitive(flags) == PRIMITIVE_QUADS ? PRIMITIVE_QUADS : 0;
 
-            return m_funcs[flags & (VERTEX_ATTRIB_MASK | quad_mask)];
+            return m_funcs[flags & (VERTEX_ATTRIB_MASK | TEXCOORD_F32 | quad_mask)];
         }
 
     private:
