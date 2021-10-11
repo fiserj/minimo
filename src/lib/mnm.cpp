@@ -1420,16 +1420,28 @@ private:
         >
         void add()
         {
-            if constexpr (!HasTexCoordF32)
+            add_no_recursion<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, HasPrimitiveQuads>();
+
+            if constexpr (HasTexCoord && !HasTexCoordF32)
             {
-                add<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
+                add_no_recursion<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
             }
 
             if constexpr (!HasPrimitiveQuads)
             {
-                add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
+                add_no_recursion<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
             }
+        }
 
+        template <
+            bool HasColor,
+            bool HasNormal,
+            bool HasTexCoord,
+            bool HasTexCoordF32,
+            bool HasPrimitiveQuads
+        >
+        void add_no_recursion()
+        {
             constexpr uint16_t Flags =
                 (HasColor          ? VERTEX_COLOR    : 0) |
                 (HasNormal         ? VERTEX_NORMAL   : 0) |
