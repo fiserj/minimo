@@ -849,38 +849,45 @@ private:
 // VERTEX LAYOUT CACHE
 // -----------------------------------------------------------------------------
 
+// TODO : Add support for user defined layouts.
 class VertexLayoutCache
 {
 public:
+    VertexLayoutCache()
+    {
+        m_handles.fill(BGFX_INVALID_HANDLE);
+    }
+
+    // NOTE : Can't be done in constructor, as we need BGFX to be initialized.
+    void init()
+    {
+        //  +-------------------------- VERTEX_COLOR
+        //  |  +----------------------- VERTEX_NORMAL
+        //  |  |  +-------------------- VERTEX_TEXCOORD
+        //  |  |  |
+        add<0, 0, 0>();
+        add<1, 0, 0>();
+        add<0, 1, 0>();
+        add<0, 0, 1>();
+        add<1, 1, 0>();
+        add<1, 0, 1>();
+        add<0, 1, 1>();
+        add<1, 1, 1>();
+    }
+
     inline void clear()
     {
         for (bgfx::VertexLayoutHandle& handle : m_handles)
         {
             destroy_if_valid(handle);
         }
-
-        m_layouts.clear();
-        m_handles.clear();
     }
 
     inline void add(uint32_t flags)
     {
-        add(mesh_attribs(flags), 0);
-    }
-
-    void add_builtins()
-    {
-        add(VERTEX_POSITION);
-
-        add(VERTEX_COLOR   );
-        add(VERTEX_NORMAL  );
-        add(VERTEX_TEXCOORD);
-
-        add(VERTEX_COLOR  | VERTEX_NORMAL  );
-        add(VERTEX_COLOR  | VERTEX_TEXCOORD);
-        add(VERTEX_NORMAL | VERTEX_TEXCOORD);
-
-        add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
+        constexpr uint32_t ATTRIB_MASK = VERTEX_ATTRIB_MASK | TEXCOORD_F32;
+        
+        add(flags & ATTRIB_MASK, 0);
     }
 
     bgfx::VertexLayoutHandle resolve_alias(uint32_t& inout_flags, uint32_t alias_flags)
@@ -889,7 +896,7 @@ public:
         const uint32_t alias_attribs = mesh_attribs(alias_flags);
 
         const uint32_t skips = orig_attribs & (~alias_attribs);
-        const uint32_t idx   = get_idx(orig_attribs, skips);
+        const uint32_t idx   = get_index_from_flags(orig_attribs, skips);
 
         inout_flags &= ~skips;
 
@@ -898,82 +905,113 @@ public:
 
     inline const bgfx::VertexLayout& operator[](uint32_t flags) const
     {
-        return m_layouts[(flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_layouts[get_index_from_flags(flags)];
     }
 
 private:
-    inline uint32_t get_idx(uint32_t attribs, uint32_t skips) const
+    static inline constexpr uint32_t get_index_from_flags(uint32_t attribs, uint32_t skips = 0)
     {
-        return (attribs >> VERTEX_ATTRIB_SHIFT) | (skips >> 1);
+        return
+            ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
+            ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
+            ((attribs & TEXCOORD_F32      ) >>  9                       ) ; // Bit 6.
+    }
+
+    template <
+        bool HasColor,
+        bool HasNormal,
+        bool HasTexCoord,
+        bool HasTexCoordF32 = false
+    >
+    inline void add()
+    {
+        if constexpr (HasTexCoord && !HasTexCoordF32)
+        {
+            add<HasColor, HasNormal, HasTexCoord, true>();
+        }
+
+        constexpr uint16_t Flags =
+            (HasColor       ? VERTEX_COLOR    : 0) |
+            (HasNormal      ? VERTEX_NORMAL   : 0) |
+            (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
+            (HasTexCoordF32 ? TEXCOORD_F32    : 0) ;
+
+        add(Flags);
     }
 
     void add(uint32_t attribs, uint32_t skips)
     {
-        ASSERT(attribs == mesh_attribs(attribs));
-        ASSERT(skips == mesh_attribs(skips));
+        ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
+        ASSERT(skips == (skips & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
+        ASSERT(skips == 0 || (attribs & TEXCOORD_F32) == (skips & TEXCOORD_F32));
         ASSERT(skips != attribs || attribs == 0);
         ASSERT((skips & attribs) == skips);
 
-        const uint16_t idx = get_idx(attribs, skips);
-
-        if (idx < m_layouts.size() && m_layouts[idx].getStride() > 0)
         {
-            return;
-        }
+            MutexScope lock(m_mutex);
 
-        bgfx::VertexLayout layout;
-        layout.begin();
+            bgfx::VertexLayout layout;
+            layout.begin();
 
-        if (attribs == VERTEX_POSITION)
-        {
-            layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
-        }
+            if (attribs == VERTEX_POSITION)
+            {
+                layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
+            }
 
-        if (!!(skips & VERTEX_COLOR))
-        {
-            layout.skip(4 * sizeof(uint8_t));
-        }
-        else if (!!(attribs & VERTEX_COLOR))
-        {
-            layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
-        }
+            if (!!(skips & VERTEX_COLOR))
+            {
+                layout.skip(4 * sizeof(uint8_t));
+            }
+            else if (!!(attribs & VERTEX_COLOR))
+            {
+                layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+            }
 
-        if (!!(skips & VERTEX_NORMAL))
-        {
-            layout.skip(4 * sizeof(uint8_t));
-        }
-        else if (!!(attribs & VERTEX_NORMAL))
-        {
-            layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
-        }
+            if (!!(skips & VERTEX_NORMAL))
+            {
+                layout.skip(4 * sizeof(uint8_t));
+            }
+            else if (!!(attribs & VERTEX_NORMAL))
+            {
+                layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
+            }
 
-        if (!!(skips & VERTEX_TEXCOORD))
-        {
-            layout.skip(2 * sizeof(int16_t));
-        }
-        else if (!!(attribs & VERTEX_TEXCOORD))
-        {
-            layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
-        }
+            if (!!(skips & VERTEX_TEXCOORD))
+            {
+                layout.skip(2 * (!!(attribs & TEXCOORD_F32) ? sizeof(float) : sizeof(int16_t)));
+            }
+            else if (!!(attribs & VERTEX_TEXCOORD))
+            {
+                if (!!(attribs & TEXCOORD_F32))
+                {
+                    layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float);
+                }
+                else
+                {
+                    layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
+                }
+            }
 
-        layout.end();
-        ASSERT(layout.getStride() % 4 == 0);
+            layout.end();
+            ASSERT(layout.getStride() % 4 == 0);
 
-        if (idx >= m_layouts.size())
-        {
-            m_layouts.resize(idx + 1);
-            m_handles.resize(idx + 1, BGFX_INVALID_HANDLE);
-        }
+            const uint16_t idx = get_index_from_flags(attribs, skips);
 
-        m_layouts[idx] = layout;
-        m_handles[idx] = bgfx::createVertexLayout(layout);
+            ASSERT(m_layouts[idx].getStride() == 0);
+            ASSERT(!bgfx::isValid(m_handles[idx]));
+
+            m_layouts[idx] = layout;
+            m_handles[idx] = bgfx::createVertexLayout(layout);
+        } // MutexScope
 
         // Add variants with skipped attributes (for aliasing).
         if (attribs && !skips)
         {
             for (skips = VERTEX_COLOR; skips < attribs; skips++)
             {
-                if (skips != attribs && (skips & attribs) == skips)
+                if ( skips                   !=  attribs &&
+                    (skips & attribs)        ==  skips   &&
+                    (attribs & TEXCOORD_F32) == (skips & TEXCOORD_F32))
                 {
                     add(attribs, skips);
                 }
@@ -982,8 +1020,9 @@ private:
     }
 
 private:
-    Vector<bgfx::VertexLayout>       m_layouts;
-    Vector<bgfx::VertexLayoutHandle> m_handles;
+    Mutex                                m_mutex;
+    Array<bgfx::VertexLayout, 128>       m_layouts;
+    Array<bgfx::VertexLayoutHandle, 128> m_handles;
 };
 
 
@@ -4000,7 +4039,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
     }
 
-    g_ctx.layout_cache.add_builtins();
+    g_ctx.layout_cache.init();
 
     if (setup)
     {
