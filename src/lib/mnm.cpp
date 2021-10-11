@@ -914,7 +914,7 @@ private:
         return
             ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
             ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
-            ((attribs & TEXCOORD_F32      ) >>  9                       ) ; // Bit 6.
+            ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
     }
 
     template <
@@ -942,10 +942,9 @@ private:
     void add(uint32_t attribs, uint32_t skips)
     {
         ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
-        ASSERT(skips == (skips & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
-        ASSERT(skips == 0 || (attribs & TEXCOORD_F32) == (skips & TEXCOORD_F32));
+        ASSERT(skips == (skips & VERTEX_ATTRIB_MASK));
         ASSERT(skips != attribs || attribs == 0);
-        ASSERT((skips & attribs) == skips);
+        ASSERT(skips == (skips & attribs));
 
         {
             MutexScope lock(m_mutex);
@@ -1007,11 +1006,9 @@ private:
         // Add variants with skipped attributes (for aliasing).
         if (attribs && !skips)
         {
-            for (skips = VERTEX_COLOR; skips < attribs; skips++)
+            for (skips = VERTEX_COLOR; skips < (attribs & VERTEX_ATTRIB_MASK); skips++)
             {
-                if ( skips                   !=  attribs &&
-                    (skips & attribs)        ==  skips   &&
-                    (attribs & TEXCOORD_F32) == (skips & TEXCOORD_F32))
+                if ((attribs & VERTEX_ATTRIB_MASK) != (skips & VERTEX_ATTRIB_MASK) && (attribs & skips) == skips)
                 {
                     add(attribs, skips);
                 }
@@ -1232,7 +1229,11 @@ private:
         func_set.normal   = normal  <Flags>;
         func_set.texcoord = texcoord<Flags>;
 
-        m_func_sets[get_index_from_flags(Flags)] = func_set;
+        constexpr uint16_t idx = get_index_from_flags(Flags);
+
+        ASSERT(m_func_sets[idx].color == nullptr);
+
+        m_func_sets[idx] = func_set;
     }
 
 private:
@@ -1436,7 +1437,11 @@ private:
                 (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
                 (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
 
-            m_funcs[get_index_from_flags(Flags)] = vertex<Flags>;
+            constexpr uint16_t idx = get_index_from_flags(Flags);
+
+            ASSERT(m_funcs[idx] == nullptr);
+
+            m_funcs[idx] = vertex<Flags>;
         }
 
     private:
