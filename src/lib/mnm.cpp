@@ -1420,28 +1420,16 @@ private:
         >
         void add()
         {
-            add_no_recursion<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, HasPrimitiveQuads>();
-
             if constexpr (HasTexCoord && !HasTexCoordF32)
             {
-                add_no_recursion<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
+                add<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
             }
 
             if constexpr (!HasPrimitiveQuads)
             {
-                add_no_recursion<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
+                add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
             }
-        }
 
-        template <
-            bool HasColor,
-            bool HasNormal,
-            bool HasTexCoord,
-            bool HasTexCoordF32,
-            bool HasPrimitiveQuads
-        >
-        void add_no_recursion()
-        {
             constexpr uint16_t Flags =
                 (HasColor          ? VERTEX_COLOR    : 0) |
                 (HasNormal         ? VERTEX_NORMAL   : 0) |
@@ -1449,11 +1437,8 @@ private:
                 (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
                 (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
 
-            constexpr uint16_t idx = get_index_from_flags(Flags);
-
-            ASSERT(m_funcs[idx] == nullptr);
-
-            m_funcs[idx] = vertex<Flags>;
+            // NOTE : We do insert few elements multiple times.
+            m_funcs[get_index_from_flags(Flags)] = vertex<Flags>;
         }
 
     private:
