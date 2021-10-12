@@ -581,7 +581,7 @@ public:
         }
     }
 
-    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
         if (!bgfx::isValid( program))
@@ -592,8 +592,8 @@ public:
 
         MutexScope lock(m_mutex);
 
-        bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT16_MAX)
-            ? m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT]
+        bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT32_MAX)
+            ? m_builtins[get_index_from_attribs(attribs)]
             : m_handles[id];
 
         destroy_if_valid(handle);
@@ -602,7 +602,7 @@ public:
         return true;
     }
 
-    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createEmbeddedShader(shaders, renderer, vertex_name);
         if (!bgfx::isValid(vertex))
@@ -622,7 +622,7 @@ public:
         return add(id, vertex, fragment, attribs);
     }
 
-    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createShader(bgfx::copy(vertex_data, vertex_size));
         if (!bgfx::isValid(vertex))
@@ -647,17 +647,29 @@ public:
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle builtin(uint16_t attribs) const
+    inline bgfx::ProgramHandle builtin(uint32_t attribs) const
     {
-        return m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_builtins[get_index_from_attribs(attribs)];
     }
 
 private:
-    // TODO : This will likely have to be reworked in the future to support additional default layouts
-    //        (e.g., an SDF font).
-    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | SAMPLER_COLOR_R;
+    static inline constexpr uint32_t get_index_from_attribs(uint32_t attribs)
+    {
+        static_assert(
+            VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
+            INSTANCING_SUPPORTED >> 13                  == 0b01000 &&
+            SAMPLER_COLOR_R      >> 13                  == 0b10000,
+            "Invalid index assumptions in `ProgramCache::get_index_from_attribs`."
+        );
 
-    static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
+        return
+            ((attribs & VERTEX_ATTRIB_MASK  ) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+            ((attribs & INSTANCING_SUPPORTED) >> 13                 ) | // Bit 3.
+            ((attribs & SAMPLER_COLOR_R     ) >> 13                 ) ; // Bit 4.
+    }
+
+private:
+    static constexpr uint32_t                MAX_BUILTINS = 32;
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
@@ -911,6 +923,13 @@ public:
 private:
     static inline constexpr uint32_t get_index_from_flags(uint32_t attribs, uint32_t skips = 0)
     {
+        static_assert(
+            VERTEX_ATTRIB_MASK >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
+           (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 3)) == 0b0111000 &&
+            TEXCOORD_F32       >>  6                         == 0b1000000,
+            "Invalid index assumptions in `VertexLayoutCache::get_index_from_attribs`."
+        );
+
         return
             ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
             ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
@@ -1157,6 +1176,12 @@ public:
 private:
     static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
     {
+        static_assert(
+            VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b0111 &&
+            TEXCOORD_F32       >> 9                   == 0b1000,
+            "Invalid index assumptions in `VertexAttribStateFuncTable::get_index_from_attribs`."
+        );
+
         return
             ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
             ((flags & TEXCOORD_F32      ) >> 9                  ) ; // Bit 3.
@@ -1318,7 +1343,7 @@ public:
 
     inline uint16_t id() const { return m_id; }
 
-    inline uint16_t flags() const { return m_flags; }
+    inline uint32_t flags() const { return m_flags; }
 
     inline uint32_t extra_data() const { return m_extra_data; }
 
@@ -1356,6 +1381,13 @@ private:
     private:
         static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
         {
+            static_assert(
+                VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
+                TEXCOORD_F32       >> 9                   == 0b01000 &&
+                PRIMITIVE_QUADS                           == 0b10000,
+                "Invalid index assumptions in `MeshRecorder::VertexPushFuncTable::get_index_from_attribs`."
+            );
+
             return
                 ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
                 ((flags & TEXCOORD_F32      ) >> 9                  ) | // Bit 3.
@@ -1454,8 +1486,8 @@ protected:
     uint32_t                                m_vertex_count     = 0;
     uint32_t                                m_invocation_count = 0;
     uint32_t                                m_extra_data       = 0;
+    uint32_t                                m_flags            = UINT32_MAX;
     uint16_t                                m_id               = UINT16_MAX;
-    uint16_t                                m_flags            = UINT16_MAX;
 
     static const VertexAttribStateFuncTable ms_attrib_state_func_table;
     static const VertexPushFuncTable        ms_vertex_push_func_table;
