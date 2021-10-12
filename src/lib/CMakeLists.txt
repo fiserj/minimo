@@ -1,3 +1,5 @@
+cmake_policy(SET CMP0065 NEW)
+
 set(NAME ${PROJECT_NAME})
 
 set(SOURCE_FILES
@@ -49,11 +51,18 @@ else()
         -Wall
         -Wextra
         -Wpedantic
+        -fdata-sections
+        -ffunction-sections
+        # -Wl,--gc-sections,--print-gc-sections
+    )
+    target_link_options(${NAME} PRIVATE
+        --gc-sections
+        --print-gc-sections
     )
 endif()
 
 set_target_properties(${NAME} PROPERTIES
-    CXX_STANDARD 20 # 17 needed for `__has_include` (hard requirement), 20 for `span` (laziness at this point).
+    CXX_STANDARD 17 # needed for `__has_include` (hard requirement)
     CXX_EXTENSIONS OFF
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"

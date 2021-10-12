@@ -13,7 +13,6 @@
 #include <chrono>                 // duration
 #include <functional>             // hash
 #include <mutex>                  // lock_guard, mutex
-#include <span>                   // span
 #include <thread>                 // this_thread
 #include <type_traits>            // alignment_of, conditional, is_trivial, is_standard_layout
 #include <unordered_map>          // unordered_map
@@ -29,21 +28,36 @@
 #   define strcasecmp _stricmp
 #endif
 
+#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF
+
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 #include <bgfx/bgfx.h>            // bgfx::*
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
-#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <bx/endian.h>            // endianSwap
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define GLFW_INCLUDE_NONE
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 #include <GLFW/glfw3.h>           // glfw*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define GLEQ_IMPLEMENTATION
 #define GLEQ_STATIC
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5039);
 #include <gleq.h>                 // gleq*
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -52,15 +66,25 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <HandmadeMath.h>         // HMM_*, hmm_*
 BX_PRAGMA_DIAGNOSTIC_POP();
 
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <meshoptimizer.h>        // meshopt_*
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5045);
 #include <stb_image.h>            // stbi_load, stbi_load_from_memory, stbi_image_free
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
@@ -91,19 +115,19 @@ constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
 
 enum
 {
-                   ATLAS_FREE            = 0x8000,
+                   ATLAS_FREE            = 0x08000,
 
-                   INSTANCING_SUPPORTED  = 0x2000, // Needs to make sure it's outside regular mesh flags.
+                   INSTANCING_SUPPORTED  = 0x10000, // Needs to make sure it's outside regular mesh flags.
 
-                   MESH_INVALID          = 0x0006,
+                   MESH_INVALID          = 0x00006,
 
-                   SAMPLER_COLOR_R       = 0x4000, // Needs to make sure it's outside regular mesh flags.
+                   SAMPLER_COLOR_R       = 0x20000, // Needs to make sure it's outside regular mesh flags.
 
-                   TEXT_MESH             = 0x8000, // Needs to make sure it's outside regular mesh flags.
+                   TEXT_MESH             = 0x40000, // Needs to make sure it's outside regular mesh flags.
 
-                   VERTEX_PIXCOORD       = 0x1000, // Needs to make sure it's outside regular mesh flags.
+                   VERTEX_PIXCOORD       = 0x80000, // Needs to make sure it's outside regular mesh flags.
 
-                   VERTEX_POSITION       = 0x0000,
+                   VERTEX_POSITION       = 0x00000,
 };
 
 // -----------------------------------------------------------------------------
@@ -123,8 +147,6 @@ constexpr uint16_t TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CEN
 constexpr uint16_t TEXT_H_ALIGN_SHIFT     = 4;
 
 constexpr uint16_t TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
-
-constexpr uint16_t TEXT_TYPE_SHIFT        = 1;
 
 constexpr uint16_t TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
 
@@ -163,7 +185,7 @@ constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTE
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
 static_assert(
-    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | KEEP_CPU_GEOMETRY) &
+    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | KEEP_CPU_GEOMETRY) &
           (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD)),
     "Internal mesh flags interfere with the user-exposed ones."
 );
@@ -216,12 +238,6 @@ using Array = std::array<T, Size>;
 
 template <typename T>
 using Atomic = std::atomic<T>;
-
-template <typename T>
-using DynamicSpan = std::span<T>;
-
-template <typename T, uint32_t Size>
-using FixedSpan = std::span<T, Size>;
 
 using Mutex = std::mutex;
 
@@ -318,7 +334,7 @@ inline void destroy_if_valid(HandleT& handle)
 // HELPER FUNCTIONS
 // -----------------------------------------------------------------------------
 
-static inline uint16_t mesh_type(uint16_t flags)
+static inline uint16_t mesh_type(uint32_t flags)
 {
     constexpr uint16_t types[] =
     {
@@ -331,22 +347,23 @@ static inline uint16_t mesh_type(uint16_t flags)
     return types[((flags & MESH_TYPE_MASK) >> MESH_TYPE_SHIFT)];
 }
 
-static inline uint16_t mesh_primitive(uint16_t flags)
-{
-    constexpr uint16_t primitives[] =
-    {
-        PRIMITIVE_TRIANGLES,
-        PRIMITIVE_QUADS,
-        PRIMITIVE_TRIANGLE_STRIP,
-        PRIMITIVE_LINES,
-        PRIMITIVE_LINE_STRIP,
-        PRIMITIVE_POINTS,
-    };
+// NOTE : Currently unused.
+// static inline uint16_t mesh_primitive(uint32_t flags)
+// {
+//     constexpr uint16_t primitives[] =
+//     {
+//         PRIMITIVE_TRIANGLES,
+//         PRIMITIVE_QUADS,
+//         PRIMITIVE_TRIANGLE_STRIP,
+//         PRIMITIVE_LINES,
+//         PRIMITIVE_LINE_STRIP,
+//         PRIMITIVE_POINTS,
+//     };
 
-    return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
-}
+//     return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
+// }
 
-static inline uint16_t mesh_attribs(uint16_t flags)
+static inline uint16_t mesh_attribs(uint32_t flags)
 {
     return (flags & VERTEX_ATTRIB_MASK);
 }
@@ -444,6 +461,7 @@ struct Uniform
 {
     bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
     uint8_t             size   = 0;
+    uint8_t             _pad[1];
 
     void destroy()
     {
@@ -531,6 +549,7 @@ struct DrawState
     bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
     bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
     uint16_t                 flags        = STATE_DEFAULT;
+    uint8_t                  _pad[10];
 };
 
 
@@ -562,7 +581,7 @@ public:
         }
     }
 
-    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
         if (!bgfx::isValid( program))
@@ -573,8 +592,8 @@ public:
 
         MutexScope lock(m_mutex);
 
-        bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT16_MAX)
-            ? m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT]
+        bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT32_MAX)
+            ? m_builtins[get_index_from_attribs(attribs)]
             : m_handles[id];
 
         destroy_if_valid(handle);
@@ -583,7 +602,7 @@ public:
         return true;
     }
 
-    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createEmbeddedShader(shaders, renderer, vertex_name);
         if (!bgfx::isValid(vertex))
@@ -603,7 +622,7 @@ public:
         return add(id, vertex, fragment, attribs);
     }
 
-    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint16_t attribs = UINT16_MAX)
+    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint32_t attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createShader(bgfx::copy(vertex_data, vertex_size));
         if (!bgfx::isValid(vertex))
@@ -628,17 +647,29 @@ public:
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle builtin(uint16_t attribs) const
+    inline bgfx::ProgramHandle builtin(uint32_t attribs) const
     {
-        return m_builtins[(attribs & BUILTIN_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_builtins[get_index_from_attribs(attribs)];
     }
 
 private:
-    // TODO : This will likely have to be reworked in the future to support additional default layouts
-    //        (e.g., an SDF font).
-    static constexpr uint32_t BUILTIN_MASK = VERTEX_ATTRIB_MASK | INSTANCING_SUPPORTED | SAMPLER_COLOR_R;
+    static inline constexpr uint32_t get_index_from_attribs(uint32_t attribs)
+    {
+        static_assert(
+            VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
+            INSTANCING_SUPPORTED >> 13                  == 0b01000 &&
+            SAMPLER_COLOR_R      >> 13                  == 0b10000,
+            "Invalid index assumptions in `ProgramCache::get_index_from_attribs`."
+        );
 
-    static constexpr uint32_t MAX_BUILTINS = 1 + (BUILTIN_MASK >> VERTEX_ATTRIB_SHIFT);
+        return
+            ((attribs & VERTEX_ATTRIB_MASK  ) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+            ((attribs & INSTANCING_SUPPORTED) >> 13                 ) | // Bit 3.
+            ((attribs & SAMPLER_COLOR_R     ) >> 13                 ) ; // Bit 4.
+    }
+
+private:
+    static constexpr uint32_t                MAX_BUILTINS = 32;
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
@@ -830,131 +861,173 @@ private:
 // VERTEX LAYOUT CACHE
 // -----------------------------------------------------------------------------
 
+// TODO : Add support for user defined layouts.
 class VertexLayoutCache
 {
 public:
+    VertexLayoutCache()
+    {
+        m_handles.fill(BGFX_INVALID_HANDLE);
+    }
+
+    // NOTE : Can't be done in constructor, as we need BGFX to be initialized.
+    void init()
+    {
+        //  +-------------------------- VERTEX_COLOR
+        //  |  +----------------------- VERTEX_NORMAL
+        //  |  |  +-------------------- VERTEX_TEXCOORD
+        //  |  |  |
+        add<0, 0, 0>();
+        add<1, 0, 0>();
+        add<0, 1, 0>();
+        add<0, 0, 1>();
+        add<1, 1, 0>();
+        add<1, 0, 1>();
+        add<0, 1, 1>();
+        add<1, 1, 1>();
+    }
+
     inline void clear()
     {
         for (bgfx::VertexLayoutHandle& handle : m_handles)
         {
             destroy_if_valid(handle);
         }
-
-        m_layouts.clear();
-        m_handles.clear();
     }
 
-    inline void add(uint16_t flags)
+    inline void add(uint32_t flags)
     {
-        add(mesh_attribs(flags), 0);
+        constexpr uint32_t ATTRIB_MASK = VERTEX_ATTRIB_MASK | TEXCOORD_F32;
+        
+        add(flags & ATTRIB_MASK, 0);
     }
 
-    void add_builtins()
+    bgfx::VertexLayoutHandle resolve_alias(uint32_t& inout_flags, uint32_t alias_flags)
     {
-        add(VERTEX_POSITION);
+        const uint32_t orig_attribs  = mesh_attribs(inout_flags);
+        const uint32_t alias_attribs = mesh_attribs(alias_flags);
 
-        add(VERTEX_COLOR   );
-        add(VERTEX_NORMAL  );
-        add(VERTEX_TEXCOORD);
-
-        add(VERTEX_COLOR  | VERTEX_NORMAL  );
-        add(VERTEX_COLOR  | VERTEX_TEXCOORD);
-        add(VERTEX_NORMAL | VERTEX_TEXCOORD);
-
-        add(VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD);
-    }
-
-    bgfx::VertexLayoutHandle resolve_alias(uint16_t& inout_flags, uint16_t alias_flags)
-    {
-        const uint16_t orig_attribs  = mesh_attribs(inout_flags);
-        const uint16_t alias_attribs = mesh_attribs(alias_flags);
-
-        const uint16_t skips = orig_attribs & (~alias_attribs);
-        const uint16_t idx   = get_idx(orig_attribs, skips);
+        const uint32_t skips = orig_attribs & (~alias_attribs);
+        const uint32_t idx   = get_index_from_flags(orig_attribs, skips);
 
         inout_flags &= ~skips;
 
         return m_handles[idx];
     }
 
-    inline const bgfx::VertexLayout& operator[](uint16_t flags) const
+    inline const bgfx::VertexLayout& operator[](uint32_t flags) const
     {
-        return m_layouts[(flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT];
+        return m_layouts[get_index_from_flags(flags)];
     }
 
 private:
-    inline uint16_t get_idx(uint16_t attribs, uint16_t skips) const
+    static inline constexpr uint32_t get_index_from_flags(uint32_t attribs, uint32_t skips = 0)
     {
-        return (attribs >> VERTEX_ATTRIB_SHIFT) | (skips >> 1);
+        static_assert(
+            VERTEX_ATTRIB_MASK >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
+           (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 3)) == 0b0111000 &&
+            TEXCOORD_F32       >>  6                         == 0b1000000,
+            "Invalid index assumptions in `VertexLayoutCache::get_index_from_attribs`."
+        );
+
+        return
+            ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
+            ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
+            ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
     }
 
-    void add(uint16_t attribs, uint16_t skips)
+    template <
+        bool HasColor,
+        bool HasNormal,
+        bool HasTexCoord,
+        bool HasTexCoordF32 = false
+    >
+    inline void add()
     {
-        ASSERT(attribs == mesh_attribs(attribs));
-        ASSERT(skips == mesh_attribs(skips));
+        if constexpr (HasTexCoord && !HasTexCoordF32)
+        {
+            add<HasColor, HasNormal, HasTexCoord, true>();
+        }
+
+        constexpr uint16_t Flags =
+            (HasColor       ? VERTEX_COLOR    : 0) |
+            (HasNormal      ? VERTEX_NORMAL   : 0) |
+            (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
+            (HasTexCoordF32 ? TEXCOORD_F32    : 0) ;
+
+        add(Flags);
+    }
+
+    void add(uint32_t attribs, uint32_t skips)
+    {
+        ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
+        ASSERT(skips == (skips & VERTEX_ATTRIB_MASK));
         ASSERT(skips != attribs || attribs == 0);
-        ASSERT((skips & attribs) == skips);
+        ASSERT(skips == (skips & attribs));
 
-        const uint16_t idx = get_idx(attribs, skips);
-
-        if (idx < m_layouts.size() && m_layouts[idx].getStride() > 0)
         {
-            return;
-        }
+            MutexScope lock(m_mutex);
 
-        bgfx::VertexLayout layout;
-        layout.begin();
+            bgfx::VertexLayout layout;
+            layout.begin();
 
-        if (attribs == VERTEX_POSITION)
-        {
-            layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
-        }
+            if (attribs == VERTEX_POSITION)
+            {
+                layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
+            }
 
-        if (!!(skips & VERTEX_COLOR))
-        {
-            layout.skip(4 * sizeof(uint8_t));
-        }
-        else if (!!(attribs & VERTEX_COLOR))
-        {
-            layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
-        }
+            if (!!(skips & VERTEX_COLOR))
+            {
+                layout.skip(4 * sizeof(uint8_t));
+            }
+            else if (!!(attribs & VERTEX_COLOR))
+            {
+                layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+            }
 
-        if (!!(skips & VERTEX_NORMAL))
-        {
-            layout.skip(4 * sizeof(uint8_t));
-        }
-        else if (!!(attribs & VERTEX_NORMAL))
-        {
-            layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
-        }
+            if (!!(skips & VERTEX_NORMAL))
+            {
+                layout.skip(4 * sizeof(uint8_t));
+            }
+            else if (!!(attribs & VERTEX_NORMAL))
+            {
+                layout.add(bgfx::Attrib::Normal, 4, bgfx::AttribType::Uint8, true, true);
+            }
 
-        if (!!(skips & VERTEX_TEXCOORD))
-        {
-            layout.skip(2 * sizeof(int16_t));
-        }
-        else if (!!(attribs & VERTEX_TEXCOORD))
-        {
-            layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
-        }
+            if (!!(skips & VERTEX_TEXCOORD))
+            {
+                layout.skip(2 * (!!(attribs & TEXCOORD_F32) ? sizeof(float) : sizeof(int16_t)));
+            }
+            else if (!!(attribs & VERTEX_TEXCOORD))
+            {
+                if (!!(attribs & TEXCOORD_F32))
+                {
+                    layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float);
+                }
+                else
+                {
+                    layout.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Int16, true, true);
+                }
+            }
 
-        layout.end();
-        ASSERT(layout.getStride() % 4 == 0);
+            layout.end();
+            ASSERT(layout.getStride() % 4 == 0);
 
-        if (idx >= m_layouts.size())
-        {
-            m_layouts.resize(idx + 1);
-            m_handles.resize(idx + 1, BGFX_INVALID_HANDLE);
-        }
+            const uint16_t idx = get_index_from_flags(attribs, skips);
 
-        m_layouts[idx] = layout;
-        m_handles[idx] = bgfx::createVertexLayout(layout);
+            ASSERT(m_layouts[idx].getStride() == 0);
+            ASSERT(!bgfx::isValid(m_handles[idx]));
+
+            m_layouts[idx] = layout;
+            m_handles[idx] = bgfx::createVertexLayout(layout);
+        } // MutexScope
 
         // Add variants with skipped attributes (for aliasing).
         if (attribs && !skips)
         {
-            for (skips = VERTEX_COLOR; skips < attribs; skips++)
+            for (skips = VERTEX_COLOR; skips < (attribs & VERTEX_ATTRIB_MASK); skips++)
             {
-                if (skips != attribs && (skips & attribs) == skips)
+                if ((attribs & VERTEX_ATTRIB_MASK) != (skips & VERTEX_ATTRIB_MASK) && (attribs & skips) == skips)
                 {
                     add(attribs, skips);
                 }
@@ -963,8 +1036,9 @@ private:
     }
 
 private:
-    Vector<bgfx::VertexLayout>       m_layouts;
-    Vector<bgfx::VertexLayoutHandle> m_handles;
+    Mutex                                m_mutex;
+    Array<bgfx::VertexLayout, 128>       m_layouts;
+    Array<bgfx::VertexLayoutHandle, 128> m_handles;
 };
 
 
@@ -976,11 +1050,13 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
 {
     uint8_t data[32];
 
-    using ColorType    = uint32_t; // RGBA_u8.
+    using PackedColorType    = uint32_t; // As RGBA_u8.
 
-    using NormalType   = uint32_t; // Packed as RGB_u8.
+    using PackedNormalType   = uint32_t; // As RGB_u8.
 
-    using TexcoordType = uint32_t; // Packed as RG_s16.
+    using PackedTexcoordType = uint32_t; // As RG_s16.
+
+    using FullTexcoordType   = Vec2;
 
     template <typename ReturnT, size_t BytesOffset>
     const ReturnT* at() const
@@ -988,8 +1064,8 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
         static_assert(is_pod<ReturnT>(),
             "ReturnT must be POD type.");
 
-        static_assert(BytesOffset % sizeof(ReturnT) == 0,
-            "BytesOffset must be multiple of sizeof(ReturnT).");
+        static_assert(BytesOffset % std::alignment_of<ReturnT>::value == 0,
+            "BytesOffset must be multiple of alignment of ReturnT.");
 
         return reinterpret_cast<const ReturnT*>(data + BytesOffset);
     }
@@ -1008,17 +1084,24 @@ static constexpr size_t vertex_attribs_size()
 
     if constexpr (!!(Flags & VERTEX_COLOR))
     {
-        size += sizeof(VertexAttribState::ColorType);
+        size += sizeof(VertexAttribState::PackedColorType);
     }
 
     if constexpr (!!(Flags & VERTEX_NORMAL))
     {
-        size += sizeof(VertexAttribState::NormalType);
+        size += sizeof(VertexAttribState::PackedNormalType);
     }
 
     if constexpr (!!(Flags & VERTEX_TEXCOORD))
     {
-        size += sizeof(VertexAttribState::TexcoordType);
+        if constexpr (!!(Flags & TEXCOORD_F32))
+        {
+            size += sizeof(VertexAttribState::FullTexcoordType);
+        }
+        else
+        {
+            size += sizeof(VertexAttribState::PackedTexcoordType);
+        }
     }
 
     return size;
@@ -1028,9 +1111,10 @@ template <uint16_t Flags, uint16_t Attrib>
 static constexpr size_t vertex_attrib_offset()
 {
     static_assert(
-        Attrib == VERTEX_COLOR  ||
-        Attrib == VERTEX_NORMAL ||
-        Attrib == VERTEX_TEXCOORD,
+        Attrib ==  VERTEX_COLOR    ||
+        Attrib ==  VERTEX_NORMAL   ||
+        Attrib ==  VERTEX_TEXCOORD ||
+        Attrib == (VERTEX_TEXCOORD | TEXCOORD_F32),
         "Invalid Attrib."
     );
 
@@ -1045,12 +1129,12 @@ static constexpr size_t vertex_attrib_offset()
 
     if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
     {
-        offset += sizeof(VertexAttribState::ColorType);
+        offset += sizeof(VertexAttribState::PackedColorType);
     }
 
     if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
     {
-        offset += sizeof(VertexAttribState::NormalType);
+        offset += sizeof(VertexAttribState::PackedNormalType);
     }
 
     return offset;
@@ -1070,31 +1154,45 @@ class VertexAttribStateFuncTable
 public:
     VertexAttribStateFuncTable()
     {
-        add<VERTEX_POSITION>();
-
-        add<VERTEX_COLOR   >();
-        add<VERTEX_NORMAL  >();
-        add<VERTEX_TEXCOORD>();
-
-        add<VERTEX_COLOR  | VERTEX_NORMAL  >();
-        add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
-        add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-        add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+        //  +-------------------------- VERTEX_COLOR
+        //  |  +----------------------- VERTEX_NORMAL
+        //  |  |  +-------------------- VERTEX_TEXCOORD
+        //  |  |  |
+        add<0, 0, 0>();
+        add<1, 0, 0>();
+        add<0, 1, 0>();
+        add<0, 0, 1>();
+        add<1, 1, 0>();
+        add<1, 0, 1>();
+        add<0, 1, 1>();
+        add<1, 1, 1>();
     }
 
     inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
     {
-        return m_func_sets[flags & VERTEX_ATTRIB_MASK];
+        return m_func_sets[get_index_from_flags(flags)];
     }
 
 private:
+    static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+    {
+        static_assert(
+            VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b0111 &&
+            TEXCOORD_F32       >> 9                   == 0b1000,
+            "Invalid index assumptions in `VertexAttribStateFuncTable::get_index_from_attribs`."
+        );
+
+        return
+            ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+            ((flags & TEXCOORD_F32      ) >> 9                  ) ; // Bit 3.
+    }
+
     template <uint16_t Flags>
     static void color(VertexAttribState& state, uint32_t rgba)
     {
         if constexpr (!!(Flags & VERTEX_COLOR))
         {
-            *state.at<VertexAttribState::ColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
+            *state.at<VertexAttribState::PackedColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
         }
     }
 
@@ -1110,7 +1208,7 @@ private:
                 nz * 0.5f + 0.5f,
             };
 
-            bx::packRgb8(state.at<VertexAttribState::NormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
+            bx::packRgb8(state.at<VertexAttribState::PackedNormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
         }
     }
 
@@ -1119,31 +1217,52 @@ private:
     {
         if constexpr (!!(Flags & VERTEX_TEXCOORD))
         {
-            const float elems[] = { u, v };
-
-            bx::packRg16S(state.at<VertexAttribState::TexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
+            if constexpr (!!(Flags & TEXCOORD_F32))
+            {
+                *state.at<VertexAttribState::FullTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD | TEXCOORD_F32>()>() = HMM_Vec2(u, v);
+            }
+            else
+            {
+                const float elems[] = { u, v };
+                bx::packRg16S(state.at<VertexAttribState::PackedTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
+            }
         }
     }
 
-    template <uint16_t Flags>
+    template <
+        bool HasColor,
+        bool HasNormal,
+        bool HasTexCoord,
+        bool HasTexCoordF32 = false
+    >
     void add()
     {
+        if constexpr (HasTexCoord && !HasTexCoordF32)
+        {
+            add<HasColor, HasNormal, HasTexCoord, true>();
+        }
+
+        constexpr uint16_t Flags =
+            (HasColor       ? VERTEX_COLOR    : 0) |
+            (HasNormal      ? VERTEX_NORMAL   : 0) |
+            (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
+            (HasTexCoordF32 ? TEXCOORD_F32    : 0) ;
+
         VertexAttribStateFuncSet func_set;
 
         func_set.color    = color   <Flags>;
         func_set.normal   = normal  <Flags>;
         func_set.texcoord = texcoord<Flags>;
 
-        if (m_func_sets.size() <= Flags)
-        {
-            m_func_sets.resize(Flags + 1);
-        }
+        constexpr uint16_t idx = get_index_from_flags(Flags);
 
-        m_func_sets[Flags] = func_set;
+        ASSERT(m_func_sets[idx].color == nullptr);
+
+        m_func_sets[idx] = func_set;
     }
 
 private:
-    Vector<VertexAttribStateFuncSet> m_func_sets; // TODO : Reduce the table (indirect indexing?), most of the cells are empty.
+    Array<VertexAttribStateFuncSet, 16> m_func_sets;
 };
 
 
@@ -1154,9 +1273,9 @@ private:
 class MeshRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, uint32_t extra_data = 0)
+    void begin(uint16_t id, uint32_t flags, uint32_t extra_data = 0)
     {
-        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT16_MAX));
+        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT32_MAX));
 
         m_id         = id;
         m_flags      = flags;
@@ -1165,8 +1284,8 @@ public:
         m_position_buffer.clear();
         m_attrib_buffer  .clear();
 
-        m_attrib_funcs     = flags != UINT16_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
-        m_vertex_func      = flags != UINT16_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
+        m_attrib_funcs     = flags != UINT32_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
+        m_vertex_func      = flags != UINT32_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
         m_vertex_count     = 0;
         m_invocation_count = 0;
     }
@@ -1175,7 +1294,7 @@ public:
     {
         ASSERT(is_recording());
 
-        begin(UINT16_MAX, UINT16_MAX);
+        begin(UINT16_MAX, UINT32_MAX);
     }
 
     inline void vertex(const Vec3& position)
@@ -1224,7 +1343,7 @@ public:
 
     inline uint16_t id() const { return m_id; }
 
-    inline uint16_t flags() const { return m_flags; }
+    inline uint32_t flags() const { return m_flags; }
 
     inline uint32_t extra_data() const { return m_extra_data; }
 
@@ -1238,39 +1357,43 @@ private:
     public:
         VertexPushFuncTable()
         {
-            add<VERTEX_POSITION>();
+            m_funcs.fill(nullptr);
 
-            add<VERTEX_COLOR   >();
-            add<VERTEX_NORMAL  >();
-            add<VERTEX_TEXCOORD>();
-
-            add<VERTEX_COLOR  | VERTEX_NORMAL  >();
-            add<VERTEX_COLOR  | VERTEX_TEXCOORD>();
-            add<VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-            add<VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-            add<PRIMITIVE_QUADS | VERTEX_POSITION>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR   >();
-            add<PRIMITIVE_QUADS | VERTEX_NORMAL  >();
-            add<PRIMITIVE_QUADS | VERTEX_TEXCOORD>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_NORMAL  >();
-            add<PRIMITIVE_QUADS | VERTEX_COLOR  | VERTEX_TEXCOORD>();
-            add<PRIMITIVE_QUADS | VERTEX_NORMAL | VERTEX_TEXCOORD>();
-
-            add<PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD>();
+            //  +-------------------------- VERTEX_COLOR
+            //  |  +----------------------- VERTEX_NORMAL
+            //  |  |  +-------------------- VERTEX_TEXCOORD
+            //  |  |  |
+            add<0, 0, 0>();
+            add<1, 0, 0>();
+            add<0, 1, 0>();
+            add<0, 0, 1>();
+            add<1, 1, 0>();
+            add<1, 0, 1>();
+            add<0, 1, 1>();
+            add<1, 1, 1>();
         }
 
-        inline const VertexPushFunc& operator[](uint16_t flags) const
+        inline const VertexPushFunc& operator[](uint32_t flags) const
         {
-            const uint16_t quad_mask = mesh_primitive(flags) == PRIMITIVE_QUADS ? PRIMITIVE_QUADS : 0;
-
-            return m_funcs[flags & (VERTEX_ATTRIB_MASK | quad_mask)];
+            return m_funcs[get_index_from_flags(static_cast<uint16_t>(flags))];
         }
 
     private:
+        static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+        {
+            static_assert(
+                VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
+                TEXCOORD_F32       >> 9                   == 0b01000 &&
+                PRIMITIVE_QUADS                           == 0b10000,
+                "Invalid index assumptions in `MeshRecorder::VertexPushFuncTable::get_index_from_attribs`."
+            );
+
+            return
+                ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+                ((flags & TEXCOORD_F32      ) >> 9                  ) | // Bit 3.
+                ((flags & PRIMITIVE_QUADS   )                       ) ; // Bit 4.
+        }
+
         template <size_t Size>
         static inline void emulate_quad(Vector<uint8_t>& buffer)
         {
@@ -1320,19 +1443,38 @@ private:
             }
         }
 
-        template <uint16_t Flags>
+        template <
+            bool HasColor,
+            bool HasNormal,
+            bool HasTexCoord,
+            bool HasTexCoordF32    = false,
+            bool HasPrimitiveQuads = false
+        >
         void add()
         {
-            if (m_funcs.size() <= Flags)
+            if constexpr (HasTexCoord && !HasTexCoordF32)
             {
-                m_funcs.resize(Flags + 1, nullptr);
+                add<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
             }
 
-            m_funcs[Flags] = vertex<Flags>;
+            if constexpr (!HasPrimitiveQuads)
+            {
+                add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
+            }
+
+            constexpr uint16_t Flags =
+                (HasColor          ? VERTEX_COLOR    : 0) |
+                (HasNormal         ? VERTEX_NORMAL   : 0) |
+                (HasTexCoord       ? VERTEX_TEXCOORD : 0) |
+                (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
+                (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
+
+            // NOTE : We do insert few elements multiple times.
+            m_funcs[get_index_from_flags(Flags)] = vertex<Flags>;
         }
 
     private:
-        Vector<VertexPushFunc> m_funcs;
+        Array<VertexPushFunc, 32> m_funcs;
     };
 
 protected:
@@ -1344,8 +1486,8 @@ protected:
     uint32_t                                m_vertex_count     = 0;
     uint32_t                                m_invocation_count = 0;
     uint32_t                                m_extra_data       = 0;
+    uint32_t                                m_flags            = UINT32_MAX;
     uint16_t                                m_id               = UINT16_MAX;
-    uint16_t                                m_flags            = UINT16_MAX;
 
     static const VertexAttribStateFuncTable ms_attrib_state_func_table;
     static const VertexPushFuncTable        ms_vertex_push_func_table;
@@ -1367,7 +1509,7 @@ public:
     {
         ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
 
-        static const uint16_t type_sizes[] =
+        constexpr uint16_t type_sizes[] =
         {
             sizeof(Mat4), // INSTANCE_TRANSFORM
             16,           // INSTANCE_DATA_16
@@ -1380,7 +1522,7 @@ public:
         };
 
         m_id            = id;
-        m_instance_size = type_sizes[type];
+        m_instance_size = type_sizes[std::max<size_t>(type, BX_COUNTOF(type_sizes) - 1)];
         m_is_transform  = type == INSTANCE_TRANSFORM;
 
         m_buffer.clear();
@@ -1451,10 +1593,11 @@ struct Mesh
 {
     uint32_t          element_count = 0;
     uint32_t          extra_data    = 0;
-    uint16_t          flags         = MESH_INVALID;
+    uint32_t          flags         = MESH_INVALID;
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
+    uint8_t           _pad[2];
 
     inline uint16_t type() const
     {
@@ -1501,7 +1644,6 @@ public:
 
         Mesh& mesh = m_meshes[recorder.id()];
 
-        const uint16_t old_type = mesh.type();
         const uint16_t new_type = mesh_type(recorder.flags());
 
         if (new_type == MESH_INVALID)
@@ -1836,6 +1978,7 @@ struct InstanceData
 {
     bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
     bool                     is_transform = false;
+    uint8_t                  _pad[7];
 };
 
 class InstanceCache
@@ -2158,7 +2301,7 @@ public:
         m_textures[id].destroy();
     }
 
-    void schedule_read(uint16_t id, bgfx::ViewId pass, uint32_t frame, bgfx::Encoder* encoder, void* data)
+    void schedule_read(uint16_t id, bgfx::ViewId pass, bgfx::Encoder* encoder, void* data)
     {
         MutexScope lock(m_mutex);
 
@@ -2544,7 +2687,8 @@ public:
         ctx.stride_in_bytes = m_bitmap_width;
         ctx.pixels          = m_bitmap_data.data();
 
-        const int res = stbtt_PackFontRangesRenderIntoRects(
+        // TODO : Utilize the return value.
+        (void)stbtt_PackFontRangesRenderIntoRects(
             &ctx,
             &m_font_info,
             &range,
@@ -2928,20 +3072,19 @@ private:
         stbrp_context      ctx = {};
         Vector<stbrp_node> nodes(width - m_padding);
 
-        const auto find_node = [&](stbrp_node* old_node)
+        const auto find_node = [&](stbrp_node* node)
         {
             // Node can either point to one of the given array members, the two
             // `extra` nodes allocated within the `stbrp_context` structure, or
             // be `NULL`.
-            stbrp_node*     new_node;
-            const uintptr_t offset = old_node - m_pack_nodes.data(); // Fine even if `nullptr`.
+            const uintptr_t offset = node - m_pack_nodes.data(); // Fine even if `nullptr`.
 
             // We're intentionally not adjusting the nodes that point to one of
             // the context's `extra` nodes, so that we don't have to repeatedly
             // patch them when the context would be swapped.
             return offset < m_pack_nodes.size()
                 ? &nodes[offset]
-                : old_node;
+                : node;
         };
 
         stbrp_init_target(
@@ -3068,13 +3211,13 @@ public:
         ASSERT(recorder);
         ASSERT(!recorder->is_recording());
 
-        const uint16_t mesh_flags =
+        const uint32_t mesh_flags =
             TEXT_MESH       |
             PRIMITIVE_QUADS |
             VERTEX_POSITION |
             VERTEX_TEXCOORD |
             VERTEX_COLOR    |
-            (atlas->is_updatable() ? VERTEX_PIXCOORD : 0) |
+            (atlas->is_updatable() ? TEXCOORD_F32 : 0) |
             ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
 
         m_flags    = flags;
@@ -3137,7 +3280,7 @@ public:
 
         const float sign   = y_axis() == TEXT_Y_AXIS_DOWN ? 1.0f : -1.0f;
 
-        Vec3        offset = { 0.0f, 0.0f, 0.0f };
+        Vec3        offset = HMM_Vec3(0.0f, 0.0f, 0.0f);
 
         switch (h_alignment())
         {
@@ -3499,7 +3642,7 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
 
         int glfw_key = INVALID_INPUT;
 
-        if (app_key >= 0 && app_key < BX_COUNTOF(special_app_keys))
+        if (app_key >= 0 && app_key < static_cast<int>(BX_COUNTOF(special_app_keys)))
         {
             glfw_key = special_app_keys[app_key];
         }
@@ -3721,7 +3864,7 @@ private:
 
                 Vector<uint8_t> buffer(length + (type == STRING));
 
-                if (fread(buffer.data(), 1, length, f) == length)
+                if (fread(buffer.data(), 1, length, f) == static_cast<size_t>(length))
                 {
                     if (type == STRING)
                     {
@@ -3907,7 +4050,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             void Execute() override
             {
-                const auto id = std::this_thread::get_id();
                 ASSERT(t_ctx == nullptr);
                 ASSERT(threadNum < t_ctxs.size());
 
@@ -3931,7 +4073,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
     }
 
-    g_ctx.layout_cache.add_builtins();
+    g_ctx.layout_cache.init();
 
     if (setup)
     {
@@ -3968,26 +4110,49 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         const struct
         {
-            uint16_t    attribs;
+            uint32_t    attribs;
             const char* vs_name;
             const char* fs_name = nullptr;
         }
         programs[] =
         {
-            { 0                                                                      , "position"                                               },
-            { VERTEX_COLOR                                                           , "position_color"                                         },
-            { VERTEX_COLOR | VERTEX_TEXCOORD                                         , "position_color_texcoord"                                },
-            {                VERTEX_TEXCOORD                                         , "position_texcoord"                                      },
-
-            { VERTEX_COLOR | VERTEX_TEXCOORD                   | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_texcoord" },
-            { VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R      , "position_color_texcoord"  , "position_color_r_pixcoord" },
-            { VERTEX_COLOR                                     | INSTANCING_SUPPORTED , "instancing_position_color", "position_color"            },
+            {
+                VERTEX_POSITION, // Position only. It's assumed everywhere else.
+                "position"
+            },
+            {
+                VERTEX_COLOR,
+                "position_color"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD,
+                "position_color_texcoord"
+            },
+            {
+                VERTEX_TEXCOORD,
+                "position_texcoord"
+            },
+            {
+                VERTEX_COLOR | INSTANCING_SUPPORTED,
+                "instancing_position_color",
+                "position_color"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD | SAMPLER_COLOR_R,
+                "position_color_texcoord",
+                "position_color_r_texcoord"
+            },
+            {
+                VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R,
+                "position_color_texcoord",
+                "position_color_r_pixcoord"
+            },
         };
 
         char vs_name[32];
         char fs_name[32];
 
-        for (int i = 0; i < BX_COUNTOF(programs); i++)
+        for (size_t i = 0; i < BX_COUNTOF(programs); i++)
         {
             strcpy(vs_name, programs[i].vs_name);
             strcat(vs_name, "_vs");
@@ -4329,7 +4494,10 @@ void begin_mesh(int id, int flags)
 {
     ASSERT(!mnm::t_ctx->mesh_recorder.is_recording());
 
-    mnm::t_ctx->mesh_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(flags));
+    mnm::t_ctx->mesh_recorder.begin(
+        static_cast<uint16_t>(id),
+        static_cast<uint16_t>(flags) // NOTE : User exposed flags fit within 16 bits.
+    );
 }
 
 void end_mesh(void)
@@ -4368,7 +4536,7 @@ void mesh(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_MESHES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_MESHES);
     ASSERT(!t_ctx->mesh_recorder.is_recording());
 
     DrawState& state = t_ctx->draw_state;
@@ -4378,7 +4546,7 @@ void mesh(int id)
     state.framebuffer = g_ctx.pass_cache[t_ctx->active_pass].framebuffer();
 
     const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
-    uint16_t    mesh_flags = mesh.flags;
+    uint32_t    mesh_flags = mesh.flags;
 
     if (!t_ctx->encoder)
     {
@@ -4449,7 +4617,7 @@ void state(int flags)
 
 void load_texture(int id, int flags, int width, int height, int stride, const void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
     ASSERT(width > 0);
     ASSERT(height > 0);
     ASSERT((width < SIZE_EQUAL && height < SIZE_EQUAL) || (width <= SIZE_DOUBLE && width == height));
@@ -4474,7 +4642,7 @@ void texture(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
 
     if (!t_ctx->framebuffer_recorder.is_recording())
     {
@@ -4500,7 +4668,7 @@ void read_texture(int id, void* data)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
 
     if (!t_ctx->encoder)
     {
@@ -4511,7 +4679,6 @@ void read_texture(int id, void* data)
     g_ctx.texture_cache.schedule_read(
         static_cast<uint16_t>(id),
         t_ctx->active_pass + MAX_PASSES, // TODO : It might be better to let the user specify the pass explicitly.
-        g_ctx.frame_number,
         t_ctx->encoder,
         data
     );
@@ -4519,7 +4686,7 @@ void read_texture(int id, void* data)
 
 int readable(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
 
     // TODO : This needs to compare value returned from `bgfx::frame`.
     return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
@@ -4534,7 +4701,7 @@ void begin_instancing(int id, int type)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
     ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
 
     ASSERT(!t_ctx->instance_recorder.is_recording());
@@ -4568,7 +4735,7 @@ void instances(int id)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && id < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
 
     // TODO : Assert that instance ID is active in the cache in the current frame.
     t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
@@ -4581,7 +4748,7 @@ void instances(int id)
 
 void create_font(int id, const void* data)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FONTS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FONTS);
     ASSERT(data);
 
     mnm::g_ctx.font_data_registry.add(static_cast<uint16_t>(id), data);
@@ -4592,8 +4759,8 @@ void begin_atlas(int id, int flags, int font, float size)
     using namespace mnm;
 
     // TODO : Check `flags`.
-    ASSERT(id > 0 && id < MAX_TEXTURES);
-    ASSERT(font > 0 && font < MAX_FONTS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
+    ASSERT(font > 0 && static_cast<uint16_t>(font) < MAX_FONTS);
     ASSERT(size >= 5.0f && size <= 4096.0f);
 
     t_ctx->active_atlas = g_ctx.atlas_cache[static_cast<uint16_t>(id)];
@@ -4697,7 +4864,7 @@ void text(const char* string)
 
 void pass(int id)
 {
-    ASSERT(id >= 0 && id < mnm::MAX_PASSES);
+    ASSERT(id >= 0 && static_cast<uint16_t>(id) < mnm::MAX_PASSES);
 
     mnm::t_ctx->active_pass = static_cast<uint16_t>(id);
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].touch();
@@ -4725,7 +4892,7 @@ void no_framebuffer(void)
 
 void framebuffer(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
 
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_framebuffer(
         mnm::g_ctx.framebuffer_cache[static_cast<uint16_t>(id)].handle
@@ -4759,7 +4926,7 @@ void full_viewport(void)
 
 void begin_framebuffer(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
 
     mnm::t_ctx->framebuffer_recorder.begin(static_cast<uint16_t>(id));
 }
@@ -4777,7 +4944,7 @@ void end_framebuffer(void)
 
 void create_uniform(int id, int flags, const char* name)
 {
-    ASSERT(id > 0 && id < mnm::MAX_UNIFORMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_UNIFORMS);
     ASSERT(flags > 0 && flags <= (UNIFORM_SAMPLER | UNIFORM_8));
     ASSERT(name);
 
@@ -4792,7 +4959,7 @@ void uniform(int id, const void* value)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && id < MAX_UNIFORMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_UNIFORMS);
     ASSERT(value);
 
     // We could instead store the uniform values in the state, but that would
@@ -4808,7 +4975,7 @@ void uniform(int id, const void* value)
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
 {
-    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
     ASSERT(vs_data);
     ASSERT(vs_size > 0);
     ASSERT(fs_data);
@@ -4825,7 +4992,7 @@ void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data
 
 void shader(int id)
 {
-    ASSERT(id > 0 && id < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
 
     mnm::t_ctx->draw_state.program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
 }
