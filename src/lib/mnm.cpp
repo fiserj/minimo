@@ -3963,6 +3963,8 @@ struct GlobalContext
     uint32_t            frame_number      = 0;
     uint32_t            bgfx_frame_number = 0;
 
+    Atomic<int>         transient_memory  = 32 << 20;
+
     Atomic<bool>        vsync_on          = false;
     bool                reset_back_buffer = true;
 };
@@ -4044,9 +4046,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         //        call the code in the block exectured when
         //        `g_ctx.reset_back_buffer` is true.
         bgfx::Init init;
-        init.platformData      = create_platform_data(g_ctx.window.handle, init.type);
-        init.resolution.width  = static_cast<uint32_t>(g_ctx.window.framebuffer_width);
-        init.resolution.height = static_cast<uint32_t>(g_ctx.window.framebuffer_height);
+        init.platformData           = create_platform_data (g_ctx.window.handle, init.type );
+        init.resolution.width       = static_cast<uint32_t>(g_ctx.window.framebuffer_width );
+        init.resolution.height      = static_cast<uint32_t>(g_ctx.window.framebuffer_height);
+        init.limits.transientVbSize = static_cast<uint32_t>(g_ctx.transient_memory         );
 
         if (!bgfx::init(init))
         {
@@ -5259,6 +5262,13 @@ int renderer(void)
 // -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - MISCELLANEOUS
 // -----------------------------------------------------------------------------
+
+void transient_memory(int megabytes)
+{
+    ASSERT(megabytes > 0);
+
+    mnm::g_ctx.transient_memory = megabytes << 20;
+}
 
 int frame(void)
 {
