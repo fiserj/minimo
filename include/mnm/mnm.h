@@ -236,8 +236,6 @@ double toc(void);
 /// Transient meshes do not have index buffers, while index buffer of static and
 /// dynamic meshes is automatically created from the list of submitted vertices,
 /// using the meshoptimizer library to optimize for vertex cache and overdraw.
-///
-/// Internally, \a MiNiMo uses
 
 /// Mesh flags.
 ///

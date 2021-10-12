@@ -2696,8 +2696,6 @@ public:
             m_bitmap_width  = pack_size[0];
             m_bitmap_height = pack_size[1];
             m_bitmap_data.swap(data);
-
-            stbi_write_png("TEST2a.png", m_bitmap_width, m_bitmap_height, 1, m_bitmap_data.data(), m_bitmap_width);
         }
 
         ctx.width           = m_bitmap_width;
@@ -2713,8 +2711,6 @@ public:
             1,
             m_pack_rects.data() + offset
         );
-
-        stbi_write_png("TEST2b.png", ctx.width, ctx.height, 1, ctx.pixels, ctx.stride_in_bytes);
 
         // TODO : We should only update the texture if the size didn't change.
         texture_cache.add_texture(
@@ -2999,10 +2995,6 @@ private:
 
             if (pick_next_size(min_area, inout_pack_size))
             {
-                // TODO !!! No patching should be needed (except tweaking the
-                //          context's height) if the height changed, but width
-                //          (and thus the number of nodes) stayed the same.
-
                 if (m_pack_ctx.num_nodes == 0)
                 {
                     m_pack_nodes.resize(inout_pack_size[0] - m_padding);
@@ -3017,9 +3009,6 @@ private:
                 }
                 else
                 {
-                    // TODO !!! Patching doesn't seem to work when skipping
-                    //          multiple atlas sizes at once.
-
                     // Atlas size changed (and so did the packing rectangle).
                     patch_stbrp_context(inout_pack_size[0], inout_pack_size[1]);
                 }
@@ -3087,6 +3076,15 @@ private:
         check_stbrp_context_validity(m_pack_ctx, m_pack_nodes);
 #endif
 
+        // When changing only height, number of nodes or the sentinel node don't
+        // change.
+        if (width - m_padding == static_cast<uint32_t>(m_pack_ctx.width))
+        {
+            m_pack_ctx.height = static_cast<int>(height - m_padding);
+
+            return;
+        }
+
         stbrp_context      ctx = {};
         Vector<stbrp_node> nodes(width - m_padding);
 
@@ -3107,8 +3105,8 @@ private:
 
         stbrp_init_target(
             &ctx,
-            width  - m_padding,
-            height - m_padding,
+            static_cast<int>(width  - m_padding),
+            static_cast<int>(height - m_padding),
             nodes.data(),
             static_cast<int>(nodes.size())
         );
