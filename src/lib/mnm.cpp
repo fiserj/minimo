@@ -430,17 +430,20 @@ struct DefaultUniforms
 {
     bgfx::UniformHandle color_texture_rgba = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle color_texture_r    = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle texture_size       = BGFX_INVALID_HANDLE;
 
     void init()
     {
         color_texture_rgba = bgfx::createUniform("s_tex_color_rgba", bgfx::UniformType::Sampler);
         color_texture_r    = bgfx::createUniform("s_tex_color_r"   , bgfx::UniformType::Sampler);
+        texture_size       = bgfx::createUniform("u_tex_size"      , bgfx::UniformType::Vec4   );
     }
 
     void clear()
     {
         destroy_if_valid(color_texture_rgba);
         destroy_if_valid(color_texture_r   );
+        destroy_if_valid(texture_size      );
     }
 
     inline bgfx::UniformHandle default_sampler(bgfx::TextureFormat::Enum format) const
@@ -540,15 +543,16 @@ struct InstanceData;
 
 struct DrawState
 {
-    Mat4                     transform    = HMM_Mat4d(1.0f);
-    const InstanceData*      instances    = nullptr;
-    bgfx::ViewId             pass         = UINT16_MAX;
-    bgfx::FrameBufferHandle  framebuffer  = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle      program      = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle      texture      = BGFX_INVALID_HANDLE; // TODO : More texture slots.
-    bgfx::UniformHandle      sampler      = BGFX_INVALID_HANDLE;
-    bgfx::VertexLayoutHandle vertex_alias = BGFX_INVALID_HANDLE;
-    uint16_t                 flags        = STATE_DEFAULT;
+    Mat4                     transform       = HMM_Mat4d(1.0f);
+    const InstanceData*      instances       = nullptr;
+    bgfx::ViewId             pass            = UINT16_MAX;
+    bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture         = BGFX_INVALID_HANDLE; // TODO : More texture slots.
+    bgfx::UniformHandle      sampler         = BGFX_INVALID_HANDLE;
+    uint16_t                 texture_size[2] = { 0, 0 };
+    bgfx::VertexLayoutHandle vertex_alias    = BGFX_INVALID_HANDLE;
+    uint16_t                 flags           = STATE_DEFAULT;
     uint8_t                  _pad[10];
 };
 
@@ -2098,6 +2102,7 @@ static void submit_mesh
     const Mat4&                                transform,
     const DrawState&                           state,
     const Vector<bgfx::TransientVertexBuffer>& transient_buffers,
+    const DefaultUniforms&                     default_uniforms,
     bgfx::Encoder&                             encoder
 )
 {
@@ -2138,6 +2143,19 @@ static void submit_mesh
         if (bgfx::isValid(state.texture) && bgfx::isValid(state.sampler))
         {
             encoder.setTexture(0, state.sampler, state.texture);
+        }
+
+        if (mesh.flags & VERTEX_PIXCOORD)
+        {
+            const float data[] =
+            {
+                static_cast<float>(state.texture_size[0]),
+                static_cast<float>(state.texture_size[1]),
+                static_cast<float>(state.texture_size[0]) ? 1.0f / static_cast<float>(state.texture_size[0]) : 0.0f,
+                static_cast<float>(state.texture_size[1]) ? 1.0f / static_cast<float>(state.texture_size[1]) : 0.0f
+            };
+
+            encoder.setUniform(default_uniforms.texture_size, data);
         }
 
         encoder.setTransform(&transform);
@@ -3217,7 +3235,7 @@ public:
             VERTEX_POSITION |
             VERTEX_TEXCOORD |
             VERTEX_COLOR    |
-            (atlas->is_updatable() ? TEXCOORD_F32 : 0) |
+            (atlas->is_updatable() ? (TEXCOORD_F32 | VERTEX_PIXCOORD) : 0) |
             ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
 
         m_flags    = flags;
@@ -4595,7 +4613,14 @@ void mesh(int id)
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
-    submit_mesh(mesh, t_ctx->matrix_stack.top(), state, g_ctx.mesh_cache.transient_buffers(), *t_ctx->encoder);
+    submit_mesh(
+        mesh,
+        t_ctx->matrix_stack.top(),
+        state,
+        g_ctx.mesh_cache.transient_buffers(),
+        g_ctx.default_uniforms,
+        *t_ctx->encoder
+    );
 
     state = {};
 }
@@ -4650,8 +4675,10 @@ void texture(int id)
         //        non-default shader is used.
         const Texture& texture = g_ctx.texture_cache[static_cast<uint16_t>(id)];
 
-        t_ctx->draw_state.texture = texture.handle;
-        t_ctx->draw_state.sampler = g_ctx.default_uniforms.default_sampler(texture.format);
+        t_ctx->draw_state.texture         = texture.handle;
+        t_ctx->draw_state.sampler         = g_ctx.default_uniforms.default_sampler(texture.format);
+        t_ctx->draw_state.texture_size[0] = texture.width;
+        t_ctx->draw_state.texture_size[1] = texture.height;
     }
     else
     {
