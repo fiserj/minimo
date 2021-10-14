@@ -2798,7 +2798,7 @@ public:
         float         box_height        = font_size();
         uint32_t      codepoint         = 0;
         uint32_t      state             = 0;
-        const bool    needs_line_widths = h_alignment == TEXT_H_ALIGN_CENTER;
+        const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
 
         // Pass 1: Gather info about text, signal missing glyphs.
         for (const char* string_head = string; *string_head; string_head++)
@@ -2854,27 +2854,31 @@ public:
         Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
         uint16_t line_idx = 0;
 
-        if (h_alignment == TEXT_H_ALIGN_RIGHT)
-        {
-            offset.X = -box_width;
-        }
-
         switch (v_alignment)
         {
+        case TEXT_V_ALIGN_BASELINE:
+            offset.Y = -line_sign * box_height + font_size();
+            break;
         case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = roundf(line_sign * box_height * -0.5f);
+            offset.Y = roundf(line_sign * (box_height * -0.5f + font_size()));
             break;
         case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = -line_sign * box_height;
+            offset.Y = line_sign * font_size();
             break;
         default:;
         }
 
         for (const char* string_head = string; *string_head; line_idx++)
         {
-            if (h_alignment == TEXT_H_ALIGN_CENTER)
+            switch (h_alignment)
             {
+            case TEXT_H_ALIGN_CENTER:
                 offset.X = line_widths[line_idx] * -0.5f;
+                break;
+            case TEXT_H_ALIGN_RIGHT:
+                offset.X = -line_widths[line_idx];
+                break;
+            default:;
             }
 
             if (y_axis_down)
@@ -2892,65 +2896,7 @@ public:
         return true;
     }
 
-    bool text_bounding_box
-    (
-        const char*    string,
-        float          line_height_factor,
-        float&         out_width,
-        float&         out_height,
-        Vector<float>* out_line_widths = nullptr
-    ) const
-    {
-        uint32_t    codepoint   = 0;
-        uint32_t    state       = 0;
-        float       line_width  = 0.0f;
-        const float line_height = roundf(m_font_size * line_height_factor);
-
-        out_width  = 0.0f;
-        out_height = line_height;
-
-        for (; *string; string++)
-        {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
-            {
-                if (codepoint == '\n')
-                {
-                    if (out_line_widths)
-                    {
-                        out_line_widths->push_back(line_width);
-                    }
-
-                    out_height += line_height;
-                    out_width   = std::max(out_width, line_width);
-                    line_width  = 0.0f;
-
-                    continue;
-                }
-
-                const auto it = m_codepoints.find(codepoint);
-
-                if (it == m_codepoints.end())
-                {
-                    if (is_updatable())
-                    {
-                        return false;
-                    }
-                    else
-                    {
-                        // TODO : Probably just print some warning and skip the glyph.
-                        ASSERT(false && "Atlas is immutable.");
-                    }
-                }
-
-                line_width += m_char_quads[it->second].xadvance;
-            }
-        }
-
-        ASSERT(state == UTF8_ACCEPT);
-
-        return true;
-    }
-
+private:
     template <bool YAxisDown>
     const char* record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
@@ -2966,7 +2912,6 @@ public:
         }
     }
 
-private:
     template <bool YAxisDown>
     const char* record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
@@ -3440,62 +3385,6 @@ public:
             const bool success = lay_text();
             BX_UNUSED(success);
             ASSERT(success);
-        }
-    }
-
-    void add_text_old(const char* string, const Mat4& transform, TextureCache& texture_cache)
-    {
-        ASSERT(m_recorder);
-
-        float width  = 0.0f;
-        float height = 0.0f;
-
-        if (!m_atlas->text_bounding_box(string, m_line_height, width, height))
-        {
-            m_atlas->add_glyphs_from_string(string);
-            m_atlas->update(texture_cache);
-
-            (void)m_atlas->text_bounding_box(string, m_line_height, width, height);
-        }
-
-        // TODO : Figure out whether it makes more sense to consider only first
-        //        line for the alignment, or the whole text as a block / paragraph.
-        //        Can also add new alignment flags.
-        // const float height = m_atlas->font_size();
-
-        const float sign   = y_axis() == TEXT_Y_AXIS_DOWN ? 1.0f : -1.0f;
-
-        Vec3        offset = HMM_Vec3(0.0f, 0.0f, 0.0f);
-
-        switch (h_alignment())
-        {
-        case TEXT_H_ALIGN_CENTER:
-            offset.X = width * -0.5f;
-            break;
-        case TEXT_H_ALIGN_RIGHT:
-            offset.X = -width;
-            break;
-        default:;
-        }
-
-        switch (v_alignment())
-        {
-        case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = sign * height * 0.5f;
-            break;
-        case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = sign * height;
-            break;
-        default:;
-        }
-
-        if (y_axis() == TEXT_Y_AXIS_DOWN)
-        {
-            m_atlas->record_quads<true >(string, transform * HMM_Translate(offset), *m_recorder);
-        }
-        else
-        {
-            m_atlas->record_quads<false>(string, transform * HMM_Translate(offset), *m_recorder);
         }
     }
 
