@@ -2798,7 +2798,7 @@ public:
         float         box_height        = font_size();
         uint32_t      codepoint         = 0;
         uint32_t      state             = 0;
-        const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
+        const bool    needs_line_widths = h_alignment == TEXT_H_ALIGN_CENTER;
 
         // Pass 1: Gather info about text, signal missing glyphs.
         for (const char* string_head = string; *string_head; string_head++)
@@ -2860,10 +2860,10 @@ public:
         switch (v_alignment)
         {
         case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = line_sign * line_height * 0.5f;
+            offset.Y = line_sign * box_height * 0.5f;
             break;
         case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = line_sign * line_height;
+            offset.Y = line_sign * box_height;
             break;
         default:;
         }
@@ -2873,13 +2873,13 @@ public:
             switch (h_alignment)
             {
             case TEXT_H_ALIGN_LEFT:
-                offset.Y = 0.0f;
+                offset.X = 0.0f;
                 break;
             case TEXT_H_ALIGN_CENTER:
                 offset.X = line_widths[line_idx] * -0.5f;
                 break;
             case TEXT_H_ALIGN_RIGHT:
-                offset.X = -line_widths[line_idx];
+                offset.X = -box_width;
                 break;
             default:;
             }
@@ -2893,7 +2893,7 @@ public:
                 record_quads<false>(string_head, transform * HMM_Translate(offset), out_recorder);
             }
 
-            offset.Y += line_height * line_sign;
+            offset.Y += line_sign * line_height;
         }
 
         ASSERT(state == UTF8_ACCEPT);
