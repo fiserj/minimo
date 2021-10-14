@@ -2,6 +2,7 @@
 
 #include <assert.h>               // assert
 #include <float.h>                // FLT_MAX
+#include <math.h>                 // roundf
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
 #include <stdio.h>                // fclose, fopen, fread, fseek, ftell, fwrite
@@ -28,7 +29,7 @@
 #   define strcasecmp _stricmp
 #endif
 
-#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF
+#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF, BX_UNUSED
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
@@ -2736,7 +2737,7 @@ public:
     }
 
     template <bool YAxisDown, bool UseTexCoord>
-    void get_packed_quad(const stbtt_packedchar& b, float &inout_xpos, float ypos, stbtt_aligned_quad& q)
+    void get_packed_quad(const stbtt_packedchar& b, float &inout_xpos, stbtt_aligned_quad& q)
     {
         // TODO : Figure out whether to user-enable alignment to integer coordintes.
 
@@ -2748,13 +2749,13 @@ public:
 
         if constexpr (YAxisDown)
         {
-            q.y0 = ypos + b.yoff;
-            q.y1 = ypos + b.yoff2;
+            q.y0 = b.yoff;
+            q.y1 = b.yoff2;
         }
         else
         {
-            q.y0 = ypos - b.yoff;
-            q.y1 = ypos - b.yoff2;
+            q.y0 = -b.yoff;
+            q.y1 = -b.yoff2;
         }
 
         if constexpr (UseTexCoord)
@@ -2775,87 +2776,167 @@ public:
         inout_xpos += b.xadvance;
     }
 
-    float text_width(const char* string) const
+    // Two-pass:
+    // 1) Gather info about text, signal missing glyphs.
+    // 2) Submit quads to the recorder.
+    bool lay_text
+    (
+        const char*   string,
+        float         line_height_factor,
+        uint16_t      h_alignment,
+        uint16_t      v_alignment,
+        bool          y_axis_down,
+        const Mat4&   transform,
+        MeshRecorder& out_recorder
+    )
     {
-        // TODO : Probably branch here and for atlas with `ATLAS_ALLOW_UPDATE`
-        //        flag check glyph presence and update on the fly.
+        Vector<float> line_widths; // TODO : Candidate for stack-based allocator usage.
+        const float   line_sign         = y_axis_down ? 1.0f : -1.0f;
+        const float   line_height       = roundf(font_size() * line_height_factor);
+        float         line_width        = 0.0f;
+        float         box_width         = 0.0f;
+        float         box_height        = font_size();
+        uint32_t      codepoint         = 0;
+        uint32_t      state             = 0;
+        const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
 
-        uint32_t codepoint = 0;
-        uint32_t state     = 0;
-        float    width     = 0.0f;
-
-        for (; *string; string++)
+        // Pass 1: Gather info about text, signal missing glyphs.
+        for (const char* string_head = string; *string_head; string_head++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string_head))
             {
+                if (codepoint == '\n') // TODO : Other line terminators?
+                {
+                    if (needs_line_widths)
+                    {
+                        line_widths.push_back(line_width);
+                    }
+
+                    box_height += line_height;
+                    box_width   = std::max(box_width, line_width);
+                    line_width  = 0.0f;
+
+                    continue;
+                }
+
                 const auto it = m_codepoints.find(codepoint);
 
                 if (it == m_codepoints.end())
                 {
-                    if (m_flags & ATLAS_ALLOW_UPDATE)
+                    if (is_updatable())
                     {
-                        return -1.0f;
+                        return false;
                     }
                     else
                     {
-                        // TODO : Probably just print some warning and skip the glyph.
+                        // TODO : Probably just print some warning and skip the
+                        //        glyph (try using the atlas' "missing" glyph).
                         ASSERT(false && "Atlas is immutable.");
                     }
                 }
 
-                width += m_char_quads[it->second].xadvance;
+                line_width += m_char_quads[it->second].xadvance;
             }
         }
 
         ASSERT(state == UTF8_ACCEPT);
 
-        return width;
+        {
+            if (needs_line_widths)
+            {
+                line_widths.push_back(line_width);
+            }
+
+            box_width = std::max(box_width, line_width);
+        }
+
+        // Pass 2: Submit quads to the recorder.
+        Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
+        uint16_t line_idx = 0;
+
+        switch (v_alignment)
+        {
+        case TEXT_V_ALIGN_BASELINE:
+            offset.Y = line_sign * (font_size() - box_height);
+            break;
+        case TEXT_V_ALIGN_MIDDLE:
+            offset.Y = roundf(line_sign * (box_height * -0.5f + font_size()));
+            break;
+        case TEXT_V_ALIGN_CAP_HEIGHT:
+            offset.Y = line_sign * font_size();
+            break;
+        default:;
+        }
+
+        for (const char* string_head = string; *string_head; line_idx++)
+        {
+            switch (h_alignment)
+            {
+            case TEXT_H_ALIGN_CENTER:
+                offset.X = line_widths[line_idx] * -0.5f;
+                break;
+            case TEXT_H_ALIGN_RIGHT:
+                offset.X = -line_widths[line_idx];
+                break;
+            default:;
+            }
+
+            if (y_axis_down)
+            {
+                string_head = record_quads<true >(string_head, transform * HMM_Translate(offset), out_recorder);
+            }
+            else
+            {
+                string_head = record_quads<false>(string_head, transform * HMM_Translate(offset), out_recorder);
+            }
+
+            offset.Y += line_sign * line_height;
+        }
+
+        return true;
     }
 
+private:
     template <bool YAxisDown>
-    void record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
-        if (!(m_flags & ATLAS_ALLOW_UPDATE))
+        if (!is_updatable())
         {
-            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
         }
         else
         {
             MutexScope lock(m_mutex);
 
-            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
         }
     }
 
-private:
     template <bool YAxisDown>
-    void record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
-        // NOTE : This routine assumes all needed glyphs that could be loaded
-        //        (i.e., are in the font data) already are loaded. The update
-        //        for updatable atlases is triggered in `text_width` that first
-        //        scans the string.
+        // NOTE : This routine assumes all needed glyphs are loaded!
 
-        uint32_t codepoint;
-        uint32_t state = 0;
-
-        float x = 0.0f;
-        float y = 0.0f;
-
-        stbtt_aligned_quad quad = {};
+        uint32_t           codepoint;
+        uint32_t           state = 0;
+        float              x     = 0.0f;
+        stbtt_aligned_quad quad  = {};
 
         for (; *string; string++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
-                // TODO : Do new line when `\n` character is found.
+                if (codepoint == '\n') // TODO : Other line terminators?
+                {
+                    break;
+                }
 
                 const auto it = m_codepoints.find(codepoint);
                 ASSERT(it != m_codepoints.end());
 
                 is_updatable()
-                    ? get_packed_quad<YAxisDown, false>(m_char_quads[it->second], x, y, quad)
-                    : get_packed_quad<YAxisDown, true >(m_char_quads[it->second], x, y, quad);
+                    ? get_packed_quad<YAxisDown, false>(m_char_quads[it->second], x, quad)
+                    : get_packed_quad<YAxisDown, true >(m_char_quads[it->second], x, quad);
 
                 recorder.texcoord(                      quad.s0, quad.t0);
                 recorder.vertex  ((transform * HMM_Vec4(quad.x0, quad.y0, 0.0f, 1.0f)).XYZ);
@@ -2872,6 +2953,9 @@ private:
         }
 
         ASSERT(state == UTF8_ACCEPT);
+        ASSERT(*string == '\0' || *string == '\n');
+
+        return *string ? (string + 1) : string;
     }
 
     int16_t cap_height() const
@@ -3278,55 +3362,29 @@ public:
     {
         ASSERT(m_recorder);
 
-        float width = m_atlas->text_width(string);
-
-        if (width < 0.0f)
+        const auto lay_text = [&]()
         {
+            return m_atlas->lay_text(
+                string,
+                m_line_height,
+                h_alignment(),
+                v_alignment(),
+                y_axis() == TEXT_Y_AXIS_DOWN,
+                transform,
+                *m_recorder
+            );
+        };
+
+        if (!lay_text())
+        {
+            ASSERT(m_atlas->is_updatable());
+
             m_atlas->add_glyphs_from_string(string);
             m_atlas->update(texture_cache);
 
-            width = m_atlas->text_width(string);
-            ASSERT(width >= 0.0f);
-        }
-
-        // TODO : Figure out whether it makes more sense to consider only first
-        //        line for the alignment, or the whole text as a block / paragraph.
-        //        Can also add new alignment flags.
-        const float height = m_atlas->font_size();
-
-        const float sign   = y_axis() == TEXT_Y_AXIS_DOWN ? 1.0f : -1.0f;
-
-        Vec3        offset = HMM_Vec3(0.0f, 0.0f, 0.0f);
-
-        switch (h_alignment())
-        {
-        case TEXT_H_ALIGN_CENTER:
-            offset.X = width * -0.5f;
-            break;
-        case TEXT_H_ALIGN_RIGHT:
-            offset.X = -width;
-            break;
-        default:;
-        }
-
-        switch (v_alignment())
-        {
-        case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = sign * height * 0.5f;
-            break;
-        case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = sign * height;
-            break;
-        default:;
-        }
-
-        if (y_axis() == TEXT_Y_AXIS_DOWN)
-        {
-            m_atlas->record_quads<true >(string, transform * HMM_Translate(offset), *m_recorder);
-        }
-        else
-        {
-            m_atlas->record_quads<false>(string, transform * HMM_Translate(offset), *m_recorder);
+            const bool success = lay_text();
+            BX_UNUSED(success);
+            ASSERT(success);
         }
     }
 
