@@ -2851,101 +2851,44 @@ public:
         }
 
         // Pass 2: Submit quads to the recorder.
-        codepoint = 0;
-        state     = 0;
-
         Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
         uint16_t line_idx = 0;
+
+        if (h_alignment == TEXT_H_ALIGN_RIGHT)
+        {
+            offset.X = -box_width;
+        }
 
         switch (v_alignment)
         {
         case TEXT_V_ALIGN_MIDDLE:
-            offset.Y = line_sign * box_height * 0.5f;
+            offset.Y = roundf(line_sign * box_height * -0.5f);
             break;
         case TEXT_V_ALIGN_CAP_HEIGHT:
-            offset.Y = line_sign * box_height;
+            offset.Y = -line_sign * box_height;
             break;
         default:;
         }
 
-        for (const char* string_head = string; *string_head; string_head++, line_idx++)
+        for (const char* string_head = string; *string_head; line_idx++)
         {
-            switch (h_alignment)
+            if (h_alignment == TEXT_H_ALIGN_CENTER)
             {
-            case TEXT_H_ALIGN_LEFT:
-                offset.X = 0.0f;
-                break;
-            case TEXT_H_ALIGN_CENTER:
                 offset.X = line_widths[line_idx] * -0.5f;
-                break;
-            case TEXT_H_ALIGN_RIGHT:
-                offset.X = -box_width;
-                break;
-            default:;
             }
 
             if (y_axis_down)
             {
-                record_quads<true >(string_head, transform * HMM_Translate(offset), out_recorder);
+                string_head = record_quads<true >(string_head, transform * HMM_Translate(offset), out_recorder);
             }
             else
             {
-                record_quads<false>(string_head, transform * HMM_Translate(offset), out_recorder);
+                string_head = record_quads<false>(string_head, transform * HMM_Translate(offset), out_recorder);
             }
 
             offset.Y += line_sign * line_height;
         }
 
-        ASSERT(state == UTF8_ACCEPT);
-
-        // -----
-#if 0
-        for (int pass = 0; pass < 2; pass++)
-        {
-            uint32_t codepoint   = 0;
-            uint32_t state       = 0;
-            float    line_width  = 0.0f;
-
-            for (const char* string_head = string; *string_head; string_head++)
-            {
-                if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string_head))
-                {
-                    if (codepoint == '\n') // TODO : Other line terminators?
-                    {
-                        if (needs_line_widths)
-                        {
-                            line_widths.push_back(line_width);
-                        }
-
-                        out_height += line_height;
-                        out_width   = std::max(out_width, line_width);
-                        line_width  = 0.0f;
-
-                        continue;
-                    }
-
-                    const auto it = m_codepoints.find(codepoint);
-
-                    if (it == m_codepoints.end())
-                    {
-                        if (is_updatable())
-                        {
-                            return false;
-                        }
-                        else
-                        {
-                            // TODO : Probably just print some warning and skip the glyph.
-                            ASSERT(false && "Atlas is immutable.");
-                        }
-                    }
-
-                    line_width += m_char_quads[it->second].xadvance;
-                }
-            }
-
-            ASSERT(state == UTF8_ACCEPT);
-        }
-#endif // 0
         return true;
     }
 
@@ -3009,23 +2952,23 @@ public:
     }
 
     template <bool YAxisDown>
-    void record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
         if (!is_updatable())
         {
-            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
         }
         else
         {
             MutexScope lock(m_mutex);
 
-            record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
         }
     }
 
 private:
     template <bool YAxisDown>
-    void record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
     {
         // NOTE : This routine assumes all needed glyphs are loaded!
 
@@ -3040,7 +2983,7 @@ private:
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
-                    return;
+                    break;
                 }
 
                 const auto it = m_codepoints.find(codepoint);
@@ -3065,6 +3008,9 @@ private:
         }
 
         ASSERT(state == UTF8_ACCEPT);
+        ASSERT(*string == '\0' || *string == '\n');
+
+        return *string ? (string + 1) : string;
     }
 
     int16_t cap_height() const
