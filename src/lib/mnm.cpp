@@ -2857,7 +2857,7 @@ public:
         switch (v_alignment)
         {
         case TEXT_V_ALIGN_BASELINE:
-            offset.Y = -line_sign * box_height + font_size();
+            offset.Y = line_sign * (font_size() - box_height);
             break;
         case TEXT_V_ALIGN_MIDDLE:
             offset.Y = roundf(line_sign * (box_height * -0.5f + font_size()));
