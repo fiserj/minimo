@@ -4,6 +4,8 @@
 
 #define ATLAS_ID 1
 
+#define TEXT_ID  1
+
 struct Settings
 {
     float font_size = 12.0f;
@@ -32,7 +34,32 @@ static void draw()
         quit();
     }
 
-    // ...
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_H_ALIGN_LEFT | TEXT_V_ALIGN_CAP_HEIGHT);
+    {
+        color(0xffffffff);
+        text
+        (
+            "Put in in a deck for our standup today lose client to 10:00\n"
+            "meeting big picture, nor screw the pooch move the needle, so\n"
+            "enough to wash your face for we need to get all stakeholders up\n"
+            "to speed and in the right place. Are we in agreeance\n"
+            "incentivization so blue money, but regroup yet good optics\n"
+            "anti-pattern. Increase the pipelines. The last person we talked\n"
+            "to said this would be ready single wringable neck or usabiltiy.\n"
+            "Our competitors are jumping the shark. Re-inventing the wheel\n"
+            "can you slack it to me? Innovation is hot right now optics but\n"
+            "due diligence quantity."
+        );
+    }
+    end_text();
+
+    identity();
+    ortho(0.0f, pixel_width(), pixel_height(), 0.0f, 1.0f, -1.0f);
+    projection();
+
+    identity();
+    translate(dpi() * 10.0f, dpi() * 10.0f, 0.0f);
+    mesh(TEXT_ID);
 }
 
 MNM_MAIN(nullptr, setup, draw, nullptr);
