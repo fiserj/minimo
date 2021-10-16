@@ -624,6 +624,8 @@ public:
 
         MutexScope lock(m_mutex);
 
+        ASSERT(!(id == UINT16_MAX && attribs != UINT32_MAX) || !bgfx::isValid(m_builtins[get_index_from_attribs(attribs)]));
+
         bgfx::ProgramHandle& handle = (id == UINT16_MAX && attribs != UINT32_MAX)
             ? m_builtins[get_index_from_attribs(attribs)]
             : m_handles[id];
@@ -685,23 +687,25 @@ public:
     }
 
 private:
-    static inline constexpr uint32_t get_index_from_attribs(uint32_t attribs)
+    static inline constexpr uint16_t get_index_from_attribs(uint32_t attribs)
     {
         static_assert(
-            VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
-            INSTANCING_SUPPORTED >> 13                  == 0b01000 &&
-            SAMPLER_COLOR_R      >> 13                  == 0b10000,
+            VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b000111 &&
+            INSTANCING_SUPPORTED >> 13                  == 0b001000 &&
+            SAMPLER_COLOR_R      >> 13                  == 0b010000 &&
+            VERTEX_PIXCOORD      >> 14                  == 0b100000,
             "Invalid index assumptions in `ProgramCache::get_index_from_attribs`."
         );
 
         return
             ((attribs & VERTEX_ATTRIB_MASK  ) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
             ((attribs & INSTANCING_SUPPORTED) >> 13                 ) | // Bit 3.
-            ((attribs & SAMPLER_COLOR_R     ) >> 13                 ) ; // Bit 4.
+            ((attribs & SAMPLER_COLOR_R     ) >> 13                 ) | // Bit 4.
+            ((attribs & VERTEX_PIXCOORD     ) >> 14                 ) ; // Bit 5.
     }
 
 private:
-    static constexpr uint32_t                MAX_BUILTINS = 32;
+    static constexpr uint32_t                MAX_BUILTINS = 64;
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
