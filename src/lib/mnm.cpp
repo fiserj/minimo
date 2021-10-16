@@ -4041,6 +4041,7 @@ struct GlobalContext
     UniformCache        uniform_cache;
     MemoryCache         memory_cache;
     FontDataRegistry    font_data_registry;
+    Vector<uint32_t>    codepoint_queue; // TODO : Make thread safe.
 
     Window              window;
 
@@ -4293,6 +4294,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         g_ctx.total_time.toc();
         g_ctx.frame_time.toc(true);
 
+        g_ctx.codepoint_queue.clear();
+
         glfwPollEvents();
 
         bool update_cursor_position = false;
@@ -4320,6 +4323,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             case GLEQ_CURSOR_MOVED:
                 update_cursor_position = true;
+                break;
+
+            case GLEQ_CODEPOINT_INPUT:
+                g_ctx.codepoint_queue.push_back(event.codepoint);
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
@@ -4561,6 +4568,22 @@ int key_held(int key)
 int key_up(int key)
 {
     return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::UP);
+}
+
+unsigned int codepoint(void)
+{
+    using namespace mnm;
+
+    unsigned int value = 0;
+
+    // TODO : Make the queue thread safe.
+    if (!g_ctx.codepoint_queue.empty())
+    {
+        value = g_ctx.codepoint_queue.back();
+        g_ctx.codepoint_queue.pop_back();
+    }
+
+    return value;
 }
 
 

@@ -190,6 +190,12 @@ int key_held(int key);
 ///
 int key_up(int key);
 
+/// Returns queued character inputs.
+///
+/// @returns Next queued UTF-8 character input or zero when the queue is empty.
+///
+unsigned int codepoint(void);
+
 
 // -----------------------------------------------------------------------------
 /// @section TIME
