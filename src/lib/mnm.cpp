@@ -42,6 +42,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+#include <bx/debug.h>             // debugPrintf
 #include <bx/endian.h>            // endianSwap
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
@@ -257,6 +258,32 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
+
+
+// -----------------------------------------------------------------------------
+// LOGGING
+// -----------------------------------------------------------------------------
+
+// Taken almost verbatim from `bx_p.h`.
+
+#define _MNM_TRACE(format, ...) \
+    BX_MACRO_BLOCK_BEGIN \
+        bx::debugPrintf(__FILE__ "(" BX_STRINGIZE(__LINE__) "): MiNiMo " format "\n", ##__VA_ARGS__); \
+    BX_MACRO_BLOCK_END
+
+#ifndef MNM_CONFIG_DEBUG
+#   ifdef NDEBUG
+#      define MNM_CONFIG_DEBUG 0
+#   else
+#      define MNM_CONFIG_DEBUG 1
+#   endif
+#endif
+
+#if MNM_CONFIG_DEBUG
+    #define MNM_TRACE _MNM_TRACE
+#else
+#   define MNM_TRACE(...) BX_NOOP()
+#endif // MNM_CONFIG_DEBUG
 
 
 // -----------------------------------------------------------------------------
@@ -4066,6 +4093,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     // TODO : Reset global context data (thread local as well, if possible, but might not be).
     // TODO : Add GLFW error callback and exit `mnm_run` if an error occurrs.
     // TODO : Move thread-local context creations (or at least the pointer setups) before the `init` function
+
+    MNM_TRACE("Starting.");
 
     if (init)
     {
