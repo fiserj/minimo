@@ -11,6 +11,45 @@ struct Settings
     float font_size = 10.0f; // Cap height.
 };
 
+struct Editor
+{
+    // Edited file loaded in a grid.
+    char*                text           = nullptr;
+    int                  line_count     = 0;
+    int                  max_line_count = 0;
+
+    // Viewport (in screen coordinates).
+    float                viewport_x0    = 0.0f;
+    float                viewport_y0    = 0.0f;
+    float                viewport_x1    = 0.0f;
+    float                viewport_y1    = 0.0f;
+
+    // Cursor.
+    int                  cursor_col     = 0;
+    int                  cursor_row     = 0;
+    bool                 cursor_at_end  = false;
+
+    // Grid limits.
+    static constexpr int MAX_LINE_BYTES = 256;
+
+    inline bool mouse_over_viewport() const
+    {
+        return
+            mouse_x() >= viewport_x0 && mouse_x() <= viewport_x1 &&
+            mouse_y() >= viewport_y0 && mouse_y() <= viewport_y1;
+    }
+
+    void load_file(const char* file_name, int extra_line_count = 32)
+    {
+        // TODO
+    }
+
+    void insert_new_lines(int line_index, int count)
+    {
+        // TODO
+    }
+};
+
 static Settings g_settings;
 
 static const char* g_text = nullptr;
