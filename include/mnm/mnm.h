@@ -608,6 +608,9 @@ enum
     // Y axis direction.
     TEXT_Y_AXIS_DOWN        = 0x0200,
     TEXT_Y_AXIS_UP          = 0x0400,
+
+    // Aligns glyph quads to integer coordinates.
+    TEXT_ALIGN_TO_INTEGER   = 0x0800,
 };
 
 /// ... `color` call is also valid within the begin / end pair.

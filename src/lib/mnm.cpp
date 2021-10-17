@@ -2,7 +2,7 @@
 
 #include <assert.h>               // assert
 #include <float.h>                // FLT_MAX
-#include <math.h>                 // roundf
+#include <math.h>                 // floorf, roundf
 #include <stddef.h>               // ptrdiff_t, size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX
 #include <stdio.h>                // fclose, fopen, fread, fseek, ftell, fwrite
@@ -2781,44 +2781,34 @@ public:
         }
     }
 
-    template <bool YAxisDown, bool UseTexCoord>
-    void get_packed_quad(const stbtt_packedchar& b, float &inout_xpos, stbtt_aligned_quad& q)
+    using QuadPackFunc = void (*)(const stbtt_packedchar&, float, float, float&, stbtt_aligned_quad&);
+
+    QuadPackFunc get_quad_pack_func(bool align_to_integer, bool y_axis_down)
     {
-        // TODO : Figure out whether to user-enable alignment to integer coordintes.
-
-        const float ipw = 1.0f / m_bitmap_width;
-        const float iph = 1.0f / m_bitmap_height;
-
-        q.x0 = inout_xpos + b.xoff;
-        q.x1 = inout_xpos + b.xoff2;
-
-        if constexpr (YAxisDown)
+        // TODO : Move to class-member level?
+        static const QuadPackFunc s_dispatch_table[8] =
         {
-            q.y0 = b.yoff;
-            q.y1 = b.yoff2;
-        }
-        else
-        {
-            q.y0 = -b.yoff;
-            q.y1 = -b.yoff2;
-        }
+            //        +------------------- YAxisDown
+            //        |  +---------------- UseTexCoord
+            //        |  |  +------------- AlignToInteger
+            //        |  |  |
+            pack_quad<0, 0, 0>,
+            pack_quad<0, 0, 1>,
+            pack_quad<0, 1, 0>,
+            pack_quad<0, 1, 1>,
+            pack_quad<1, 0, 0>,
+            pack_quad<1, 0, 1>,
+            pack_quad<1, 1, 0>,
+            pack_quad<1, 1, 1>,
+        };
 
-        if constexpr (UseTexCoord)
-        {
-            q.s0 = b.x0 * ipw;
-            q.t0 = b.y0 * iph;
-            q.s1 = b.x1 * ipw;
-            q.t1 = b.y1 * iph;
-        }
-        else
-        {
-            q.s0 = b.x0;
-            q.t0 = b.y0;
-            q.s1 = b.x1;
-            q.t1 = b.y1;
-        }
+        const bool use_tex_coord = !is_updatable();
+        const int  index         = 
+            (align_to_integer ? 0b001 : 0) |
+            (use_tex_coord    ? 0b010 : 0) |
+            (y_axis_down      ? 0b100 : 0) ;
 
-        inout_xpos += b.xadvance;
+        return s_dispatch_table[index];
     }
 
     // Two-pass:
@@ -2830,6 +2820,7 @@ public:
         float         line_height_factor,
         uint16_t      h_alignment,
         uint16_t      v_alignment,
+        bool          align_to_integer,
         bool          y_axis_down,
         const Mat4&   transform,
         MeshRecorder& out_recorder
@@ -2880,6 +2871,7 @@ public:
                     }
                 }
 
+                // TODO : Needs to reflect `align_to_integer`.
                 line_width += m_char_quads[it->second].xadvance;
             }
         }
@@ -2926,14 +2918,13 @@ public:
             default:;
             }
 
-            if (y_axis_down)
-            {
-                string_head = record_quads<true >(string_head, transform * HMM_Translate(offset), out_recorder);
-            }
-            else
-            {
-                string_head = record_quads<false>(string_head, transform * HMM_Translate(offset), out_recorder);
-            }
+            string_head = record_quads
+            (
+                string_head,
+                get_quad_pack_func(align_to_integer, y_axis_down),
+                transform * HMM_Translate(offset),
+                out_recorder
+            );
 
             offset.Y += line_sign * line_height;
         }
@@ -2942,30 +2933,94 @@ public:
     }
 
 private:
-    template <bool YAxisDown>
-    const char* record_quads(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    template <bool YAxisDown, bool UseTexCoord, bool AlignToInteger>
+    static void pack_quad
+    (
+        const stbtt_packedchar& char_info,
+        float                   inv_width,
+        float                   inv_height,
+        float&                  inout_xpos,
+        stbtt_aligned_quad&     out_quad
+    )
+    {
+        if constexpr (AlignToInteger)
+        {
+            const float x = floorf(inout_xpos + char_info.xoff + 0.5f);
+            const float y = floorf(             char_info.yoff + 0.5f);
+
+            out_quad.x0 = x;
+            out_quad.x1 = x + char_info.xoff2 - char_info.xoff;
+
+            if constexpr (YAxisDown)
+            {
+                out_quad.y0 = y;
+                out_quad.y1 = y + char_info.yoff2 - char_info.yoff;
+            }
+            else
+            {
+                out_quad.y0 = -y;
+                out_quad.y1 = -y - char_info.yoff2 + char_info.yoff;
+            }
+        }
+        else
+        {
+            out_quad.x0 = inout_xpos + char_info.xoff;
+            out_quad.x1 = inout_xpos + char_info.xoff2;
+
+            if constexpr (YAxisDown)
+            {
+                out_quad.y0 = char_info.yoff;
+                out_quad.y1 = char_info.yoff2;
+            }
+            else
+            {
+                out_quad.y0 = -char_info.yoff;
+                out_quad.y1 = -char_info.yoff2;
+            }
+        }
+
+        if constexpr (UseTexCoord)
+        {
+            out_quad.s0 = char_info.x0 * inv_width;
+            out_quad.t0 = char_info.y0 * inv_height;
+            out_quad.s1 = char_info.x1 * inv_width;
+            out_quad.t1 = char_info.y1 * inv_height;
+        }
+        else
+        {
+            out_quad.s0 = char_info.x0;
+            out_quad.t0 = char_info.y0;
+            out_quad.s1 = char_info.x1;
+            out_quad.t1 = char_info.y1;
+        }
+
+        inout_xpos += char_info.xadvance;
+    }
+
+    inline const char* record_quads(const char* string, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
         if (!is_updatable())
         {
-            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock(string, pack_func, transform, recorder);
         }
         else
         {
             MutexScope lock(m_mutex);
 
-            return record_quads_without_lock<YAxisDown>(string, transform, recorder);
+            return record_quads_without_lock(string, pack_func, transform, recorder);
         }
     }
 
-    template <bool YAxisDown>
-    const char* record_quads_without_lock(const char* string, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads_without_lock(const char* string, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
         // NOTE : This routine assumes all needed glyphs are loaded!
 
         uint32_t           codepoint;
-        uint32_t           state = 0;
-        float              x     = 0.0f;
-        stbtt_aligned_quad quad  = {};
+        uint32_t           state      = 0;
+        const float        inv_width  = 1.0f / static_cast<float>(m_bitmap_width );
+        const float        inv_height = 1.0f / static_cast<float>(m_bitmap_height);
+        float              x          = 0.0f;
+        stbtt_aligned_quad quad       = {};
 
         for (; *string; string++)
         {
@@ -2979,9 +3034,7 @@ private:
                 const auto it = m_codepoints.find(codepoint);
                 ASSERT(it != m_codepoints.end());
 
-                is_updatable()
-                    ? get_packed_quad<YAxisDown, false>(m_char_quads[it->second], x, quad)
-                    : get_packed_quad<YAxisDown, true >(m_char_quads[it->second], x, quad);
+                (*pack_func)(m_char_quads[it->second], inv_width, inv_height, x, quad);
 
                 recorder.texcoord(                      quad.s0, quad.t0);
                 recorder.vertex  ((transform * HMM_Vec4(quad.x0, quad.y0, 0.0f, 1.0f)).XYZ);
@@ -3414,6 +3467,7 @@ public:
                 m_line_height,
                 h_alignment(),
                 v_alignment(),
+                align_to_integer(),
                 y_axis() == TEXT_Y_AXIS_DOWN,
                 transform,
                 *m_recorder
@@ -3472,6 +3526,11 @@ private:
         };
 
         return alignment[(m_flags & TEXT_Y_AXIS_MASK) >> TEXT_Y_AXIS_SHIFT];
+    }
+
+    inline bool align_to_integer() const
+    {
+        return m_flags & TEXT_ALIGN_TO_INTEGER;
     }
 
 private:
