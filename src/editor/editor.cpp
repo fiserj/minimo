@@ -8,16 +8,18 @@
 
 struct Settings
 {
-    float font_size = 12.0f;
+    float font_size = 10.0f; // Cap height.
 };
 
 static Settings g_settings;
+
+static const char* g_text = nullptr;
 
 static void setup()
 {
     title("MiNiMo Editor");
 
-    clear_color(0x1e1e1eff);
+    clear_color(0x101010ff);
     clear_depth(1.0f);
 
     create_font(FONT_ID, load_bytes("FiraCode-Regular.ttf", 0));
@@ -25,6 +27,8 @@ static void setup()
     begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X, FONT_ID, g_settings.font_size * dpi());
     glyph_range(0x20, 0x7e);
     end_atlas();
+
+    g_text = load_string("../src/test/static_geometry.c");
 }
 
 static void draw()
@@ -37,19 +41,7 @@ static void draw()
     begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_H_ALIGN_LEFT | TEXT_V_ALIGN_CAP_HEIGHT);
     {
         color(0xffffffff);
-        text
-        (
-            "Put in in a deck for our standup today lose client to 10:00\n"
-            "meeting big picture, nor screw the pooch move the needle, so\n"
-            "enough to wash your face for we need to get all stakeholders up\n"
-            "to speed and in the right place. Are we in agreeance\n"
-            "incentivization so blue money, but regroup yet good optics\n"
-            "anti-pattern. Increase the pipelines. The last person we talked\n"
-            "to said this would be ready single wringable neck or usabiltiy.\n"
-            "Our competitors are jumping the shark. Re-inventing the wheel\n"
-            "can you slack it to me? Innovation is hot right now optics but\n"
-            "due diligence quantity."
-        );
+        text(g_text);
     }
     end_text();
 
