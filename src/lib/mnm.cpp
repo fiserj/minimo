@@ -2989,13 +2989,27 @@ private:
         return *string ? (string + 1) : string;
     }
 
+    bool is_monospaced() const
+    {
+        if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
+        {
+            if (ttUSHORT(m_font_info.data + table     ) >= 1 && // Version.
+                ttBYTE  (m_font_info.data + table + 32) == 2)   // PANOSE / Kind == `Latin Text`.
+            {
+                return ttBYTE(m_font_info.data + table + 35) == 9; // PANOSE / bProportion.
+            }
+        }
+
+        return false;
+    }
+
     int16_t cap_height() const
     {
         if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
         {
             if (ttUSHORT(m_font_info.data + table) >= 2) // Version.
             {
-                return ttSHORT(m_font_info.data + table + 88);
+                return ttSHORT(m_font_info.data + table + 88); // sCapHeight.
             }
         }
 
