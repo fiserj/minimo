@@ -119,6 +119,8 @@ enum
 {
                    ATLAS_FREE            = 0x08000,
 
+                   ATLAS_MONOSPACED      = 0x00002,
+
                    INSTANCING_SUPPORTED  = 0x10000, // Needs to make sure it's outside regular mesh flags.
 
                    MESH_INVALID          = 0x00006,
@@ -2588,6 +2590,8 @@ public:
 
     inline bool is_updatable() const { return m_flags & ATLAS_ALLOW_UPDATE; }
 
+    inline bool is_monospaced() const { return m_flags & ATLAS_MONOSPACED; }
+
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
         MutexScope lock(m_mutex);
@@ -2618,6 +2622,16 @@ public:
 
         // TODO : Check return value.
         (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
+
+        if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
+        {
+            if (ttUSHORT(m_font_info.data + table     ) >= 1 && // Version.
+                ttBYTE  (m_font_info.data + table + 32) == 2 && // PANOSE / Kind == `Latin Text`.
+                ttBYTE  (m_font_info.data + table + 35) == 9)   // PANOSE / bProportion == "Monospaced"
+            {
+                flags |= ATLAS_MONOSPACED;
+            }
+        }
     }
 
     void add_glyph_range(uint32_t first, uint32_t last)
@@ -2987,20 +3001,6 @@ private:
         ASSERT(*string == '\0' || *string == '\n');
 
         return *string ? (string + 1) : string;
-    }
-
-    bool is_monospaced() const
-    {
-        if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
-        {
-            if (ttUSHORT(m_font_info.data + table     ) >= 1 && // Version.
-                ttBYTE  (m_font_info.data + table + 32) == 2)   // PANOSE / Kind == `Latin Text`.
-            {
-                return ttBYTE(m_font_info.data + table + 35) == 9; // PANOSE / bProportion.
-            }
-        }
-
-        return false;
     }
 
     int16_t cap_height() const

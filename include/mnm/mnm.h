@@ -550,9 +550,6 @@ enum
     // Non-stored glyphs are attempted to be added when creating text mesh.
     ATLAS_ALLOW_UPDATE    = 0x0001, // TODO : Add support.
 
-    // Internal optimization, all glyphs.
-    ATLAS_MONOSPACED      = 0x0002, // TODO : Add support.
-
     // Stores distance to glyph outline rather than direct rasterization.
     ATLAS_SDF             = 0x0004, // TODO : Add support.
 
