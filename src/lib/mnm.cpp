@@ -2905,6 +2905,8 @@ public:
         default:;
         }
 
+        const QuadPackFunc pack_func = get_quad_pack_func(align_to_integer, y_axis_down);
+
         for (const char* string_head = string; *string_head; line_idx++)
         {
             switch (h_alignment)
@@ -2921,7 +2923,7 @@ public:
             string_head = record_quads
             (
                 string_head,
-                get_quad_pack_func(align_to_integer, y_axis_down),
+                pack_func,
                 transform * HMM_Translate(offset),
                 out_recorder
             );
@@ -4499,6 +4501,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     glfwDestroyWindow(g_ctx.window.handle);
     glfwTerminate();
+
+    MNM_TRACE("Finished.");
 
     return 0;
 }
