@@ -3541,7 +3541,7 @@ private:
 private:
     MeshRecorder* m_recorder    = nullptr;
     Atlas*        m_atlas       = nullptr;
-    float         m_line_height = 1.5f;
+    float         m_line_height = 2.0f;
     uint16_t      m_flags       = 0;
 };
 
