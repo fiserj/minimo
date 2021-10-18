@@ -2656,7 +2656,7 @@ public:
         }
     }
 
-    void add_glyphs_from_string(const char* string)
+    void add_glyphs_from_string(const char* start, const char* end)
     {
         if (!is_updatable() && is_locked())
         {
@@ -2667,7 +2667,7 @@ public:
         uint32_t codepoint;
         uint32_t state = 0;
 
-        for (; *string; string++)
+        for (const char* string = start; end ? string != end : *string; string++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
@@ -2816,7 +2816,8 @@ public:
     // 2) Submit quads to the recorder.
     bool lay_text
     (
-        const char*   string,
+        const char*   start,
+        const char*   end,
         float         line_height_factor,
         uint16_t      h_alignment,
         uint16_t      v_alignment,
@@ -2837,9 +2838,9 @@ public:
         const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
 
         // Pass 1: Gather info about text, signal missing glyphs.
-        for (const char* string_head = string; *string_head; string_head++)
+        for (const char* string = start; end ? string != end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string_head))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -2907,7 +2908,7 @@ public:
 
         const QuadPackFunc pack_func = get_quad_pack_func(align_to_integer, y_axis_down);
 
-        for (const char* string_head = string; *string_head; line_idx++)
+        for (const char* string = start; end ? string != end : *string; line_idx++)
         {
             switch (h_alignment)
             {
@@ -2920,9 +2921,10 @@ public:
             default:;
             }
 
-            string_head = record_quads
+            string = record_quads
             (
-                string_head,
+                string,
+                end,
                 pack_func,
                 transform * HMM_Translate(offset),
                 out_recorder
@@ -2999,21 +3001,21 @@ private:
         inout_xpos += char_info.xadvance;
     }
 
-    inline const char* record_quads(const char* string, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
+    inline const char* record_quads(const char* start, const char* end, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
         if (!is_updatable())
         {
-            return record_quads_without_lock(string, pack_func, transform, recorder);
+            return record_quads_without_lock(start, end, pack_func, transform, recorder);
         }
         else
         {
             MutexScope lock(m_mutex);
 
-            return record_quads_without_lock(string, pack_func, transform, recorder);
+            return record_quads_without_lock(start, end, pack_func, transform, recorder);
         }
     }
 
-    const char* record_quads_without_lock(const char* string, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
+    const char* record_quads_without_lock(const char* start, const char* end, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
         // NOTE : This routine assumes all needed glyphs are loaded!
 
@@ -3024,9 +3026,9 @@ private:
         float              x          = 0.0f;
         stbtt_aligned_quad quad       = {};
 
-        for (; *string; string++)
+        for (; end ? start != end : *start; start++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *start))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -3053,9 +3055,9 @@ private:
         }
 
         ASSERT(state == UTF8_ACCEPT);
-        ASSERT(*string == '\0' || *string == '\n');
+        ASSERT(*start == '\0' || *start == '\n' || start == end);
 
-        return *string ? (string + 1) : string;
+        return (*start && !end) ? (start + 1) : start;
     }
 
     int16_t cap_height() const
@@ -3418,7 +3420,7 @@ public:
             VERTEX_TEXCOORD |
             VERTEX_COLOR    |
             (atlas->is_updatable() ? (TEXCOORD_F32 | VERTEX_PIXCOORD) : 0) |
-            ((flags & TEXT_TYPE_MASK) >> TEXT_TYPE_MASK);
+            (flags & TEXT_TYPE_MASK);
 
         m_flags    = flags;
         m_atlas    = atlas;
@@ -3458,14 +3460,15 @@ public:
         m_line_height = factor;
     }
 
-    void add_text(const char* string, const Mat4& transform, TextureCache& texture_cache)
+    void add_text(const char* start, const char* end, const Mat4& transform, TextureCache& texture_cache)
     {
         ASSERT(m_recorder);
 
         const auto lay_text = [&]()
         {
             return m_atlas->lay_text(
-                string,
+                start,
+                end,
                 m_line_height,
                 h_alignment(),
                 v_alignment(),
@@ -3480,7 +3483,7 @@ public:
         {
             ASSERT(m_atlas->is_updatable());
 
-            m_atlas->add_glyphs_from_string(string);
+            m_atlas->add_glyphs_from_string(start, end);
             m_atlas->update(texture_cache);
 
             const bool success = lay_text();
@@ -5017,7 +5020,7 @@ void glyphs_from_string(const char* string)
     ASSERT(string);
     ASSERT(mnm::t_ctx->active_atlas);
 
-    mnm::t_ctx->active_atlas->add_glyphs_from_string(string);
+    mnm::t_ctx->active_atlas->add_glyphs_from_string(string, nullptr);
 }
 
 
@@ -5066,14 +5069,14 @@ void line_height(float factor)
     mnm::t_ctx->text_recorder.set_line_height(factor);
 }
 
-void text(const char* string)
+void text(const char* start, const char* end)
 {
     using namespace mnm;
 
-    ASSERT(string);
+    ASSERT(start);
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
-    t_ctx->text_recorder.add_text(string, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
+    t_ctx->text_recorder.add_text(start, end, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
 }
 
 

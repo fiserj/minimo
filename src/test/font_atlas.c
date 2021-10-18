@@ -33,7 +33,8 @@ static void setup(void)
             "to said this would be ready single wringable neck or usabiltiy.\n"
             "Our competitors are jumping the shark. Re-inventing the wheel\n"
             "can you slack it to me? Innovation is hot right now optics but\n"
-            "due diligence quantity."
+            "due diligence quantity.",
+            0
         );
     }
     end_text();
