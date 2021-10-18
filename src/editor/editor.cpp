@@ -7,8 +7,10 @@
 #include <mnm/mnm.h>
 
 #include <assert.h> // assert
-#include <stdint.h> // uint*_t
+#include <math.h>   // roundf
 #include <stdlib.h> // calloc, free
+#include <stdint.h> // uint*_t
+#include <stdio.h>  // snprintf
 #include <string.h> // memcpy
 
 #define MAX_LINE_BYTES 255
@@ -60,8 +62,12 @@ static inline uint32_t utf8_decode(uint32_t* state, uint32_t* codepoint, uint32_
 
 struct Settings
 {
-    float font_size = 10.0f; // Cap height.
+    uint32_t text_color  = 0xffffffff; // RGBA/
+    float    font_size   = 10.0f;      // Cap height.
+    float    line_height = 2.0f;       // Multiple of `font_size`.
 };
+
+static Settings g_settings;
 
 struct Line
 {
@@ -166,13 +172,32 @@ struct Editor
     {
         // TODO
     }
+
+    void update_mesh() const
+    {
+        const float line_offset = roundf(g_settings.font_size * g_settings.line_height * dpi());
+
+        push();
+
+        color(g_settings.text_color);
+
+        // TODO : Only submit visible lines.
+        for (int i = 0; i < line_count; i++)
+        {
+            if (lines[i].length > 0)
+            {
+                text(lines[i].bytes, lines[i].bytes + lines[i].length);
+            }
+
+            // TODO : Check that error doesn't accumulate.
+            translate(0.0f, line_offset, 0.0f);
+        }
+
+        pop();
+    }
 };
 
-static Settings g_settings;
-
 static Editor g_editor;
-
-static const char* g_text = nullptr;
 
 static void setup()
 {
@@ -188,8 +213,6 @@ static void setup()
     end_atlas();
 
     g_editor.load_file("../src/test/static_geometry.c");
-
-    g_text = load_string("../src/test/static_geometry.c");
 }
 
 static void cleanup()
@@ -204,11 +227,8 @@ static void draw()
         quit();
     }
 
-    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_H_ALIGN_LEFT | TEXT_V_ALIGN_CAP_HEIGHT);
-    {
-        color(0xffffffff);
-        text(g_text);
-    }
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT);
+    g_editor.update_mesh();
     end_text();
 
     identity();
@@ -216,7 +236,7 @@ static void draw()
     projection();
 
     identity();
-    translate(dpi() * 10.0f, dpi() * 10.0f, 0.0f);
+    translate(dpi() * 10.0f, dpi() * 15.0f, 0.0f);
     mesh(TEXT_ID);
 }
 
