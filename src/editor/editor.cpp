@@ -3,12 +3,11 @@
 // * Add public UTF-8 helpers.
 // * Better error handling.
 // * Cache line lengths.
-// * Use only screen coordinates (with exception of defining atlas resolution).
 
 #include <mnm/mnm.h>
 
 #include <assert.h> // assert
-#include <math.h>   // ceilf, roundf
+#include <math.h>   // ceilf
 #include <stdlib.h> // calloc, free
 #include <stdint.h> // uint*_t
 #include <stdio.h>  // snprintf
@@ -192,11 +191,13 @@ struct Editor
 
     void update_mesh() const
     {
-        const float line_offset       = roundf(g_settings.font_size * g_settings.line_height * dpi());
-        const float viewport_edge     = (viewport_y1 - viewport_y0) * dpi();
+        const float line_offset       = g_settings.font_size * g_settings.line_height;
+        const float viewport_edge     = viewport_y1 - viewport_y0;
         const int   last_visible_line = min(line_count, first_visible_line + (int)ceilf(viewport_edge / line_offset));
 
         push();
+
+        scale(1.0f / dpi());
 
         color(g_settings.text_color);
 
@@ -253,11 +254,11 @@ static void draw()
     end_text();
 
     identity();
-    ortho(0.0f, pixel_width(), pixel_height(), 0.0f, 1.0f, -1.0f);
+    ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
     projection();
 
     identity();
-    translate(dpi() * 10.0f, dpi() * 15.0f, 0.0f);
+    translate(10.0f, 15.0f, 0.0f);
     mesh(TEXT_ID);
 }
 
