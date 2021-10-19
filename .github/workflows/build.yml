@@ -1,6 +1,6 @@
 name: MiNiMo
 
-on: [push, pull_request]
+on: pull_request
 
 env:
   BUILD_TYPE: Release
