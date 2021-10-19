@@ -14,7 +14,7 @@ jobs:
       matrix:
         config:
         - {
-            name: "Windows Latest MSVC",
+            name: "Windows / MSVC",
             artifact: "Windows-MSVC.7z",
             os: windows-latest,
             cc: "cl",
@@ -22,7 +22,7 @@ jobs:
             environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
           }
         - {
-            name: "macOS Latest Clang",
+            name: "macOS / Clang",
             artifact: "macOS.7z",
             os: macos-latest,
             cc: "clang",
