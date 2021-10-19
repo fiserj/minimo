@@ -3,11 +3,12 @@
 // * Add public UTF-8 helpers.
 // * Better error handling.
 // * Cache line lengths.
+// * Use only screen coordinates (with exception of defining atlas resolution).
 
 #include <mnm/mnm.h>
 
 #include <assert.h> // assert
-#include <math.h>   // roundf
+#include <math.h>   // ceilf, roundf
 #include <stdlib.h> // calloc, free
 #include <stdint.h> // uint*_t
 #include <stdio.h>  // snprintf
@@ -20,6 +21,12 @@
 #define ATLAS_ID       1
 
 #define TEXT_ID        1
+
+template <typename T> 
+inline const T& min(const T& a, const T& b)
+{
+    return (a < b) ? a : b;
+}
 
 enum
 {
@@ -78,20 +85,21 @@ struct Line
 struct Editor
 {
     // Edited file loaded in a grid.
-    Line* lines          = nullptr;
-    int   line_count     = 0;
-    int   max_line_count = 0;
+    Line* lines              = nullptr;
+    int   line_count         = 0;
+    int   max_line_count     = 0;
 
     // Viewport (in screen coordinates).
-    float viewport_x0    = 0.0f;
-    float viewport_y0    = 0.0f;
-    float viewport_x1    = 0.0f;
-    float viewport_y1    = 0.0f;
+    float viewport_x0        = 0.0f;
+    float viewport_y0        = 0.0f;
+    float viewport_x1        = 0.0f;
+    float viewport_y1        = 0.0f;
+    int   first_visible_line = 0;
 
     // Cursor.
-    int   cursor_col     = 0;
-    int   cursor_row     = 0;
-    bool  cursor_at_end  = false;
+    int   cursor_col         = 0;
+    int   cursor_row         = 0;
+    bool  cursor_at_end      = false;
 
     inline bool mouse_over_viewport() const
     {
@@ -173,19 +181,30 @@ struct Editor
         // TODO
     }
 
+    // In screen coordinates.
+    void set_viewport(float x, float y, float width, float height)
+    {
+        viewport_x0 = x;
+        viewport_y0 = y;
+        viewport_x1 = x + width;
+        viewport_y1 = y + height;
+    }
+
     void update_mesh() const
     {
-        const float line_offset = roundf(g_settings.font_size * g_settings.line_height * dpi());
+        const float line_offset       = roundf(g_settings.font_size * g_settings.line_height * dpi());
+        const float viewport_edge     = (viewport_y1 - viewport_y0) * dpi();
+        const int   last_visible_line = min(line_count, first_visible_line + (int)ceilf(viewport_edge / line_offset));
 
         push();
 
         color(g_settings.text_color);
 
-        // TODO : Only submit visible lines.
-        for (int i = 0; i < line_count; i++)
+        for (int i = first_visible_line; i < last_visible_line; i++)
         {
             if (lines[i].length > 0)
             {
+                // TODO : Only submit visible portion of each line.
                 text(lines[i].bytes, lines[i].bytes + lines[i].length);
             }
 
@@ -227,7 +246,9 @@ static void draw()
         quit();
     }
 
+    // TODO : Eventually, editor should have its own pass.
     begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT);
+    g_editor.set_viewport(0.0f, 0.0f, width(), height());
     g_editor.update_mesh();
     end_text();
 
