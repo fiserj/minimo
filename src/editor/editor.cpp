@@ -23,7 +23,7 @@
 extern "C" GLFWwindow* mnm_get_window(void);
 
 // TODO : Non-destructively patch `imgui_draw.cpp` to get access to it.
-extern unsigned int stb_decompress(unsigned char *, const unsigned char *, unsigned int);
+extern "C" unsigned int stb_decompress_exported(unsigned char *, const unsigned char *, unsigned int);
 
 enum struct BlendMode : uint8_t
 {
