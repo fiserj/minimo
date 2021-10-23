@@ -5466,3 +5466,13 @@ int frame(void)
 {
     return static_cast<int>(mnm::g_ctx.frame_number);
 }
+
+
+// -----------------------------------------------------------------------------
+// INTERNAL API
+// -----------------------------------------------------------------------------
+
+extern "C" GLFWwindow* mnm_get_window(void)
+{
+    return mnm::g_ctx.window.handle;
+}

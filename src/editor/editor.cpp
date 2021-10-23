@@ -1,265 +1,333 @@
-// TODO (mostly for the core library):
-// * Replace stdlib-based memory managements with something managed by MiNiMo.
-// * Add public UTF-8 helpers.
-// * Better error handling.
-// * Cache line lengths.
+#include <assert.h>                        // assert
+#include <stdint.h>                        // uint*_t
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>                    // GLFWwindow
+
+#include <bgfx/bgfx.h>                     // bgfx::*
+#include <bgfx/embedded_shader.h>          // createEmbeddedShader
+
+#include <bx/bx.h>                         // BX_*LIKELY, memCopy, min/max
+
+#include <imgui.h>                         // ImGui::*
+#include <imgui_impl_glfw.h>               // ImGui_ImplGlfw_*
 
 #include <mnm/mnm.h>
 
-#include <assert.h> // assert
-#include <math.h>   // ceilf
-#include <stdlib.h> // calloc, free
-#include <stdint.h> // uint*_t
-#include <stdio.h>  // snprintf
-#include <string.h> // memcpy
+#include <position_2d_color_texcoord_vs.h> // position_2d_color_texcoord_vs
+#include <position_color_r_texcoord_fs.h>  // position_color_r_texcoord_fs
+#include <position_color_texcoord_fs.h>    // position_color_texcoord_fs
 
-#define MAX_LINE_BYTES 255
+extern "C" GLFWwindow* mnm_get_window(void);
 
-#define FONT_ID        1
-
-#define ATLAS_ID       1
-
-#define TEXT_ID        1
-
-template <typename T> 
-inline const T& min(const T& a, const T& b)
+enum struct BlendMode : uint8_t
 {
-    return (a < b) ? a : b;
-}
-
-enum
-{
-    UTF8_ACCEPT,
-    UTF8_REJECT,
+    NONE,
+    ADD,
+    ALPHA,
+    DARKEN,
+    LIGHTEN,
+    MULTIPLY,
+    NORMAL,
+    SCREEN,
+    LINEAR_BURN,
 };
 
-static constexpr unsigned s_utf8_data[] =
+enum struct TextureFormat : uint8_t
 {
-    // The first part of the table maps bytes to character classes that
-    // to reduce the size of the transition table and create bitmasks.
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-    10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
-
-    // The second part is a transition table that maps a combination
-    // of a state of the automaton and a character class to a state.
-    0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
-    12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
-    12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
-    12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
-    12,36,12,12,12,12,12,12,12,12,12,12,
+    RED,
+    RGBA,
 };
 
-static inline uint32_t utf8_decode(uint32_t* state, uint32_t* codepoint, uint32_t byte)
+union Texture
 {
-    uint32_t type = s_utf8_data[byte];
-
-    *codepoint = (*state != UTF8_ACCEPT) ? (byte & 0x3fu) | (*codepoint << 6) : (0xff >> type) & (byte);
-
-    *state = s_utf8_data[256 + *state + type];
-
-    return *state;
-}
-
-struct Settings
-{
-    uint32_t text_color  = 0xffffffff; // RGBA/
-    float    font_size   = 10.0f;      // Cap height.
-    float    line_height = 2.0f;       // Multiple of `font_size`.
-};
-
-static Settings g_settings;
-
-struct Line
-{
-    uint8_t length;
-    char    bytes[MAX_LINE_BYTES];
-};
-
-struct Editor
-{
-    // Edited file loaded in a grid.
-    Line* lines              = nullptr;
-    int   line_count         = 0;
-    int   max_line_count     = 0;
-
-    // Viewport (in screen coordinates).
-    float viewport_x0        = 0.0f;
-    float viewport_y0        = 0.0f;
-    float viewport_x1        = 0.0f;
-    float viewport_y1        = 0.0f;
-    int   first_visible_line = 0;
-
-    // Cursor.
-    int   cursor_col         = 0;
-    int   cursor_row         = 0;
-    bool  cursor_at_end      = false;
-
-    inline bool mouse_over_viewport() const
+    struct
     {
-        return
-            mouse_x() >= viewport_x0 && mouse_x() <= viewport_x1 &&
-            mouse_y() >= viewport_y0 && mouse_y() <= viewport_y1;
+        bgfx ::TextureHandle handle;
+        BlendMode            blend_mode;
+        TextureFormat        texture_format;
+
+    }           data;
+    ImTextureID id;
+};
+
+struct Context
+{
+    bgfx::VertexLayout  vertex_layout;
+    bgfx::ProgramHandle program_rgba    = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle program_red     = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle texture_sampler = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle font_texture    = BGFX_INVALID_HANDLE;
+    bgfx::ViewId        view_id         = UINT16_MAX;
+
+    void init()
+    {
+        vertex_layout
+            .begin()
+            .add(bgfx::Attrib::Position , 2, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0   , 4, bgfx::AttribType::Uint8, true)
+            .end();
+
+        
+        const bgfx::RendererType::Enum renderer  = bgfx::getRendererType();
+        const bgfx::EmbeddedShader     shaders[] =
+        {
+            BGFX_EMBEDDED_SHADER(position_2d_color_texcoord_vs),
+            BGFX_EMBEDDED_SHADER(position_color_r_texcoord_fs ),
+            BGFX_EMBEDDED_SHADER(position_color_texcoord_fs   ),
+
+            BGFX_EMBEDDED_SHADER_END()
+        };
+
+        bgfx::ShaderHandle position_2d_color_texcoord_vs = bgfx::createEmbeddedShader(
+            shaders,
+            renderer,
+            "position_2d_color_texcoord_vs"
+        );
+        assert(bgfx::isValid(position_2d_color_texcoord_vs));
+
+        bgfx::ShaderHandle position_color_r_texcoord_fs = bgfx::createEmbeddedShader(
+            shaders,
+            renderer,
+            "position_color_r_texcoord_fs"
+        );
+        assert(bgfx::isValid(position_color_r_texcoord_fs));
+
+        bgfx::ShaderHandle position_color_texcoord_fs = bgfx::createEmbeddedShader(
+            shaders,
+            renderer,
+            "position_color_texcoord_fs"
+        );
+        assert(bgfx::isValid(position_color_texcoord_fs));
+
+        program_rgba = bgfx::createProgram(position_2d_color_texcoord_vs, position_color_texcoord_fs);
+        assert(bgfx::isValid(program_rgba));
+
+        program_red = bgfx::createProgram(position_2d_color_texcoord_vs, position_color_r_texcoord_fs);
+        assert(bgfx::isValid(program_red));
+
+        texture_sampler = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
+        assert(bgfx::isValid(texture_sampler));
+
+        uint8_t* pixels = nullptr;
+        int      width  = 0;
+        int      height = 0;
+        ImGui::GetIO().Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+
+        font_texture = bgfx::createTexture2D
+        (
+            static_cast<uint16_t>(width ),
+            static_cast<uint16_t>(height),
+            false,
+            1,
+            bgfx::TextureFormat::R8,
+            0,
+            bgfx::copy(pixels, static_cast<uint32_t>(width) * static_cast<uint32_t>(height))
+        );
+        assert(bgfx::isValid(font_texture));
+
+        view_id = bgfx::getCaps()->limits.maxViews - 2;
     }
 
-    void unload_content()
+    void cleanup()
     {
-        if (lines)
-        {
-            free(lines);
-
-            lines          = nullptr;
-            line_count     = 0;
-            max_line_count = 0;
-        }
+        if (bgfx::isValid(program_rgba   )) { bgfx::destroy(program_rgba   ); }
+        if (bgfx::isValid(program_red    )) { bgfx::destroy(program_red    ); }
+        if (bgfx::isValid(texture_sampler)) { bgfx::destroy(texture_sampler); }
+        if (bgfx::isValid(font_texture   )) { bgfx::destroy(font_texture   ); }
     }
 
-    void load_file(const char* file_name, int extra_line_count = 32)
+    void submit(const ImDrawData& draw_data)
     {
-        unload_content();
+        const ImGuiIO& io     = ImGui::GetIO();
+        const float    width  = io.DisplaySize.x * io.DisplayFramebufferScale.x;
+        const float    height = io.DisplaySize.y * io.DisplayFramebufferScale.y;
 
-        if (char* string = load_string(file_name))
+        bgfx::setViewName(view_id, "ImGui");
+        bgfx::setViewMode(view_id, bgfx::ViewMode::Sequential);
+
         {
-            line_count = 1;
+            const float L = draw_data.DisplayPos.x;
+            const float R = draw_data.DisplayPos.x + draw_data.DisplaySize.x;
+            const float T = draw_data.DisplayPos.y;
+            const float B = draw_data.DisplayPos.y + draw_data.DisplaySize.y;
 
-            uint32_t codepoint = 0;
-            uint32_t state     = 0;
-
-            for (const char* byte = string; *byte; byte++)
+            const float ortho[4][4] =
             {
-                if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *byte) && codepoint == '\n')
-                {
-                    // TODO : Increment the line count not always by one, but by
-                    //        how many lines the line will be split into (if it
-                    //        exceeds the line length limit (255 bytes), it will
-                    //        be split into two or more lines).
-                    line_count++;
-                }
+                { 2.0f / (R - L)   , 0.0f             ,  0.0f, 0.0f },
+                { 0.0f             , 2.0f / (T - B)   ,  0.0f, 0.0f },
+                { 0.0f             , 0.0f             , -1.0f, 0.0f },
+                { (R + L) / (L - R), (T + B) / (B - T),  0.0f, 1.0f },
+            };
+
+            bgfx::setViewTransform(view_id, nullptr, ortho);
+            bgfx::setViewRect     (view_id,
+                0, 0,
+                static_cast<uint16_t>(width),
+                static_cast<uint16_t>(height)
+            );
+        }
+
+        for (int i = 0; i < draw_data.CmdListsCount; i++)
+        {
+            const ImDrawList * draw_list = draw_data.CmdLists[i];
+
+            if (BX_UNLIKELY(!draw_list))
+            {
+                continue;
             }
 
-            assert(state == UTF8_ACCEPT);
+            const uint32_t num_vertices = static_cast<uint32_t>(draw_list->VtxBuffer.size());
+            const uint32_t num_indices  = static_cast<uint32_t>(draw_list->IdxBuffer.size());
 
-            max_line_count = line_count + extra_line_count;
-
-            if ((lines = (Line*)calloc(max_line_count, sizeof(Line))))
+            if (                     num_vertices < bgfx::getAvailTransientVertexBuffer(num_vertices, vertex_layout) ||
+                (num_indices  > 0 && num_indices  < bgfx::getAvailTransientIndexBuffer (num_indices)))
             {
-                Line* line = lines;
-                codepoint  = 0;
-                state      = 0;
+                // TODO : Add warning message.
+                assert(false && "Full transient geometry.");
+                break;
+            }
 
-                // TODO : Split lines longer than the limit (255 bytes).
-                for (const char* byte = string; *byte; byte++)
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::TransientIndexBuffer  tib;
+
+            bgfx::allocTransientVertexBuffer(&tvb, num_vertices, vertex_layout);
+            bgfx::allocTransientIndexBuffer (&tib, num_indices);
+
+            bx::memCopy(tvb.data, draw_list->VtxBuffer.begin(), num_vertices * sizeof(ImDrawVert));
+            bx::memCopy(tib.data, draw_list->IdxBuffer.begin(), num_indices  * sizeof(ImDrawIdx ));
+
+            uint32_t offset = 0;
+
+            for (int j = 0; j < draw_list->CmdBuffer.size(); j++)
+            {
+                const ImDrawCmd & cmd = draw_list->CmdBuffer[j];
+
+                if (cmd.UserCallback)
                 {
-                    if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *byte))
+                    cmd.UserCallback(draw_list, &cmd);
+                }
+                else if (cmd.ElemCount)
+                {
+                    uint64_t            state   = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+                    bgfx::TextureHandle texture = font_texture;
+                    bgfx::ProgramHandle program = program_red;
+
+                    if (cmd.TextureId)
                     {
-                        // TODO : Convert tabs to spaces?
-                        if (codepoint == '\n')
+                        static const uint64_t blend_states[] =
                         {
-                            line++;
-                            continue;
+                            0,
+                            BGFX_STATE_BLEND_ADD,
+                            BGFX_STATE_BLEND_ALPHA,
+                            BGFX_STATE_BLEND_DARKEN,
+                            BGFX_STATE_BLEND_LIGHTEN,
+                            BGFX_STATE_BLEND_MULTIPLY,
+                            BGFX_STATE_BLEND_NORMAL,
+                            BGFX_STATE_BLEND_SCREEN,
+                            BGFX_STATE_BLEND_LINEAR_BURN,
+                        };
+
+                        Texture convert;
+                        convert.id = cmd.TextureId;
+
+                        texture = convert.data.handle;
+                        state  |= blend_states[static_cast<uint8_t>(convert.data.blend_mode)];
+
+                        switch (convert.data.texture_format)
+                        {
+                        case TextureFormat::RGBA:
+                            program = program_rgba;
+                            break;
+                        default:;
                         }
                     }
+                    else
+                    {
+                        state |= BGFX_STATE_BLEND_ALPHA;
+                    }
 
-                    line->bytes[line->length++] = *byte;
+                    const ImVec2 scale = io.DisplayFramebufferScale;
+
+                    const uint16_t x = static_cast<uint16_t>(bx::max(cmd.ClipRect.x * scale.x, 0.0f));
+                    const uint16_t y = static_cast<uint16_t>(bx::max(cmd.ClipRect.y * scale.y, 0.0f));
+                    const uint16_t w = static_cast<uint16_t>(bx::min(cmd.ClipRect.z * scale.x, static_cast<float>(UINT16_MAX)) - x);
+                    const uint16_t h = static_cast<uint16_t>(bx::min(cmd.ClipRect.w * scale.y, static_cast<float>(UINT16_MAX)) - y);
+
+                    bgfx::setState(state);
+                    bgfx::setScissor(x, y, w, h);
+                    bgfx::setTexture(0, texture_sampler, texture);
+                    bgfx::setVertexBuffer(0, &tvb, 0, num_vertices);
+                    bgfx::setIndexBuffer(&tib, offset, cmd.ElemCount);
+                    bgfx::submit(view_id, program);
                 }
 
-                assert(state == UTF8_ACCEPT);
+                offset += cmd.ElemCount;
             }
-
-            unload(string);
         }
-    }
-
-    void insert_new_lines(int line_index, int count)
-    {
-        // TODO
-    }
-
-    // In screen coordinates.
-    void set_viewport(float x, float y, float width, float height)
-    {
-        viewport_x0 = x;
-        viewport_y0 = y;
-        viewport_x1 = x + width;
-        viewport_y1 = y + height;
-    }
-
-    void update_mesh() const
-    {
-        const float line_offset       = g_settings.font_size * g_settings.line_height;
-        const float viewport_edge     = viewport_y1 - viewport_y0;
-        const int   last_visible_line = min(line_count, first_visible_line + (int)ceilf(viewport_edge / line_offset));
-
-        push();
-
-        scale(1.0f / dpi());
-
-        color(g_settings.text_color);
-
-        for (int i = first_visible_line; i < last_visible_line; i++)
-        {
-            if (lines[i].length > 0)
-            {
-                // TODO : Only submit visible portion of each line.
-                text(lines[i].bytes, lines[i].bytes + lines[i].length);
-            }
-
-            // TODO : Check that error doesn't accumulate.
-            translate(0.0f, line_offset, 0.0f);
-        }
-
-        pop();
     }
 };
 
-static Editor g_editor;
+static Context g_ctx;
 
 static void setup()
 {
     title("MiNiMo Editor");
 
-    clear_color(0x101010ff);
+    clear_color(0x303030ff);
     clear_depth(1.0f);
 
-    create_font(FONT_ID, load_bytes("FiraCode-Regular.ttf", 0));
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
 
-    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X, FONT_ID, g_settings.font_size * dpi());
-    glyph_range(0x20, 0x7e);
-    end_atlas();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename  = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    g_editor.load_file("../src/test/static_geometry.c");
+    (void)ImGui_ImplGlfw_InitForOther(mnm_get_window(), true);
+    g_ctx.init();
 }
 
 static void cleanup()
 {
-    g_editor.unload_content();
+    g_ctx.cleanup();
+    ImGui_ImplGlfw_Shutdown();
 }
 
-static void draw()
+static void do_gui()
 {
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    if (ImGui::Begin("Hello, world!"))
+    {
+        ImGui::Button("Button");
+    }
+    ImGui::End();
+
+    ImGui::Render();
+
+    const ImDrawData* draw_data = ImGui::GetDrawData();
+
+    if (BX_LIKELY(draw_data))
+    {
+        g_ctx.submit(*draw_data);
+    }
+}
+
+static void update()
+{
+    do_gui();
+
     if (key_down(KEY_ESCAPE))
     {
         quit();
     }
 
-    // TODO : Eventually, editor should have its own pass.
-    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT);
-    g_editor.set_viewport(0.0f, 0.0f, width(), height());
-    g_editor.update_mesh();
-    end_text();
-
-    identity();
-    ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
-    projection();
-
-    identity();
-    translate(10.0f, 15.0f, 0.0f);
-    mesh(TEXT_ID);
+    // ...
 }
 
-MNM_MAIN(nullptr, setup, draw, cleanup);
+MNM_MAIN(nullptr, setup, update, cleanup);

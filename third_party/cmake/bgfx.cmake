@@ -55,9 +55,11 @@ if(BGFX_CONFIG_DEBUG)
     )
 endif()
 
-target_link_libraries(bgfx PRIVATE
-    bimg
-    bx
+target_link_libraries(bgfx
+    PRIVATE
+        bimg
+    PUBLIC
+        bx
 )
 
 set_target_properties(bgfx PROPERTIES

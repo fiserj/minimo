@@ -6,10 +6,13 @@ add_executable(${NAME}
 
 target_include_directories(${NAME} PRIVATE
     .
+    ${CMAKE_BINARY_DIR}/shaders/shaders
 )
 
 target_link_libraries(${NAME} PRIVATE
     ${PROJECT_NAME}
+    bgfx
+    imgui
 )
 
 set_target_properties(${NAME} PROPERTIES
@@ -29,3 +32,4 @@ if(MSVC)
 else()
     target_compile_options(${NAME} PRIVATE -Wall)
 endif()
+

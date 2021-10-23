@@ -22,6 +22,7 @@ include(cmake/bimg.cmake)
 include(cmake/bx.cmake)
 include(cmake/gleq.cmake)
 include(cmake/HandmadeMath.cmake)
+include(cmake/imgui.cmake)
 include(cmake/meshoptimizer.cmake)
 include(cmake/stb.cmake)
 
