@@ -18,7 +18,12 @@
 #include <position_color_r_texcoord_fs.h>  // position_color_r_texcoord_fs
 #include <position_color_texcoord_fs.h>    // position_color_texcoord_fs
 
+#include "font.h"                          // font_compressed_*
+
 extern "C" GLFWwindow* mnm_get_window(void);
+
+// TODO : Non-destructively patch `imgui_draw.cpp` to get access to it.
+extern unsigned int stb_decompress(unsigned char *, const unsigned char *, unsigned int);
 
 enum struct BlendMode : uint8_t
 {
@@ -110,10 +115,22 @@ struct Context
         texture_sampler = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
         assert(bgfx::isValid(texture_sampler));
 
+        ImGuiIO& io = ImGui::GetIO();
+
+        // TODO : Font has to be rerasterized when DPI changes (or when user changes the size later on).
+
+        (void)io.Fonts->AddFontFromMemoryCompressedTTF(
+            font_compressed_data,
+            font_compressed_size,
+            10.0f * dpi() // TODO : Use the `cap_height()` calculation from `mnm.cpp`.
+        );
+
+        io.FontGlobalScale = 1.0f / dpi();
+
         uint8_t* pixels = nullptr;
         int      width  = 0;
         int      height = 0;
-        ImGui::GetIO().Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
+        io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
 
         font_texture = bgfx::createTexture2D
         (
