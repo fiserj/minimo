@@ -155,6 +155,49 @@ struct Context
         if (bgfx::isValid(font_texture   )) { bgfx::destroy(font_texture   ); }
     }
 
+    inline void reset_font_atlas()
+    {
+        if (BX_LIKELY(dpi() == font_last_dpi))
+        {
+            return;
+        }
+
+        if (ImFontAtlas* atlas = ImGui::GetIO().Fonts)
+        {
+            font_last_dpi = dpi();
+
+            // TODO : Perhaps we want to cache last N fonts (or at least all
+            //        requested DPI variants of current font size)?
+            atlas->ClearFonts();
+
+            (void)ImGui_Patch_ImFontAtlas_AddFontFromMemoryCompressedTTF(
+                atlas,
+                font_compressed_data,
+                font_compressed_size,
+                font_cap_height * font_last_dpi
+            );
+
+            uint8_t* pixels = nullptr;
+            int      width  = 0;
+            int      height = 0;
+            atlas->GetTexDataAsAlpha8(&pixels, &width, &height);
+
+            font_texture = bgfx::createTexture2D
+            (
+                static_cast<uint16_t>(width ),
+                static_cast<uint16_t>(height),
+                false,
+                1,
+                bgfx::TextureFormat::R8,
+                0,
+                bgfx::copy(pixels, static_cast<uint32_t>(width) * static_cast<uint32_t>(height))
+            );
+            assert(bgfx::isValid(font_texture));
+
+            ImGui::GetIO().FontGlobalScale = 1.0f / font_last_dpi;
+        }
+    }
+
     void submit(const ImDrawData& draw_data)
     {
         const ImGuiIO& io     = ImGui::GetIO();
