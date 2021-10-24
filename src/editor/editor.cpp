@@ -1,9 +1,6 @@
 #include <assert.h>                        // assert
 #include <stdint.h>                        // uint*_t
 
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>                    // GLFWwindow
-
 #include <bgfx/bgfx.h>                     // bgfx::*
 #include <bgfx/embedded_shader.h>          // createEmbeddedShader
 
@@ -20,45 +17,33 @@
 
 #include "font.h"                          // font_compressed_*
 
+
+// -----------------------------------------------------------------------------
+// EXTERN HELPERS
+// -----------------------------------------------------------------------------
+
+struct GLFWwindow;
+
 extern "C" GLFWwindow* mnm_get_window(void);
 
-// TODO : Non-destructively patch `imgui_draw.cpp` to get access to it.
-extern "C" unsigned int stb_decompress_exported(unsigned char *, const unsigned char *, unsigned int);
+extern "C" ImFont* ImGui_Patch_ImFontAtlas_AddFontFromMemoryCompressedTTF
+(
+    ImFontAtlas*,
+    const void*,
+    unsigned int,
+    float
+);
 
-enum struct BlendMode : uint8_t
-{
-    NONE,
-    ADD,
-    ALPHA,
-    DARKEN,
-    LIGHTEN,
-    MULTIPLY,
-    NORMAL,
-    SCREEN,
-    LINEAR_BURN,
-};
 
-enum struct TextureFormat : uint8_t
-{
-    RED,
-    RGBA,
-};
-
-union Texture
-{
-    struct
-    {
-        bgfx ::TextureHandle handle;
-        BlendMode            blend_mode;
-        TextureFormat        texture_format;
-
-    }           data;
-    ImTextureID id;
-};
+// -----------------------------------------------------------------------------
+// IMGUI BACKEND
+// -----------------------------------------------------------------------------
 
 struct Context
 {
     bgfx::VertexLayout  vertex_layout;
+    float               font_last_dpi   = 0.0f;
+    float               font_cap_height = 10.0f;
     bgfx::ProgramHandle program_rgba    = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle program_red     = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle texture_sampler = BGFX_INVALID_HANDLE;
@@ -115,34 +100,7 @@ struct Context
         texture_sampler = bgfx::createUniform("s_tex_color", bgfx::UniformType::Sampler);
         assert(bgfx::isValid(texture_sampler));
 
-        ImGuiIO& io = ImGui::GetIO();
-
-        // TODO : Font has to be rerasterized when DPI changes (or when user changes the size later on).
-
-        (void)io.Fonts->AddFontFromMemoryCompressedTTF(
-            font_compressed_data,
-            font_compressed_size,
-            10.0f * dpi() // TODO : Use the `cap_height()` calculation from `mnm.cpp`.
-        );
-
-        io.FontGlobalScale = 1.0f / dpi();
-
-        uint8_t* pixels = nullptr;
-        int      width  = 0;
-        int      height = 0;
-        io.Fonts->GetTexDataAsAlpha8(&pixels, &width, &height);
-
-        font_texture = bgfx::createTexture2D
-        (
-            static_cast<uint16_t>(width ),
-            static_cast<uint16_t>(height),
-            false,
-            1,
-            bgfx::TextureFormat::R8,
-            0,
-            bgfx::copy(pixels, static_cast<uint32_t>(width) * static_cast<uint32_t>(height))
-        );
-        assert(bgfx::isValid(font_texture));
+        reset_font_atlas();
 
         view_id = bgfx::getCaps()->limits.maxViews - 2;
     }
@@ -241,6 +199,9 @@ struct Context
             const uint32_t num_vertices = static_cast<uint32_t>(draw_list->VtxBuffer.size());
             const uint32_t num_indices  = static_cast<uint32_t>(draw_list->IdxBuffer.size());
 
+            // TODO : Investigate whether we could possibly succeed here, only
+            //        to fail later on due to a multi-threaded app also using
+            //        transient vetex buffer.
             if (                     num_vertices < bgfx::getAvailTransientVertexBuffer(num_vertices, vertex_layout) ||
                 (num_indices  > 0 && num_indices  < bgfx::getAvailTransientIndexBuffer (num_indices)))
             {
@@ -264,50 +225,9 @@ struct Context
             {
                 const ImDrawCmd & cmd = draw_list->CmdBuffer[j];
 
-                if (cmd.UserCallback)
+                // NOTE : Add back support for textures when actually needed.
+                if (BX_LIKELY((cmd.ElemCount && !cmd.TextureId && !cmd.UserCallback)))
                 {
-                    cmd.UserCallback(draw_list, &cmd);
-                }
-                else if (cmd.ElemCount)
-                {
-                    uint64_t            state   = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
-                    bgfx::TextureHandle texture = font_texture;
-                    bgfx::ProgramHandle program = program_red;
-
-                    if (cmd.TextureId)
-                    {
-                        static const uint64_t blend_states[] =
-                        {
-                            0,
-                            BGFX_STATE_BLEND_ADD,
-                            BGFX_STATE_BLEND_ALPHA,
-                            BGFX_STATE_BLEND_DARKEN,
-                            BGFX_STATE_BLEND_LIGHTEN,
-                            BGFX_STATE_BLEND_MULTIPLY,
-                            BGFX_STATE_BLEND_NORMAL,
-                            BGFX_STATE_BLEND_SCREEN,
-                            BGFX_STATE_BLEND_LINEAR_BURN,
-                        };
-
-                        Texture convert;
-                        convert.id = cmd.TextureId;
-
-                        texture = convert.data.handle;
-                        state  |= blend_states[static_cast<uint8_t>(convert.data.blend_mode)];
-
-                        switch (convert.data.texture_format)
-                        {
-                        case TextureFormat::RGBA:
-                            program = program_rgba;
-                            break;
-                        default:;
-                        }
-                    }
-                    else
-                    {
-                        state |= BGFX_STATE_BLEND_ALPHA;
-                    }
-
                     const ImVec2 scale = io.DisplayFramebufferScale;
 
                     const uint16_t x = static_cast<uint16_t>(bx::max(cmd.ClipRect.x * scale.x, 0.0f));
@@ -315,12 +235,15 @@ struct Context
                     const uint16_t w = static_cast<uint16_t>(bx::min(cmd.ClipRect.z * scale.x, static_cast<float>(UINT16_MAX)) - x);
                     const uint16_t h = static_cast<uint16_t>(bx::min(cmd.ClipRect.w * scale.y, static_cast<float>(UINT16_MAX)) - y);
 
-                    bgfx::setState(state);
                     bgfx::setScissor(x, y, w, h);
-                    bgfx::setTexture(0, texture_sampler, texture);
+
+                    bgfx::setTexture(0, texture_sampler, font_texture);
+
                     bgfx::setVertexBuffer(0, &tvb, 0, num_vertices);
                     bgfx::setIndexBuffer(&tib, offset, cmd.ElemCount);
-                    bgfx::submit(view_id, program);
+
+                    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA);
+                    bgfx::submit(view_id, program_red);
                 }
 
                 offset += cmd.ElemCount;
@@ -330,6 +253,11 @@ struct Context
 };
 
 static Context g_ctx;
+
+
+// -----------------------------------------------------------------------------
+// MINIMO CALLBACKS
+// -----------------------------------------------------------------------------
 
 static void setup()
 {
@@ -359,6 +287,8 @@ static void cleanup()
 
 static void do_gui()
 {
+    g_ctx.reset_font_atlas();
+
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
@@ -389,5 +319,10 @@ static void update()
 
     // ...
 }
+
+
+// -----------------------------------------------------------------------------
+// MINIMO MAIN ENTRY
+// -----------------------------------------------------------------------------
 
 MNM_MAIN(nullptr, setup, update, cleanup);
