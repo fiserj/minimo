@@ -3811,6 +3811,7 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
         static const int special_app_keys[] =
         {
             0,                  // KEY_ANY
+
             GLFW_KEY_BACKSPACE, // KEY_BACKSPACE
             GLFW_KEY_DELETE,    // KEY_DELETE
             GLFW_KEY_DOWN,      // KEY_DOWN
@@ -3821,6 +3822,19 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
             GLFW_KEY_SPACE,     // KEY_SPACE
             GLFW_KEY_TAB,       // KEY_TAB
             GLFW_KEY_UP,        // KEY_UP
+
+            GLFW_KEY_F1,        // KEY_F1
+            GLFW_KEY_F2,        // KEY_F2
+            GLFW_KEY_F3,        // KEY_F3
+            GLFW_KEY_F4,        // KEY_F4
+            GLFW_KEY_F5,        // KEY_F5
+            GLFW_KEY_F6,        // KEY_F6
+            GLFW_KEY_F7,        // KEY_F7
+            GLFW_KEY_F8,        // KEY_F8
+            GLFW_KEY_F9,        // KEY_F9
+            GLFW_KEY_F10,       // KEY_F10
+            GLFW_KEY_F11,       // KEY_F11
+            GLFW_KEY_F12,       // KEY_F12
         };
 
         int glfw_key = INVALID_INPUT;
