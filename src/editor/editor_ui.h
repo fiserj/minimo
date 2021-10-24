@@ -5,85 +5,99 @@
 
 #include <vector>      // vector
 
-#include <bgfx/bgfx.h> // bgfx::*
+#include <bx/bx.h>     // BX_*LIKELY, memCopy
+#include <bx/math.h>   // ceil, floor, min
 
 #include <utf8.h>      // utf8*
 
 #include <mnm/mnm.h>   // ...
 
-class Editor
+struct ByteRange
 {
-public:
-    void set_content(const char* string)
-    {
-        m_buffer.clear();
-        m_lines .clear();
-
-        m_lines.reserve(256);
-        m_lines.push_back({});
-
-        if (BX_UNLIKELY(!string))
-        {
-            return;
-        }
-
-        utf8_int32_t codepoint = 0;
-        void*        it        = nullptr;
-
-        for (it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
-        {
-            if (codepoint == '\n')
-            {
-                const uint32_t offset = static_cast<char*>(it) - string;
-
-                m_lines.back().end = offset;
-                m_lines.push_back({ offset });
-            }
-        }
-
-        const uint32_t size = static_cast<char*>(it) - string; // Null terminator included.
-        assert(size == utf8size(string));
-
-        if (size)
-        {
-            m_lines.back().end = size;
-
-            m_buffer.reserve(size + 1024);
-            m_buffer.resize (size);
-
-            bx::memCopy(m_buffer.data(), string, size);
-        }
-    }
-
-    void set_viewport(float x, float y, float width, float height)
-    {
-        m_viewport = { x, y, width, height };
-    }
-
-    void update()
-    {
-        // ...
-    }
-
-private:
-    struct ByteRange
-    {
-        uint32_t start = 0;
-        uint32_t end   = 0;
-    };
-
-    struct Viewport
-    {
-        float x;
-        float y;
-        float width;
-        float height;
-    };
-
-private:
-    std::vector<char>      m_buffer;
-    std::vector<ByteRange> m_lines;
-    Viewport               m_viewport;
-    ByteRange              m_selection;
-    uint32_t               m_cursor = 0;
+    uint32_t start = 0;
+    uint32_t end   = 0;
 };
+
+struct TextEdit
+{
+    std::vector<char>      buffer;
+    std::vector<ByteRange> lines;
+    ByteRange              selection;
+    float                  scroll_offset = 0.0f;
+    bool                   cursor_at_end = false;
+};
+
+struct TextEditSettings
+{
+    float    font_cap_height    = 8.0f;
+    float    line_height_factor = 2.0f;
+
+    uint32_t text_color         = 0xffffffff;
+    uint32_t line_number_color  = 0xaaaaaaff;
+};
+
+static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float viewport_height)
+{
+    const float  line_height = tes.font_cap_height * tes.line_height_factor;
+    const size_t first_line  = static_cast<size_t>(bx::floor(te.scroll_offset / line_height));
+    const size_t line_count  = static_cast<size_t>(bx::ceil (viewport_height  / line_height)) + 1;
+
+    push();
+    color(tes.text_color);
+
+    for (size_t i = first_line, n = bx::min(first_line + line_count, te.lines.size()); i < n; i++)
+    {
+        const ByteRange& line = te.lines[i];
+
+        text(te.buffer.data() + line.start, te.buffer.data() + line.end);
+
+        translate(0.0f, line_height, 0.0f);
+    }
+
+    pop();
+}
+
+static void set_content(TextEdit& te, const char* string)
+{
+    te.buffer.clear();
+    te.lines .clear();
+
+    te.lines.reserve(256);
+    te.lines.push_back({});
+
+    te.selection     = {};
+    te.scroll_offset = 0.0f;
+    te.cursor_at_end = false;
+
+    if (BX_UNLIKELY(!string))
+    {
+        return;
+    }
+
+    utf8_int32_t codepoint = 0;
+    void*        it        = nullptr;
+
+    for (it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+    {
+        if (codepoint == '\n')
+        {
+            const uint32_t offset = static_cast<char*>(it) - string;
+
+            te.lines.back().end = offset;
+            te.lines.push_back({ offset });
+        }
+    }
+
+    const uint32_t size = static_cast<char*>(it) - string; // Null terminator included.
+    assert(size == utf8size(string));
+
+    if (size)
+    {
+        te.lines.back().end = size;
+
+        te.buffer.reserve(size + 1024);
+        te.buffer.resize (size);
+
+        bx::memCopy(te.buffer.data(), string, size);
+    }
+}
