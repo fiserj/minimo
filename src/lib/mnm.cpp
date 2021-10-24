@@ -4285,7 +4285,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.bgfx_frame_number = bgfx::frame();
 
-    bgfx::setDebug(BGFX_DEBUG_STATS);
+    uint32_t debug_state = BGFX_DEBUG_NONE;
+    bgfx::setDebug(debug_state);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
     static const bgfx::EmbeddedShader s_shaders[] =
@@ -4455,6 +4456,12 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
 
         g_ctx.mouse.update_position_delta();
+
+        if (key_down(KEY_F12))
+        {
+            debug_state = debug_state ? BGFX_DEBUG_NONE : BGFX_DEBUG_STATS;
+            bgfx::setDebug(debug_state);
+        }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
