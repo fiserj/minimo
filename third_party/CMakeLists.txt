@@ -25,6 +25,7 @@ include(cmake/HandmadeMath.cmake)
 include(cmake/imgui.cmake)
 include(cmake/meshoptimizer.cmake)
 include(cmake/stb.cmake)
+include(cmake/utf8.cmake)
 
 target_include_directories(enkiTS PUBLIC
     enkiTS/src

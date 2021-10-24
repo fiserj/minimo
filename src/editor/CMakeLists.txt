@@ -13,6 +13,7 @@ target_link_libraries(${NAME} PRIVATE
     ${PROJECT_NAME}
     bgfx
     imgui
+    utf8
 )
 
 set_target_properties(${NAME} PROPERTIES
