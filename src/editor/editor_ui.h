@@ -92,8 +92,8 @@ static void set_content(TextEdit& te, const char* string)
         }
     }
 
-    const uint32_t size = static_cast<char*>(it) - string; // Null terminator included.
-    assert(size == utf8size(string));
+    const uint32_t size = static_cast<char*>(it) - string - 1; // Null terminator not included.
+    assert(size == utf8size_lazy(string));
 
     if (size)
     {
