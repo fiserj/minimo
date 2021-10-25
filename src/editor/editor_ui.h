@@ -6,7 +6,7 @@
 #include <vector>      // vector
 
 #include <bx/bx.h>     // BX_*LIKELY, memCopy
-#include <bx/math.h>   // ceil, floor, min
+#include <bx/math.h>   // ceil, floor, min, mod
 
 #include <utf8.h>      // utf8*
 
@@ -43,6 +43,10 @@ static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float 
     const size_t line_count  = static_cast<size_t>(bx::ceil (viewport_height  / line_height)) + 1;
 
     push();
+
+    scale(1.0f / dpi());
+    translate(0.0f, -bx::mod(te.scroll_offset, line_height), 0.0f);
+
     color(tes.text_color);
 
     for (size_t i = first_line, n = bx::min(first_line + line_count, te.lines.size()); i < n; i++)

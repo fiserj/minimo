@@ -39,7 +39,8 @@ static void setup()
 
     create_font(FONT_ID, g_font_data);
 
-    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_ALLOW_UPDATE, FONT_ID, g_tes.font_cap_height * dpi());
+    // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
+    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X, FONT_ID, g_tes.font_cap_height * dpi());
     glyph_range(0x20, 0x7e);
     end_atlas();
 
@@ -54,7 +55,10 @@ static void update()
         quit();
     }
 
-    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT);
+    // NOTE : Just a test scroll for now.
+    g_te.scroll_offset = (bx::cos((float)elapsed() * 0.5f + bx::kPi) * 0.5f + 0.5f) * 925.0f;
+
+    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
     identity();
     submit_lines(g_te, g_tes, height());
     end_text();
@@ -64,7 +68,7 @@ static void update()
     projection();
 
     identity();
-    translate(10.0f, 15.0f, 0.0f);
+    translate(10.0f, 10.0f, 0.0f);
     mesh(TEXT_ID);
 }
 
