@@ -2667,7 +2667,7 @@ public:
         uint32_t codepoint;
         uint32_t state = 0;
 
-        for (const char* string = start; end ? string != end : *string; string++)
+        for (const char* string = start; end ? string < end : *string; string++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
@@ -2838,7 +2838,7 @@ public:
         const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
 
         // Pass 1: Gather info about text, signal missing glyphs.
-        for (const char* string = start; end ? string != end : *string; string++)
+        for (const char* string = start; end ? string < end : *string; string++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
             {
@@ -2879,14 +2879,12 @@ public:
 
         ASSERT(state == UTF8_ACCEPT);
 
+        if (needs_line_widths)
         {
-            if (needs_line_widths)
-            {
-                line_widths.push_back(line_width);
-            }
-
-            box_width = std::max(box_width, line_width);
+            line_widths.push_back(line_width);
         }
+
+        box_width = std::max(box_width, line_width);
 
         // Pass 2: Submit quads to the recorder.
         Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
@@ -2908,8 +2906,10 @@ public:
 
         const QuadPackFunc pack_func = get_quad_pack_func(align_to_integer, y_axis_down);
 
-        for (const char* string = start; end ? string != end : *string; line_idx++)
+        for (const char* string = start; end ? string < end : *string; line_idx++)
         {
+            ASSERT(!end || string < end);
+
             switch (h_alignment)
             {
             case TEXT_H_ALIGN_CENTER:
@@ -3026,12 +3026,13 @@ private:
         float              x          = 0.0f;
         stbtt_aligned_quad quad       = {};
 
-        for (; end ? start != end : *start; start++)
+        for (; end ? start < end : *start; start++)
         {
             if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *start))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
+                    start++;
                     break;
                 }
 
@@ -3055,9 +3056,8 @@ private:
         }
 
         ASSERT(state == UTF8_ACCEPT);
-        ASSERT(*start == '\0' || *start == '\n' || start == end);
 
-        return (*start && !end) ? (start + 1) : start;
+        return start;
     }
 
     int16_t cap_height() const
