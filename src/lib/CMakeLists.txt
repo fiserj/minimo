@@ -83,5 +83,3 @@ add_shader_dependency(${NAME} "shaders/position_texcoord.vs"        )
 add_shader_dependency(${NAME} "shaders/position_texcoord.fs"        )
 
 add_shader_dependency(${NAME} "shaders/instancing_position_color.vs")
-
-add_shader_dependency(${NAME} "shaders/position_2d_color_texcoord.vs" "shaders/varying_2d.def.sc") # TODO : This is for editor only, so should be there.
