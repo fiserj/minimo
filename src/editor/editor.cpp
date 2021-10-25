@@ -40,7 +40,7 @@ static void setup()
     create_font(FONT_ID, g_font_data);
 
     // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
-    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X, FONT_ID, g_tes.font_cap_height * dpi());
+    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, g_tes.font_cap_height * dpi());
     glyph_range(0x20, 0x7e);
     end_atlas();
 

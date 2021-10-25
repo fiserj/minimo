@@ -29,7 +29,7 @@
 #   define strcasecmp _stricmp
 #endif
 
-#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF, BX_UNUSED
+#include <bx/bx.h>                // BX_ALIGN_DECL_16, BX_COUNTOF, BX_UNUSED, isPowerOf2
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
@@ -2592,6 +2592,8 @@ public:
 
     inline bool is_monospaced() const { return m_flags & ATLAS_MONOSPACED; }
 
+    inline bool does_not_reuire_thread_safety() const { return m_flags & ATLAS_NOT_THREAD_SAFE; }
+
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
         MutexScope lock(m_mutex);
@@ -3003,7 +3005,7 @@ private:
 
     inline const char* record_quads(const char* start, const char* end, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
-        if (!is_updatable())
+        if (!is_updatable() || !does_not_reuire_thread_safety())
         {
             return record_quads_without_lock(start, end, pack_func, transform, recorder);
         }

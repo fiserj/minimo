@@ -572,6 +572,9 @@ enum
     ATLAS_H_OVERSAMPLE_4X = 0x0018,
 
     ATLAS_V_OVERSAMPLE_2X = 0x0040,
+
+    // Usage hint. Does not require an updatable atlas to be thread safe.
+    ATLAS_NOT_THREAD_SAFE = 0x0080,
 };
 
 /// One font/size per atlas. Texture size is calculated automatically to fit.
