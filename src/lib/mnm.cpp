@@ -195,7 +195,7 @@ static_assert(
 );
 
 static_assert(
-    PRIMITIVE_QUADS && !(PRIMITIVE_QUADS & (PRIMITIVE_QUADS - 1)),
+    bx::isPowerOf2(PRIMITIVE_QUADS),
     "`PRIMITIVE_QUADS` must be power of two."
 );
 
