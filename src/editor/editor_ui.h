@@ -7,6 +7,7 @@
 
 #include <bx/bx.h>     // BX_*LIKELY, memCopy
 #include <bx/math.h>   // ceil, floor, min, mod
+#include <bx/string.h> // snprintf
 
 #include <utf8.h>      // utf8*
 
@@ -31,6 +32,7 @@ struct TextEditSettings
 {
     float    font_cap_height    = 8.0f;
     float    line_height_factor = 2.0f;
+    float    line_number_pad    = 30.0f; // TODO : This should be based on the (monospaced) glyph width.
 
     uint32_t text_color         = 0xffffffff;
     uint32_t line_number_color  = 0xaaaaaaff;
@@ -41,19 +43,37 @@ static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float 
     const float  line_height = tes.font_cap_height * tes.line_height_factor;
     const size_t first_line  = static_cast<size_t>(bx::floor(te.scroll_offset / line_height));
     const size_t line_count  = static_cast<size_t>(bx::ceil (viewport_height  / line_height)) + 1;
+    const size_t last_line   = bx::min(first_line + line_count, te.lines.size());
 
     push();
 
     scale(1.0f / dpi());
     translate(0.0f, -bx::mod(te.scroll_offset, line_height), 0.0f);
 
+    push();
+    translate(tes.line_number_pad, 0.0f, 0.0f);
     color(tes.text_color);
 
-    for (size_t i = first_line, n = bx::min(first_line + line_count, te.lines.size()); i < n; i++)
+    for (size_t i = first_line; i < last_line; i++)
     {
         const ByteRange& line = te.lines[i];
 
         text(te.buffer.data() + line.start, te.buffer.data() + line.end);
+
+        translate(0.0f, line_height, 0.0f);
+    }
+
+    pop();
+    color(tes.line_number_color);
+
+    char line_number[8];
+
+    for (size_t i = first_line; i < last_line; i++)
+    {
+        // TODO : Prepend appropriate number of spaces, so that left alignment can be kept.
+        (void)bx::snprintf(line_number, sizeof(line_number), "%zu", i);
+
+        text(line_number, nullptr);
 
         translate(0.0f, line_height, 0.0f);
     }
