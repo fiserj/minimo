@@ -4853,6 +4853,29 @@ void state(int flags)
     mnm::t_ctx->draw_state.flags = static_cast<uint16_t>(flags);
 }
 
+void scissor(int x, int y, int width, int height)
+{
+    using namespace mnm;
+
+    ASSERT(x >= 0);
+    ASSERT(y >= 0);
+    ASSERT(width >= 0);
+    ASSERT(height >= 0);
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder);
+    }
+
+    t_ctx->encoder->setScissor(
+        static_cast<uint16_t>(x),
+        static_cast<uint16_t>(y),
+        static_cast<uint16_t>(width ),
+        static_cast<uint16_t>(height)
+    );
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - TEXTURING

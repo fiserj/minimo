@@ -386,7 +386,20 @@ void alias(int flags);
 /// Sets state for next submitted mesh call, after which it gets reset.
 /// `STATE_DEFAULT` by default.
 ///
+/// @param[in] flags Draw state flags.
+///
 void state(int flags);
+
+/// Sets scissor for next submitted mesh call, after which it gets cleared.
+///
+/// @param[in] x Horizontal offset from window's top-left corner.
+/// @param[in] y Vertical offset from window's top-left corner.
+/// @param[in] width Width of the scissor region.
+/// @param[in] height Height of the scissor region.
+///
+/// @attention All values are in pixels, not screen coordinates.
+///
+void scissor(int x, int y, int width, int height);
 
 
 // -----------------------------------------------------------------------------
