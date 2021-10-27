@@ -612,7 +612,7 @@ void glyphs_from_string(const char* string);
 ///
 /// ...
 
-/// ...
+/// Text mesh flags.
 ///
 enum
 {
@@ -642,25 +642,52 @@ enum
     TEXT_ALIGN_TO_INTEGER   = 0x0800,
 };
 
-/// ... `color` call is also valid within the begin / end pair.
+/// Starts text mesh recording. Internally, the regular mesh recorder is used,
+/// so that all the drawing-related commands can be used as with any other mesh.
+///
+/// Each glyph is represented as a textured quad with per-vertex color.
 ///
 void begin_text(int id, int atlas, int flags);
 
-/// ...
+/// Ends the current text mesh recording.
 ///
 void end_text(void);
 
-/// ...
+/// Sets text alignment flags state inside an active text mesh creation. By
+/// default, text is left-aligned horizontally and baseline-aligned vertically.
+///
+/// @param[in] flags Text mesh alignment flags.
 ///
 void alignment(int flags);
 
-/// ...
+/// Sets text line height factor inside an active text mesh creation. The final
+/// line height is then calculated as `cap_height * factor`. Set to `2` by
+/// default.
+///
+/// @param[in] factor Text mesh line height factor.
 ///
 void line_height(float factor);
 
-/// TODO : Convert to `start..end` API if only single function is used ?
+/// Adds glyph quads into current text mesh. Strings are assumed to use UTF-8.
+/// Currently set alignment and line height are used, and the glyph vertex
+/// positions are multiplied by the current model matrix.
+///
+/// @param[in] start First byte of the string.
+/// @param[in] end One byte past the end of the string, or `NULL`. If not
+///   provided, processing stops when the null-terminator is found.
 ///
 void text(const char* start, const char* end);
+
+/// Calculates bounding box of a given text.
+///
+/// @param[in] start First byte of the string.
+/// @param[in] end One byte past the end of the string, or `NULL`.
+/// @param[out] width Text bounding box width, in pixels.
+/// @param[out] height Text bounding box height, in pixels.
+///
+/// @attention Tasks
+///
+void text_size(const char* start, const char* end, float* width, float* height);
 
 
 // -----------------------------------------------------------------------------
