@@ -3463,6 +3463,11 @@ public:
         m_line_height = factor;
     }
 
+    void get_text_size(const char* start, const char* end, TextureCache& texture_cache)
+    {
+        // TODO
+    }
+
     void add_text(const char* start, const char* end, const Mat4& transform, TextureCache& texture_cache)
     {
         ASSERT(m_recorder);
@@ -5124,6 +5129,19 @@ void text(const char* start, const char* end)
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
     t_ctx->text_recorder.add_text(start, end, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
+}
+
+void text_size(const char* start, const char* end, float* width, float* height)
+{
+    using namespace mnm;
+
+    ASSERT(start);
+    ASSERT(t_ctx->text_recorder.mesh_recorder());
+
+    if (BX_LIKELY(width || height))
+    {
+        t_ctx->text_recorder.get_text_size(start, end, g_ctx.texture_cache);
+    }
 }
 
 

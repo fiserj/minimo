@@ -685,7 +685,7 @@ void text(const char* start, const char* end);
 /// @param[out] width Text bounding box width, in pixels.
 /// @param[out] height Text bounding box height, in pixels.
 ///
-/// @attention Tasks
+/// @attention The returned size has no transformation applied on it.
 ///
 void text_size(const char* start, const char* end, float* width, float* height);
 
