@@ -3424,9 +3424,10 @@ public:
             (atlas->is_updatable() ? (TEXCOORD_F32 | VERTEX_PIXCOORD) : 0) |
             (flags & TEXT_TYPE_MASK);
 
-        m_flags    = flags;
-        m_atlas    = atlas;
-        m_recorder = recorder;
+        m_flags       = flags;
+        m_atlas       = atlas;
+        m_recorder    = recorder;
+        m_line_height = 2.0f;
 
         m_recorder->begin(id, mesh_flags, atlas_id);
     }
