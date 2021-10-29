@@ -689,6 +689,18 @@ void text(const char* start, const char* end);
 ///
 void text_size(const char* start, const char* end, float* width, float* height);
 
+/// Calculates width of a given string. Shortcut for calling `text_size` with
+/// only the `width` out parameter.
+///
+/// @param[in] start First byte of the string.
+/// @param[in] end One byte past the end of the string, or `NULL`.
+///
+/// @returns String width, in pixels.
+///
+/// @attention The returned width has no transformation applied on it.
+///
+float text_width(const char* start, const char* end);
+
 
 // -----------------------------------------------------------------------------
 /// @section PASSES

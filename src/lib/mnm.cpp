@@ -2813,6 +2813,57 @@ public:
         return s_dispatch_table[index];
     }
 
+    bool get_text_size
+    (
+        const char* start,
+        const char* end,
+        float       line_height_factor,
+        float*      out_width,
+        float*      out_height
+    )
+    {
+        float       line_width  = 0.0f;
+        const float line_height = roundf(font_size() * line_height_factor);
+        float       box_width   = 0.0f;
+        float       box_height  = font_size();
+        uint32_t    codepoint   = 0;
+        uint32_t    state       = 0;
+
+        for (const char* string = start; end ? string < end : *string; string++)
+        {
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            {
+                if (codepoint == '\n') // TODO : Other line terminators?
+                {
+                    box_height += line_height;
+                    box_width   = std::max(box_width, line_width);
+                    line_width  = 0.0f;
+
+                    continue;
+                }
+
+                const auto it = m_codepoints.find(codepoint);
+
+                if (it == m_codepoints.end())
+                {
+                    return false;
+                }
+
+                // TODO : Needs to reflect `align_to_integer`.
+                line_width += m_char_quads[it->second].xadvance;
+            }
+        }
+
+        ASSERT(state == UTF8_ACCEPT);
+
+        box_width = std::max(box_width, line_width);
+
+        if (out_width ) { *out_width  = box_width ; }
+        if (out_height) { *out_height = box_height; }
+
+        return true;
+    }
+
     // Two-pass:
     // 1) Gather info about text, signal missing glyphs.
     // 2) Submit quads to the recorder.
@@ -2887,6 +2938,11 @@ public:
         }
 
         box_width = std::max(box_width, line_width);
+
+        if (box_width == 0.0f)
+        {
+            return true;
+        }
 
         // Pass 2: Submit quads to the recorder.
         Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
@@ -3463,12 +3519,7 @@ public:
         m_line_height = factor;
     }
 
-    void get_text_size(const char* start, const char* end, TextureCache& texture_cache)
-    {
-        // TODO
-    }
-
-    void add_text(const char* start, const char* end, const Mat4& transform, TextureCache& texture_cache)
+    void add_text(const char* start, const char* end, const Mat4& transform, TextureCache& inout_texture_cache)
     {
         ASSERT(m_recorder);
 
@@ -3487,16 +3538,31 @@ public:
             );
         };
 
-        if (!lay_text())
+        if (!lay_text() && m_atlas->is_updatable())
         {
-            ASSERT(m_atlas->is_updatable());
-
             m_atlas->add_glyphs_from_string(start, end);
-            m_atlas->update(texture_cache);
+            m_atlas->update(inout_texture_cache);
 
             const bool success = lay_text();
-            BX_UNUSED(success);
-            ASSERT(success);
+            BX_UNUSED (success);
+            ASSERT    (success);
+        }
+    }
+
+    void get_text_size(const char* start, const char* end, TextureCache& inout_texture_cache, float* out_width, float* out_height)
+    {
+        if (out_width ) { *out_width  = 0.0f; }
+        if (out_height) { *out_height = 0.0f; }
+
+        if (!m_atlas->get_text_size(start, end, m_line_height, out_width, out_height) &&
+             m_atlas->is_updatable())
+        {
+            m_atlas->add_glyphs_from_string(start, end);
+            m_atlas->update(inout_texture_cache);
+
+            const bool success = m_atlas->get_text_size(start, end, m_line_height, out_width, out_height);
+            BX_UNUSED (success);
+            ASSERT    (success);
         }
     }
 
@@ -5135,13 +5201,22 @@ void text_size(const char* start, const char* end, float* width, float* height)
 {
     using namespace mnm;
 
-    ASSERT(start);
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
-    if (BX_LIKELY(width || height))
+    if (BX_UNLIKELY(!(width || height)))
     {
-        t_ctx->text_recorder.get_text_size(start, end, g_ctx.texture_cache);
+        return;
     }
+
+    t_ctx->text_recorder.get_text_size(start, end, g_ctx.texture_cache, width, height);
+}
+
+float text_width(const char* start, const char* end)
+{
+    float width = 0.0f;
+    text_size(start, end, &width, nullptr);
+
+    return width;
 }
 
 
