@@ -5,8 +5,8 @@
 
 #include <vector>      // vector
 
-#include <bx/bx.h>     // BX_*LIKELY, memCopy
-#include <bx/math.h>   // ceil, floor, min, mod
+#include <bx/bx.h>     // BX_*LIKELY, memCopy, min/max
+#include <bx/math.h>   // ceil, floor, mod
 #include <bx/string.h> // snprintf
 
 #include <utf8.h>      // utf8*
@@ -32,7 +32,6 @@ struct TextEditSettings
 {
     float    font_cap_height    = 8.0f;
     float    line_height_factor = 2.0f;
-    float    line_number_pad    = 30.0f; // TODO : This should be based on the (monospaced) glyph width.
 
     uint32_t text_color         = 0xffffffff;
     uint32_t line_number_color  = 0xaaaaaaff;
@@ -45,13 +44,30 @@ static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float 
     const size_t line_count  = static_cast<size_t>(bx::ceil (viewport_height  / line_height)) + 1;
     const size_t last_line   = bx::min(first_line + line_count, te.lines.size());
 
+    char  line_number[8];
+    char  line_format[8];
+    float line_number_width = 0.0f;
+
+    for (size_t i = te.lines.size(), j = 0; ; i /= 10, j++)
+    {
+        if (i == 0)
+        {
+            (void)bx::snprintf(line_format, sizeof(line_format), "%%%zuzu ", bx::max(j + 1, static_cast<size_t>(3)));
+            (void)bx::snprintf(line_number, sizeof(line_number), line_format, static_cast<size_t>(1));
+
+            line_number_width = text_size(line_number, 0);
+
+            break;
+        }
+    }
+
     push();
 
     scale(1.0f / dpi());
     translate(0.0f, -bx::mod(te.scroll_offset, line_height), 0.0f);
 
     push();
-    translate(tes.line_number_pad, 0.0f, 0.0f);
+    translate(line_number_width, 0.0f, 0.0f);
     color(tes.text_color);
 
     for (size_t i = first_line; i < last_line; i++)
@@ -66,12 +82,9 @@ static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float 
     pop();
     color(tes.line_number_color);
 
-    char line_number[8];
-
-    for (size_t i = first_line; i < last_line; i++)
+    for (size_t i = first_line + 1; i <= last_line; i++)
     {
-        // TODO : Prepend appropriate number of spaces, so that left alignment can be kept.
-        (void)bx::snprintf(line_number, sizeof(line_number), "%zu", i);
+        (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
         text(line_number, nullptr);
 
