@@ -2683,6 +2683,7 @@ public:
         ASSERT(state == UTF8_ACCEPT);
     }
 
+    // TODO : This should return success bool.
     void update(TextureCache& texture_cache)
     {
         ASSERT(is_updatable() || !is_locked());
@@ -3422,10 +3423,13 @@ public:
         m_indices.fill(UINT16_MAX);
     }
 
-    Atlas* operator[](uint16_t id)
+    inline Atlas* get(uint16_t id)
     {
-        ASSERT(id < m_indices.size());
+        return m_indices[id] != UINT16_MAX ? &m_atlases[m_indices[id]] : nullptr;
+    }
 
+    Atlas* get_or_create(uint16_t id)
+    {
         if (m_indices[id] != UINT16_MAX)
         {
             return &m_atlases[m_indices[id]];
@@ -5103,14 +5107,17 @@ void begin_atlas(int id, int flags, int font, float size)
     ASSERT(font > 0 && static_cast<uint16_t>(font) < MAX_FONTS);
     ASSERT(size >= 5.0f && size <= 4096.0f);
 
-    t_ctx->active_atlas = g_ctx.atlas_cache[static_cast<uint16_t>(id)];
-    t_ctx->active_atlas->reset(
-        static_cast<uint16_t>(id),
-        static_cast<uint16_t>(flags),
-        g_ctx.font_data_registry[font],
-        size,
-        g_ctx.texture_cache
-    );
+    // TODO : Signal error if can't get an atlas.
+    if ((t_ctx->active_atlas = g_ctx.atlas_cache.get_or_create(static_cast<uint16_t>(id))))
+    {
+        t_ctx->active_atlas->reset(
+            static_cast<uint16_t>(id),
+            static_cast<uint16_t>(flags),
+            g_ctx.font_data_registry[font],
+            size,
+            g_ctx.texture_cache
+        );
+    }
 }
 
 void end_atlas(void)
@@ -5156,7 +5163,7 @@ void begin_text(int id, int atlas, int flags)
         static_cast<uint16_t>(id),
         static_cast<uint16_t>(flags),
         static_cast<uint16_t>(atlas),
-        g_ctx.atlas_cache[static_cast<uint16_t>(atlas)], // TODO : Maybe some safer accessor that doesn't assign it to this id if it does not already exist?
+        g_ctx.atlas_cache.get(static_cast<uint16_t>(atlas)),
         &t_ctx->mesh_recorder
     );
 }
