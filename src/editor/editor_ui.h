@@ -55,7 +55,7 @@ static void submit_lines(const TextEdit& te, const TextEditSettings& tes, float 
             (void)bx::snprintf(line_format, sizeof(line_format), "%%%zuzu ", bx::max(j + 1, static_cast<size_t>(3)));
             (void)bx::snprintf(line_number, sizeof(line_number), line_format, static_cast<size_t>(1));
 
-            line_number_width = text_size(line_number, 0);
+            line_number_width = text_width(line_number, 0);
 
             break;
         }
