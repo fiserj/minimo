@@ -3804,6 +3804,7 @@ struct InputState
         HELD = 0x04,
     };
 
+    static constexpr int INPUT_COUNT            = MAX_INPUTS;
     static constexpr int INVALID_INPUT          =  -1;
 
     uint8_t              states    [MAX_INPUTS] = { 0    };
@@ -3824,9 +3825,11 @@ struct InputState
 
         if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
         {
-            ASSERT(timestamp >= timestamps[input] || (states[input] & UP));
-
-            return timestamp - timestamps[input];
+            if (states[input] & (DOWN | HELD))
+            {
+                ASSERT(timestamp >= timestamps[input]);
+                return timestamp -  timestamps[input];
+            }
         }
 
         return -1.0f;
@@ -3834,10 +3837,14 @@ struct InputState
 
     void update_input_state(int input, bool down, float timestamp = 0.0f)
     {
-        if (input > INVALID_INPUT && input < MAX_INPUTS)
+        if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
         {
-            states    [input] |= down ? DOWN : UP;
-            timestamps[input]  = timestamp;
+            states[input] |= down ? DOWN : UP;
+
+            if (down)
+            {
+                timestamps[input] = timestamp;
+            }
         }
     }
 
@@ -3859,9 +3866,48 @@ struct InputState
 
 struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
-    float curr [2] = { 0.0f };
-    float prev [2] = { 0.0f };
-    float delta[2] = { 0.0f };
+    static constexpr float REPEATED_CLICK_DELAY = 0.5f; // NOTE : Could be configurable.
+
+    float                  curr  [2]            = { 0.0f };
+    float                  prev  [2]            = { 0.0f };
+    float                  delta [2]            = { 0.0f };
+    int                    clicks[INPUT_COUNT]  = { 0    };
+
+    inline int repeated_click_count(int app_input) const
+    {
+        const int input = translate_app_input(app_input);
+
+        if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
+        {
+            return (states[input] & DOWN)
+                ? clicks[input]
+                : 0;
+        }
+
+        return 0;
+    }
+
+    void update_input_state(int input, bool down, float timestamp = 0.0f)
+    {
+        if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
+        {
+            states[input] |= down ? DOWN : UP;
+
+            if (down)
+            {
+                if (timestamp - timestamps[input] <= REPEATED_CLICK_DELAY)
+                {
+                    clicks[input]++;
+                }
+                else
+                {
+                    clicks[input] = 1;
+                }
+
+                timestamps[input] = timestamp;
+            }
+        }
+    }
 
     void update_position(const Window& window)
     {
@@ -4748,6 +4794,11 @@ int mouse_held(int button)
 int mouse_up(int button)
 {
     return mnm::g_ctx.mouse.is(button, mnm::Mouse::UP);
+}
+
+int mouse_clicked(int button)
+{
+    return mnm::g_ctx.mouse.repeated_click_count(button);
 }
 
 float mouse_held_time(int button)

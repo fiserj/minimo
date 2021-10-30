@@ -184,6 +184,13 @@ int mouse_held(int button);
 ///
 int mouse_up(int button);
 
+/// Returns length of a sequence of successive clicks, in which each pair of
+/// following clicks was separated by no more than 500 ms.
+///
+/// @returns Number of successive button clicks.
+///
+int mouse_clicked(int button);
+
 /// Returns time duration for which the mouse button has been held down. Zero,
 /// if it just went down, and negative if not currently held.
 ///
