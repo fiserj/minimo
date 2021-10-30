@@ -3668,30 +3668,34 @@ const double Timer::ms_frequency = static_cast<double>(bx::getHPFrequency());
 
 struct Window
 {
-    GLFWwindow* handle               = nullptr;
+    GLFWwindow* handle                  = nullptr;
 
-    float       display_scale_x      = 0.0f;
-    float       display_scale_y      = 0.0f;
+    int         framebuffer_width       = 0;
+    int         framebuffer_height      = 0;
 
-    float       position_scale_x     = 0.0f;
-    float       position_scale_y     = 0.0f;
+    float       dpi_invariant_width     = 0.0f;
+    float       dpi_invariant_height    = 0.0f;
 
-    float       dpi_invariant_width  = 0.0f;
-    float       dpi_invariant_height = 0.0f;
+    float       position_scale_x        = 0.0f;
+    float       position_scale_y        = 0.0f;
 
-    int         framebuffer_width    = 0;
-    int         framebuffer_height   = 0;
+    float       display_scale_x         = 0.0f;
+    float       display_scale_y         = 0.0f;
+    bool        display_scale_x_changed = false;
 
     void update_size_info()
     {
         ASSERT(handle);
 
-        int window_width  = 0;
-        int window_height = 0;
+        int         window_width         = 0;
+        int         window_height        = 0;
+        const float prev_display_scale_x = display_scale_x;
 
         glfwGetWindowSize        (handle, &window_width     , &window_height     );
         glfwGetFramebufferSize   (handle, &framebuffer_width, &framebuffer_height);
         glfwGetWindowContentScale(handle, &display_scale_x  , &display_scale_y   );
+
+        display_scale_x_changed = display_scale_x != prev_display_scale_x;
 
         adjust_dimension(display_scale_x, window_width , framebuffer_width , dpi_invariant_width , position_scale_x);
         adjust_dimension(display_scale_y, window_height, framebuffer_height, dpi_invariant_height, position_scale_y);
@@ -4744,6 +4748,11 @@ float aspect(void)
 float dpi(void)
 {
     return mnm::g_ctx.window.display_scale_x;
+}
+
+int dpi_changed(void)
+{
+    return mnm::g_ctx.window.display_scale_x_changed;
 }
 
 int pixel_width(void)

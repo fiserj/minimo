@@ -77,11 +77,18 @@ float height(void);
 float aspect(void);
 
 /// Returns window DPI, or, more precisely, the ratio between screen and
-/// framebuffer coordinates.
+/// framebuffer horizontal coordinates.
 ///
 /// @returns Window DPI.
 ///
 float dpi(void);
+
+/// Checks whether the window DPI has changed in the current frame. Also true
+/// for the very first frame.
+///
+/// @returns Non-zero if DPI has changed.
+///
+int dpi_changed(void);
 
 /// Returns the backbuffer width in pixels.
 ///
