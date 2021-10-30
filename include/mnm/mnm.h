@@ -184,6 +184,13 @@ int mouse_held(int button);
 ///
 int mouse_up(int button);
 
+/// Returns time duration for which the mouse button has been held down. Zero,
+/// if it just went down, and negative if not currently held.
+///
+/// @returns Time in seconds.
+///
+float mouse_held_time(int button);
+
 /// Checks whether a particular key went down in the current frame.
 ///
 /// @returns Non-zero if key went down.
@@ -202,6 +209,13 @@ int key_held(int key);
 /// @returns Non-zero if key went up.
 ///
 int key_up(int key);
+
+/// Returns time duration for which the key has been held down. Zero, if it just
+/// went down, and negative if not currently held.
+///
+/// @returns Time in seconds.
+///
+float key_held_time(int key);
 
 /// Returns queued character inputs.
 ///

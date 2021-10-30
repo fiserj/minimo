@@ -3804,24 +3804,40 @@ struct InputState
         HELD = 0x04,
     };
 
-    static constexpr int INVALID_INPUT =  -1;
+    static constexpr int INVALID_INPUT          =  -1;
 
-    uint8_t states[MAX_INPUTS] = { 0 };
+    uint8_t              states    [MAX_INPUTS] = { 0    };
+    float                timestamps[MAX_INPUTS] = { 0.0f };
 
     inline bool is(int app_input, int flag) const
     {
         const int input = T::translate_app_input(app_input);
 
-        return (input > INVALID_INPUT && input < MAX_INPUTS)
+        return (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
             ? states[input] & flag
             : false;
     }
 
-    void update_input_state(int input, bool down)
+    inline float held_time(int app_input, float timestamp) const
+    {
+        const int input = T::translate_app_input(app_input);
+
+        if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
+        {
+            ASSERT(timestamp >= timestamps[input] || (states[input] & UP));
+
+            return timestamp - timestamps[input];
+        }
+
+        return -1.0f;
+    }
+
+    void update_input_state(int input, bool down, float timestamp = 0.0f)
     {
         if (input > INVALID_INPUT && input < MAX_INPUTS)
         {
-            states[input] |= down ? DOWN : UP;
+            states    [input] |= down ? DOWN : UP;
+            timestamps[input]  = timestamp;
         }
     }
 
@@ -4477,7 +4493,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, true);
+                g_ctx.keyboard.update_input_state(event.keyboard.key, true, static_cast<float>(g_ctx.total_time.elapsed()));
                 break;
             
             case GLEQ_KEY_RELEASED:
@@ -4485,7 +4501,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 break;
 
             case GLEQ_BUTTON_PRESSED:
-                g_ctx.mouse.update_input_state(event.mouse.button, true);
+                g_ctx.mouse.update_input_state(event.mouse.button, true, static_cast<float>(g_ctx.total_time.elapsed()));
                 break;
 
             case GLEQ_BUTTON_RELEASED:
@@ -4734,6 +4750,11 @@ int mouse_up(int button)
     return mnm::g_ctx.mouse.is(button, mnm::Mouse::UP);
 }
 
+float mouse_held_time(int button)
+{
+    return mnm::g_ctx.mouse.held_time(button, static_cast<float>(mnm::g_ctx.total_time.elapsed()));
+}
+
 int key_down(int key)
 {
     return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::DOWN);
@@ -4747,6 +4768,11 @@ int key_held(int key)
 int key_up(int key)
 {
     return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::UP);
+}
+
+float key_held_time(int key)
+{
+    return mnm::g_ctx.keyboard.held_time(key, static_cast<float>(mnm::g_ctx.total_time.elapsed()));
 }
 
 unsigned int codepoint(void)
