@@ -29,6 +29,8 @@
 // TODO : Better assert.
 #define ASSERT(cond) assert(cond)
 
+#define ID (__COUNTER__)
+
 
 // -----------------------------------------------------------------------------
 // TYPE ALIASES
