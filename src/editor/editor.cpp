@@ -206,6 +206,25 @@ static inline void vline(uint32_t color, float x, float y0, float y1, float thic
     rect(color, x, y0, thickness, y1 - y0);
 }
 
+static bool tab(uint8_t id, const Rect& rect, const char* text)
+{
+    State      state   = STATE_COLD;
+    const bool clicked = button_logic(id, rect, true, state);
+
+    constexpr uint32_t colors[] =
+    {
+        0xff0000ff,
+        0x00ff00ff,
+        0x0000ffff,
+    };
+
+    ::rect(colors[state], rect);
+
+    // TODO : Issue text.
+
+    return clicked;
+}
+
 static void update_gui()
 {
     ASSERT(g_current_stack.empty());
