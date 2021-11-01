@@ -57,12 +57,23 @@ struct Rect
     float y1 = 0.0f;
 };
 
+struct ColorRect
+{
+    uint32_t color = 0x00000000;
+    Rect     rect;
+};
+
 class IdStack
 {
 public:
     inline bool operator==(const IdStack& other) const
     {
         return m_hash == other.m_hash;
+    }
+
+    inline void clear()
+    {
+        m_hash = 0;
     }
 
     inline uint8_t size() const
@@ -167,6 +178,68 @@ static bool button_logic(uint8_t id, const Rect& rect, bool enabled, State& out_
     }
 
     return mouse_up(MOUSE_LEFT) && is_active(id) && mouse_over(rect);
+}
+
+static Vector<ColorRect> g_color_rect_list;
+
+static inline void rect(uint32_t color, const Rect& rect)
+{
+    g_color_rect_list.push_back({ color, rect });
+}
+
+static inline void rect(uint32_t color, float x, float y, float width, float height)
+{
+    ::rect(color, { x, y, x + width, y + height });
+}
+
+static inline void hline(uint32_t color, float y, float x0, float x1, float thickness = 1.0f)
+{
+    // TODO : We could center it around the given `y`, but then we'd need to
+    //        handle DPI here explicitly.
+    rect(color, x0, y, x1 - x0, thickness);
+}
+
+static inline void vline(uint32_t color, float x, float y0, float y1, float thickness = 1.0f)
+{
+    // TODO : We could center it around the given `x`, but then we'd need to
+    //        handle DPI here explicitly.
+    rect(color, x, y0, thickness, y1 - y0);
+}
+
+static void update_gui()
+{
+    ASSERT(g_current_stack.empty());
+
+    if (!(mouse_down(MOUSE_LEFT) || mouse_held(MOUSE_LEFT)))
+    {
+        g_active_stack.clear();
+    }
+
+    if (BX_UNLIKELY(g_color_rect_list.empty()))
+    {
+        return;
+    }
+
+    identity();
+
+    begin_mesh(RECTS_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
+    {
+        for (const ColorRect& rect : g_color_rect_list)
+        {
+            color(rect.color);
+
+            vertex(rect.rect.x0, rect.rect.y0, 0.0f);
+            vertex(rect.rect.x0, rect.rect.y1, 0.0f);
+            vertex(rect.rect.x1, rect.rect.y1, 0.0f);
+            vertex(rect.rect.x1, rect.rect.y0, 0.0f);
+        }
+    }
+    end_mesh();
+
+    g_color_rect_list.clear();
+
+    state(STATE_WRITE_RGB);
+    mesh(RECTS_ID);
 }
 
 
