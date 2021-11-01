@@ -42,11 +42,11 @@ using Vector = std::vector<T>;
 // GUI HELPERS
 // -----------------------------------------------------------------------------
 
-enum struct State : uint8_t
+enum State
 {
-    COLD,
-    HOT,
-    ACTIVE,
+    STATE_COLD,
+    STATE_HOT,
+    STATE_ACTIVE,
 };
 
 struct Rect
@@ -87,10 +87,23 @@ public:
         m_stack[m_size++] = id;
     }
 
-    inline uint8_t pop()
+    uint8_t pop()
     {
-        ASSERT(m_size > 0);
-        return m_stack[--m_size];
+        const uint8_t value = top();
+
+        // NOTE : We have to explicitly clear the popped value, so that the hash
+        //        is consistent.
+        m_stack[m_size-- - 1] = 0;
+
+        return value;
+    }
+
+    IdStack copy_and_push(uint8_t id) const
+    {
+        IdStack copy = *this;
+        copy.push(id);
+
+        return copy;
     }
 
 private:
@@ -119,23 +132,41 @@ static bool mouse_over(const Rect& rect)
            y >= rect.y0 && y < rect.y1 ;
 }
 
+static inline bool none_active()
+{
+    return g_active_stack.empty();
+}
+
+static inline bool is_active(uint8_t id)
+{
+    return g_active_stack == g_current_stack.copy_and_push(id);
+}
+
+static inline void make_active(uint8_t id)
+{
+    g_active_stack = g_current_stack.copy_and_push(id);
+}
+
 static bool button_logic(uint8_t id, const Rect& rect, bool enabled, State& out_state)
 {
-    out_state = State::COLD;
+    out_state = STATE_COLD;
 
-    if (mouse_over(rect) && g_active_stack.empty())
+    if (enabled && mouse_over(rect) && none_active())
     {
-        out_state = State::HOT;
+        out_state = STATE_HOT;
 
         if (mouse_down(MOUSE_LEFT))
         {
-            g_active_stack.push(id);
-            out_state = State::ACTIVE;
+            make_active(id);
         }
     }
 
-    return
-        mouse_up(MOUSE_LEFT) && g_active_stack.top() == id && mouse_over(rect);
+    if (is_active(id))
+    {
+        out_state = STATE_ACTIVE;
+    }
+
+    return mouse_up(MOUSE_LEFT) && is_active(id) && mouse_over(rect);
 }
 
 
