@@ -17,9 +17,11 @@
 
 #define ATLAS_ID 1023
 
+#define CACHE_ID 1022
+
 #define TEXT_ID  4095
 
-#define LINES_ID 4094
+#define RECTS_ID 4094
 
 
 // -----------------------------------------------------------------------------
@@ -262,6 +264,58 @@ static void update_gui()
     state(STATE_WRITE_RGB);
     mesh(RECTS_ID);
 }
+
+
+// -----------------------------------------------------------------------------
+// GLYPH CACHE
+//
+// We take advantage of the monospaced font and let `MiNiMo` render the glyphs
+// into a texture where each glyph rectangle is of the same size. This is a bit
+// wasteful on texture space size, but will enable us to use much simpler
+// rendering logic and also simplifies all the text size and placement related
+// calculations.
+// -----------------------------------------------------------------------------
+
+struct GlyphPosition
+{
+    int8_t x = 0;
+    int8_t y = 0;
+};
+
+struct GlyphCache
+{
+    GlyphPosition ascii[96];
+    int           texture_size = 0;
+    int           write_head   = 0;
+    float         glyph_width  = 0.0f;
+    float         glyph_height = 0.0f;
+
+    void rebuild(float cap_height)
+    {
+        // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
+        begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, cap_height * dpi());
+        glyph_range(0x20, 0x7e);
+        end_atlas();
+
+        text_size(ATLAS_ID, "X", 0, 1.0f, &glyph_width, &glyph_height);
+
+        for (texture_size = 128; ; texture_size *= 2)
+        {
+            // TODO : Rounding and padding.
+            const int cols = (int)(texture_size / glyph_width );
+            const int rows = (int)(texture_size / glyph_height);
+
+            if (cols * rows >= BX_COUNTOF(ascii))
+            {
+                break;
+            }
+        }
+
+        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_TARGET, texture_size, texture_size);
+    }
+};
+
+static GlyphCache g_cache;
 
 
 // -----------------------------------------------------------------------------
