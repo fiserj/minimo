@@ -706,28 +706,19 @@ void line_height(float factor);
 ///
 void text(const char* start, const char* end);
 
-/// Calculates bounding box of a given text.
+/// Calculates bounding box of a given text. Can be called outside of
+/// `begin_text` / `end_text` block.
 ///
+/// @param[in] atlas Font atlas ID.
 /// @param[in] start First byte of the string.
 /// @param[in] end One byte past the end of the string, or `NULL`.
-/// @param[out] width Text bounding box width, in pixels.
-/// @param[out] height Text bounding box height, in pixels.
+/// @param[in] line_height Text mesh line height factor.
+/// @param[out] width Text bounding box width, in pixels. Can be `NULL`.
+/// @param[out] height Text bounding box height, in pixels. Can be `NULL`.
 ///
 /// @attention The returned size has no transformation applied on it.
 ///
-void text_size(const char* start, const char* end, float* width, float* height);
-
-/// Calculates width of a given string. Shortcut for calling `text_size` with
-/// only the `width` out parameter.
-///
-/// @param[in] start First byte of the string.
-/// @param[in] end One byte past the end of the string, or `NULL`.
-///
-/// @returns String width, in pixels.
-///
-/// @attention The returned width has no transformation applied on it.
-///
-float text_width(const char* start, const char* end);
+void text_size(int atlas, const char* start, const char* end, float line_height, float* width, float* height);
 
 
 // -----------------------------------------------------------------------------

@@ -3553,23 +3553,6 @@ public:
         }
     }
 
-    void get_text_size(const char* start, const char* end, TextureCache& inout_texture_cache, float* out_width, float* out_height)
-    {
-        if (out_width ) { *out_width  = 0.0f; }
-        if (out_height) { *out_height = 0.0f; }
-
-        if (!m_atlas->get_text_size(start, end, m_line_height, out_width, out_height) &&
-             m_atlas->is_updatable())
-        {
-            m_atlas->add_glyphs_from_string(start, end);
-            m_atlas->update(inout_texture_cache);
-
-            const bool success = m_atlas->get_text_size(start, end, m_line_height, out_width, out_height);
-            BX_UNUSED (success);
-            ASSERT    (success);
-        }
-    }
-
     inline const MeshRecorder* mesh_recorder() const
     {
         return m_recorder;
@@ -5290,26 +5273,32 @@ void text(const char* start, const char* end)
     t_ctx->text_recorder.add_text(start, end, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
 }
 
-void text_size(const char* start, const char* end, float* width, float* height)
+void text_size(int atlas, const char* start, const char* end, float line_height, float* width, float* height)
 {
     using namespace mnm;
-
-    ASSERT(t_ctx->text_recorder.mesh_recorder());
 
     if (BX_UNLIKELY(!(width || height)))
     {
         return;
     }
 
-    t_ctx->text_recorder.get_text_size(start, end, g_ctx.texture_cache, width, height);
-}
+    if (width ) { *width  = 0.0f; }
+    if (height) { *height = 0.0f; }
 
-float text_width(const char* start, const char* end)
-{
-    float width = 0.0f;
-    text_size(start, end, &width, nullptr);
+    // TODO : Add warning if the ID doesn't correspond to a valid atlas.
+    if (Atlas* ptr = g_ctx.atlas_cache.get(static_cast<uint16_t>(atlas)))
+    {
+        if (!ptr->get_text_size(start, end, line_height, width, height) &&
+             ptr->is_updatable())
+        {
+            ptr->add_glyphs_from_string(start, end);
+            ptr->update(g_ctx.texture_cache);
 
-    return width;
+            const bool success = ptr->get_text_size(start, end, line_height, width, height);
+            BX_UNUSED (success);
+            ASSERT    (success);
+        }
+    }
 }
 
 
