@@ -13,15 +13,21 @@
 // RESOURCE IDS
 // -----------------------------------------------------------------------------
 
-#define FONT_ID  127
+#define FONT_ID      127
 
-#define ATLAS_ID 1023
+#define FBUF_ID      127
 
-#define CACHE_ID 1022
+#define ATLAS_ID     1023
 
-#define TEXT_ID  4095
+#define CACHE_ID     1022
 
-#define RECTS_ID 4094
+#define TEXT_ID      4095
+
+#define RECTS_ID     4094
+
+#define PASS_CACHE   62
+
+#define PASS_DEFAULT 63
 
 
 // -----------------------------------------------------------------------------
@@ -278,17 +284,16 @@ static void update_gui()
 
 struct GlyphPosition
 {
-    int8_t x = 0;
-    int8_t y = 0;
+    uint8_t x = 0;
+    uint8_t y = 0;
 };
 
 struct GlyphCache
 {
-    GlyphPosition ascii[96];
     int           texture_size = 0;
-    int           write_head   = 0;
     float         glyph_width  = 0.0f;
     float         glyph_height = 0.0f;
+    GlyphPosition ascii[95];
 
     void rebuild(float cap_height)
     {
@@ -311,7 +316,46 @@ struct GlyphCache
             }
         }
 
-        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_TARGET, texture_size, texture_size);
+        begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
+        {
+            color(0xffffffff);
+
+            const uint8_t cols = (uint8_t)(texture_size / glyph_width);
+
+            for (char i = 0, j = 32; i < BX_COUNTOF(ascii); i++, j++)
+            {
+                const uint8_t x = i % cols;
+                const uint8_t y = i / cols;
+
+                ascii[i] = { x, y };
+
+                identity();
+                translate(x * glyph_width, y * glyph_height, 0.0f);
+
+                char letter[2] = { j, 0 };
+                text(letter, 0);
+            }
+        }
+        end_text();
+
+        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET, texture_size, texture_size);
+
+        begin_framebuffer(FBUF_ID);
+        texture(CACHE_ID);
+        end_framebuffer();
+
+        pass(PASS_CACHE);
+
+        framebuffer(FBUF_ID);
+        clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
+        viewport(0, 0, texture_size, texture_size);
+
+        identity();
+        ortho(0.0f, texture_size, texture_size, 0.0f, 1.0f, -1.0f);
+        projection();
+
+        identity();
+        mesh(TEXT_ID);
     }
 };
 
@@ -333,20 +377,16 @@ TextEditSettings g_tes;
 
 static void setup()
 {
+    // vsync(1);
+
     title("MiNiMo Editor");
+
+    pass(PASS_DEFAULT);
 
     clear_color(0x303030ff);
     clear_depth(1.0f);
 
     create_font(FONT_ID, g_font_data);
-
-    // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
-    begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, g_tes.font_cap_height * dpi());
-    glyph_range(0x20, 0x7e);
-    end_atlas();
-
-    // NOTE : Just a test content for now.
-    set_content(g_te, load_string("../src/test/static_geometry.c"));
 }
 
 static void update()
@@ -356,21 +396,28 @@ static void update()
         quit();
     }
 
-    // NOTE : Just a test scroll for now.
-    g_te.scroll_offset = (bx::cos((float)elapsed() * 0.5f + bx::kPi) * 0.5f + 0.5f) * 975.0f;
+    if (frame() == 0) // dpi_changed())
+    {
+        g_cache.rebuild(8.0f);
+    }
 
-    begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
-    identity();
-    submit_lines(g_te, g_tes, height());
-    end_text();
+    pass(PASS_DEFAULT);
 
     identity();
     ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
     projection();
 
-    identity();
-    translate(10.0f, 10.0f, 0.0f);
-    mesh(TEXT_ID);
+    if (tab(ID, { 100.0f, 50.0f, 250.0f, 75.0f }, "Untitled"))
+    {
+        printf("ACTION!\n");
+    }
+
+    if (tab(ID, { 275.0f, 50.0f, 425.0f, 75.0f }, "Untitled"))
+    {
+        printf("ACTION!\n");
+    }
+
+    update_gui();
 }
 
 
