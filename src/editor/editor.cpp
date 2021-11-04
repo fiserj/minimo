@@ -304,6 +304,9 @@ struct GlyphCache
 
         text_size(ATLAS_ID, "X", 0, 1.0f, &glyph_width, &glyph_height);
 
+        glyph_width  += 1.0f;
+        glyph_height *= 2.0f;
+
         for (texture_size = 128; ; texture_size *= 2)
         {
             // TODO : Rounding and padding.
@@ -330,7 +333,7 @@ struct GlyphCache
                 ascii[i] = { x, y };
 
                 identity();
-                translate(x * glyph_width, y * glyph_height, 0.0f);
+                translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
 
                 char letter[2] = { j, 0 };
                 text(letter, 0);
