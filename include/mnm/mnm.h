@@ -286,6 +286,10 @@ double toc(void);
 
 /// Mesh flags.
 ///
+/// @todo Add option to disable vertex multiplication by the current model
+///   matrix. This would be useful when the data is already transformed and only
+//    an identity matrix would be used.
+///
 enum
 {
     // Static, triangle-based, position-only (so not all that useful).

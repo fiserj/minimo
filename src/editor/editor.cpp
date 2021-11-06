@@ -3,10 +3,13 @@
 
 #include <vector>        // vector
 
+#include <bx/bx.h>       // BX_COUNTOF, BX_LIKELY
+
+#include <utf8.h>        // utf8codepoint
+
 #include <mnm/mnm.h>
 
-#include "editor_font.h" // g_editor_*
-#include "editor_ui.h"   // Editor
+#include "editor_font.h" // g_font_*
 
 
 // -----------------------------------------------------------------------------
@@ -49,6 +52,107 @@ using Vector = std::vector<T>;
 
 
 // -----------------------------------------------------------------------------
+// GLYPH CACHE
+//
+// We take advantage of the monospaced font and let `MiNiMo` render the glyphs
+// into a texture where each glyph rectangle is of the same size. This is a bit
+// wasteful on texture space size, but will enable us to use much simpler
+// rendering logic and also simplifies all the text size and placement related
+// calculations.
+// -----------------------------------------------------------------------------
+
+struct GlyphPosition
+{
+    uint8_t x = 0;
+    uint8_t y = 0;
+};
+
+// TODO : (1) Add "unknown" glyph character.
+//        (2) Add support for on-demand atlas update.
+struct GlyphCache
+{
+    int           texture_size = 0;
+    float         glyph_width  = 0.0f;
+    float         glyph_height = 0.0f;
+    GlyphPosition ascii[95];
+
+    inline void get_size(float& out_width, float& out_height)
+    {
+        out_width  = (glyph_width  - 1.0f) / dpi();
+        out_height = (glyph_height * 0.5f) / dpi();
+    }
+
+    void rebuild(float cap_height)
+    {
+        // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
+        begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, cap_height * dpi());
+        glyph_range(0x20, 0x7e);
+        end_atlas();
+
+        text_size(ATLAS_ID, "X", 0, 1.0f, &glyph_width, &glyph_height);
+
+        glyph_width  += 1.0f;
+        glyph_height *= 2.0f;
+
+        for (texture_size = 128; ; texture_size *= 2)
+        {
+            // TODO : Rounding and padding.
+            const int cols = (int)(texture_size / glyph_width );
+            const int rows = (int)(texture_size / glyph_height);
+
+            if (cols * rows >= BX_COUNTOF(ascii))
+            {
+                break;
+            }
+        }
+
+        begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
+        {
+            color(0xffffffff);
+
+            const uint8_t cols = (uint8_t)(texture_size / glyph_width);
+
+            for (char i = 0, j = 32; i < BX_COUNTOF(ascii); i++, j++)
+            {
+                const uint8_t x = i % cols;
+                const uint8_t y = i / cols;
+
+                ascii[i] = { x, y };
+
+                identity();
+                translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
+
+                char letter[2] = { j, 0 };
+                text(letter, 0);
+            }
+        }
+        end_text();
+
+        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET, texture_size, texture_size);
+
+        begin_framebuffer(FBUF_ID);
+        texture(CACHE_ID);
+        end_framebuffer();
+
+        pass(PASS_CACHE);
+
+        framebuffer(FBUF_ID);
+        clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
+        viewport(0, 0, texture_size, texture_size);
+
+        identity();
+        ortho(0.0f, texture_size, texture_size, 0.0f, 1.0f, -1.0f);
+        projection();
+
+        identity();
+        mesh(TEXT_ID);
+    }
+};
+
+static GlyphCache g_cache;
+
+
+// -----------------------------------------------------------------------------
 // GUI HELPERS
 // -----------------------------------------------------------------------------
 
@@ -72,6 +176,88 @@ struct ColorRect
     uint32_t color = 0x00000000;
     Rect     rect;
 };
+
+struct TextBuffer
+{
+    Vector<uint32_t> data;
+    size_t           offset = 0;
+    uint32_t         length = 0;
+
+    void submit()
+    {
+        ASSERT(data.size() >= 4);
+
+        begin_mesh(TEST_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR); // VERTEX_TEXCOORD
+
+        identity();
+
+        float width  = 0.0f;
+        float height = 0.0f;
+        g_cache.get_size(width, height);
+
+        for (size_t i = 0; i < data.size();)
+        {
+            const uint32_t length =           data[i++];
+            const uint32_t color  =           data[i++];
+            float          x0     = *(float*)&data[i++];
+            const float    y0     = *(float*)&data[i++];
+            float          x1     = x0 + width;
+            const float    y1     = y0 + height;
+
+            ::color(color);
+
+            for (uint32_t j = 0; j < length; j++, i++)
+            {
+                vertex(x0, y0, 0.0f);
+
+                vertex(x0, y1, 0.0f);
+
+                vertex(x1, y1, 0.0f);
+
+                vertex(x1, y0, 0.0f);
+
+                x0  = x1;
+                x1 += width;
+            }
+        }
+
+        end_mesh();
+
+        identity();
+        state(STATE_BLEND_ALPHA | STATE_WRITE_RGB);
+        mesh(TEST_MESH_ID);
+
+        data.clear();
+        offset = 0;
+        length = 0;
+    }
+
+    void start(uint32_t color, float x, float y)
+    {
+        offset = data.size();
+        length = 0;
+
+        data.resize(data.size() + 4);
+
+        data[offset + 1] = color;
+        data[offset + 2] = *(uint32_t*)&x;
+        data[offset + 3] = *(uint32_t*)&y;
+    }
+
+    inline void add(uint32_t index)
+    {
+        data.push_back(index);
+
+        length++;
+    }
+
+    inline void end()
+    {
+        data[offset] = length;
+    }
+};
+
+static TextBuffer g_text_buffer;
 
 class IdStack
 {
@@ -216,6 +402,24 @@ static inline void vline(uint32_t color, float x, float y0, float y1, float thic
     rect(color, x, y0, thickness, y1 - y0);
 }
 
+// Single-line text.
+static void text(const char* string, uint32_t color, float x, float y)
+{
+    g_text_buffer.start(color, x, y);
+
+    utf8_int32_t codepoint = 0;
+
+    for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+    {
+        if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
+        {
+            g_text_buffer.add(codepoint - 32);
+        }
+    }
+
+    g_text_buffer.end();
+}
+
 static bool tab(uint8_t id, const Rect& rect, const char* text)
 {
     State      state   = STATE_COLD;
@@ -270,108 +474,6 @@ static void update_gui()
     state(STATE_WRITE_RGB);
     mesh(RECTS_ID);
 }
-
-
-// -----------------------------------------------------------------------------
-// GLYPH CACHE
-//
-// We take advantage of the monospaced font and let `MiNiMo` render the glyphs
-// into a texture where each glyph rectangle is of the same size. This is a bit
-// wasteful on texture space size, but will enable us to use much simpler
-// rendering logic and also simplifies all the text size and placement related
-// calculations.
-// -----------------------------------------------------------------------------
-
-struct GlyphPosition
-{
-    uint8_t x = 0;
-    uint8_t y = 0;
-};
-
-struct GlyphCache
-{
-    int           texture_size = 0;
-    float         glyph_width  = 0.0f;
-    float         glyph_height = 0.0f;
-    GlyphPosition ascii[95];
-
-    void rebuild(float cap_height)
-    {
-        // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
-        begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, cap_height * dpi());
-        glyph_range(0x20, 0x7e);
-        end_atlas();
-
-        text_size(ATLAS_ID, "X", 0, 1.0f, &glyph_width, &glyph_height);
-
-        glyph_width  += 1.0f;
-        glyph_height *= 2.0f;
-
-        for (texture_size = 128; ; texture_size *= 2)
-        {
-            // TODO : Rounding and padding.
-            const int cols = (int)(texture_size / glyph_width );
-            const int rows = (int)(texture_size / glyph_height);
-
-            if (cols * rows >= BX_COUNTOF(ascii))
-            {
-                break;
-            }
-        }
-
-        begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
-        {
-            color(0xffffffff);
-
-            const uint8_t cols = (uint8_t)(texture_size / glyph_width);
-
-            for (char i = 0, j = 32; i < BX_COUNTOF(ascii); i++, j++)
-            {
-                const uint8_t x = i % cols;
-                const uint8_t y = i / cols;
-
-                ascii[i] = { x, y };
-
-                identity();
-                translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
-
-                char letter[2] = { j, 0 };
-                text(letter, 0);
-            }
-        }
-        end_text();
-
-        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET, texture_size, texture_size);
-
-        begin_framebuffer(FBUF_ID);
-        texture(CACHE_ID);
-        end_framebuffer();
-
-        pass(PASS_CACHE);
-
-        framebuffer(FBUF_ID);
-        clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
-        viewport(0, 0, texture_size, texture_size);
-
-        identity();
-        ortho(0.0f, texture_size, texture_size, 0.0f, 1.0f, -1.0f);
-        projection();
-
-        identity();
-        mesh(TEXT_ID);
-    }
-};
-
-static GlyphCache g_cache;
-
-
-// -----------------------------------------------------------------------------
-// GLOBAL VARIABLES
-// -----------------------------------------------------------------------------
-
-TextEdit         g_te;
-
-TextEditSettings g_tes;
 
 
 // -----------------------------------------------------------------------------
