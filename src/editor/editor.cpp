@@ -1,15 +1,20 @@
-#include <assert.h>      // assert
-#include <stdint.h>      // uint*_t
+#include <assert.h>               // assert
+#include <stdint.h>               // uint*_t
 
-#include <vector>        // vector
+#include <vector>                 // vector
 
-#include <bx/bx.h>       // BX_COUNTOF, BX_LIKELY
+#include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
-#include <utf8.h>        // utf8codepoint
+#include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY
+
+#include <utf8.h>                 // utf8codepoint
 
 #include <mnm/mnm.h>
 
-#include "editor_font.h" // g_font_*
+#include <shaders/text_fs.h>      // text_fs
+#include <shaders/text_vs.h>      // text_vs
+
+#include "editor_font.h"          // g_font_*
 
 
 // -----------------------------------------------------------------------------
@@ -33,6 +38,8 @@
 #define PASS_DEFAULT 63
 
 #define GUI_TEXT_MESH_ID 4093
+
+#define TEXT_SHADER_ID   127
 
 
 // -----------------------------------------------------------------------------
@@ -247,6 +254,7 @@ struct TextBuffer
         end_mesh();
 
         identity();
+        shader(TEXT_SHADER_ID); // TODO !!! This seems to mess up the draw state. Investigate !!!
         state(STATE_BLEND_ALPHA | STATE_WRITE_RGB);
         texture(CACHE_ID);
         mesh(GUI_TEXT_MESH_ID);
@@ -517,6 +525,13 @@ static void setup()
     clear_depth(1.0f);
 
     create_font(FONT_ID, g_font_data);
+
+    // TODO : Add `MiNiMo` support for backend-specific shader selection.
+#if BX_PLATFORM_OSX
+    create_shader(TEXT_SHADER_ID, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
+#elif BX_PLATFORM_WINDOWS
+    create_shader(TEXT_SHADER_ID, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
+#endif
 }
 
 static void update()
