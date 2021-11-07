@@ -16,10 +16,10 @@ if(BUILD_SHADER_TARGET)
 
     # Verify the shared BGFX shader resources and the compiler binary are at the
     # expected locations.
-    set(BGFX_DIR     "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/bgfx")
+    set(BGFX_DIR     "${CMAKE_CURRENT_LIST_DIR}/../../third_party/bgfx")
     set(SRC_DIR      "${BGFX_DIR}/src")
     set(COMMON_DIR   "${BGFX_DIR}/examples/common")
-    set(SHADERC_FILE "${CMAKE_CURRENT_LIST_DIR}/../../../tools/shaderc/${SHADERC_PLATFORM}/shaderc")
+    set(SHADERC_FILE "${CMAKE_CURRENT_LIST_DIR}/../../tools/shaderc/${SHADERC_PLATFORM}/shaderc")
 
     if(WIN32)
         set(SHADERC_FILE "${SHADERC_FILE}.exe")
