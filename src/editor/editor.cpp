@@ -32,6 +32,8 @@
 
 #define PASS_DEFAULT 63
 
+#define GUI_TEXT_MESH_ID 4093
+
 
 // -----------------------------------------------------------------------------
 // UTILITY MACROS
@@ -79,7 +81,26 @@ struct GlyphCache
     inline void get_size(float& out_width, float& out_height)
     {
         out_width  = (glyph_width  - 1.0f) / dpi();
-        out_height = (glyph_height * 0.5f) / dpi();
+        out_height =  glyph_height         / dpi();
+    }
+
+    void get_texcoords(uint32_t index, float& out_s0, float& out_t0, float& out_s1, float& out_t1)
+    {
+        ASSERT(index < BX_COUNTOF(ascii));
+
+        const GlyphPosition glyph = ascii[index];
+
+        const float x0 = glyph.x * glyph_width;
+        const float y0 = glyph.y * glyph_height;
+        const float x1 = x0      + glyph_width - 1.0f;
+        const float y1 = y0      + glyph_height;
+
+        const float mul = 1.0f / texture_size;
+
+        out_s0 = x0 * mul;
+        out_t0 = y0 * mul;
+        out_s1 = x1 * mul;
+        out_t1 = y1 * mul;
     }
 
     void rebuild(float cap_height)
@@ -183,16 +204,17 @@ struct TextBuffer
     size_t           offset = 0;
     uint32_t         length = 0;
 
+    // TODO : Encode glyph index and position within quad into each vertex's `Z`
+    //        coordinate and resolve the texcoord in the vertex shader.
     void submit()
     {
         ASSERT(data.size() >= 4);
 
-        begin_mesh(TEST_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR); // VERTEX_TEXCOORD
+        begin_mesh(GUI_TEXT_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_TEXCOORD);
 
         identity();
 
-        float width  = 0.0f;
-        float height = 0.0f;
+        float width, height;
         g_cache.get_size(width, height);
 
         for (size_t i = 0; i < data.size();)
@@ -208,13 +230,22 @@ struct TextBuffer
 
             for (uint32_t j = 0; j < length; j++, i++)
             {
-                vertex(x0, y0, 0.0f);
+                const uint32_t idx = data[i];
+                float          s0, t0, s1, t1;
 
-                vertex(x0, y1, 0.0f);
+                g_cache.get_texcoords(idx, s0, t0, s1, t1);
 
-                vertex(x1, y1, 0.0f);
+                texcoord(s0, t0);
+                vertex  (x0, y0, 0.0f);
 
-                vertex(x1, y0, 0.0f);
+                texcoord(s0, t1);
+                vertex  (x0, y1, 0.0f);
+
+                texcoord(s1, t1);
+                vertex  (x1, y1, 0.0f);
+
+                texcoord(s1, t0);
+                vertex  (x1, y0, 0.0f);
 
                 x0  = x1;
                 x1 += width;
@@ -225,7 +256,8 @@ struct TextBuffer
 
         identity();
         state(STATE_BLEND_ALPHA | STATE_WRITE_RGB);
-        mesh(TEST_MESH_ID);
+        texture(CACHE_ID);
+        mesh(GUI_TEXT_MESH_ID);
 
         data.clear();
         offset = 0;
