@@ -69,8 +69,6 @@ set_target_properties(${NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
 
-include(cmake/add_shader_dependency.cmake)
-
 add_shader_dependency(${NAME} "shaders/position.vs"                 )
 add_shader_dependency(${NAME} "shaders/position.fs"                 )
 add_shader_dependency(${NAME} "shaders/position_color.vs"           )

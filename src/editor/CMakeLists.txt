@@ -33,3 +33,5 @@ else()
     target_compile_options(${NAME} PRIVATE -Wall)
 endif()
 
+add_shader_dependency(${NAME} "shaders/text.vs")
+add_shader_dependency(${NAME} "shaders/text.fs")

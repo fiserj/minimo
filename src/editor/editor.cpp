@@ -1,20 +1,27 @@
-#include <assert.h>      // assert
-#include <stdint.h>      // uint*_t
+#include <assert.h>               // assert
+#include <stdint.h>               // uint*_t
 
-#include <vector>        // vector
+#include <vector>                 // vector
 
-#include <bx/bx.h>       // BX_COUNTOF, BX_LIKELY
+#include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
-#include <utf8.h>        // utf8codepoint
+#include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY
+
+#include <utf8.h>                 // utf8codepoint
 
 #include <mnm/mnm.h>
 
-#include "editor_font.h" // g_font_*
+#include <shaders/text_fs.h>      // text_fs
+#include <shaders/text_vs.h>      // text_vs
+
+#include "editor_font.h"          // g_font_*
 
 
 // -----------------------------------------------------------------------------
 // RESOURCE IDS
 // -----------------------------------------------------------------------------
+
+// TODO : Better names.
 
 #define FONT_ID      127
 
@@ -33,6 +40,10 @@
 #define PASS_DEFAULT 63
 
 #define GUI_TEXT_MESH_ID 4093
+
+#define TEXT_SHADER_ID   127
+
+#define UNIFORM_ID       255
 
 
 // -----------------------------------------------------------------------------
@@ -63,44 +74,20 @@ using Vector = std::vector<T>;
 // calculations.
 // -----------------------------------------------------------------------------
 
-struct GlyphPosition
-{
-    uint8_t x = 0;
-    uint8_t y = 0;
-};
-
 // TODO : (1) Add "unknown" glyph character.
-//        (2) Add support for on-demand atlas update.
+//        (2) Add support for non-ASCII characters.
+//        (3) Add support for on-demand atlas update.
 struct GlyphCache
 {
-    int           texture_size = 0;
-    float         glyph_width  = 0.0f;
-    float         glyph_height = 0.0f;
-    GlyphPosition ascii[95];
+    int   texture_size = 0;
+    int   glyph_cols   = 0;
+    float glyph_width  = 0.0f;
+    float glyph_height = 0.0f;
 
     inline void get_size(float& out_width, float& out_height)
     {
         out_width  = (glyph_width  - 1.0f) / dpi();
         out_height =  glyph_height         / dpi();
-    }
-
-    void get_texcoords(uint32_t index, float& out_s0, float& out_t0, float& out_s1, float& out_t1)
-    {
-        ASSERT(index < BX_COUNTOF(ascii));
-
-        const GlyphPosition glyph = ascii[index];
-
-        const float x0 = glyph.x * glyph_width;
-        const float y0 = glyph.y * glyph_height;
-        const float x1 = x0      + glyph_width - 1.0f;
-        const float y1 = y0      + glyph_height;
-
-        const float mul = 1.0f / texture_size;
-
-        out_s0 = x0 * mul;
-        out_t0 = y0 * mul;
-        out_s1 = x1 * mul;
-        out_t1 = y1 * mul;
     }
 
     void rebuild(float cap_height)
@@ -118,10 +105,10 @@ struct GlyphCache
         for (texture_size = 128; ; texture_size *= 2)
         {
             // TODO : Rounding and padding.
-            const int cols = (int)(texture_size / glyph_width );
+            glyph_cols     = (int)(texture_size / glyph_width );
             const int rows = (int)(texture_size / glyph_height);
 
-            if (cols * rows >= BX_COUNTOF(ascii))
+            if (glyph_cols * rows >= 95)
             {
                 break;
             }
@@ -131,19 +118,15 @@ struct GlyphCache
         {
             color(0xffffffff);
 
-            const uint8_t cols = (uint8_t)(texture_size / glyph_width);
-
-            for (char i = 0, j = 32; i < BX_COUNTOF(ascii); i++, j++)
+            for (uint8_t i = 0; i < 95; i++)
             {
-                const uint8_t x = i % cols;
-                const uint8_t y = i / cols;
-
-                ascii[i] = { x, y };
+                const uint8_t x = i % glyph_cols;
+                const uint8_t y = i / glyph_cols;
 
                 identity();
                 translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
 
-                char letter[2] = { j, 0 };
+                char letter[2] = { (char)(i + 32), 0 };
                 text(letter, 0);
             }
         }
@@ -210,7 +193,7 @@ struct TextBuffer
     {
         ASSERT(data.size() >= 4);
 
-        begin_mesh(GUI_TEXT_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | VERTEX_TEXCOORD);
+        begin_mesh(GUI_TEXT_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
 
         identity();
 
@@ -230,22 +213,13 @@ struct TextBuffer
 
             for (uint32_t j = 0; j < length; j++, i++)
             {
-                const uint32_t idx = data[i];
-                float          s0, t0, s1, t1;
+                // TODO ? Pack also color (from a palette of, say, 16 colors) ?
+                const float idx = (float)data[i] * 4.0f;
 
-                g_cache.get_texcoords(idx, s0, t0, s1, t1);
-
-                texcoord(s0, t0);
-                vertex  (x0, y0, 0.0f);
-
-                texcoord(s0, t1);
-                vertex  (x0, y1, 0.0f);
-
-                texcoord(s1, t1);
-                vertex  (x1, y1, 0.0f);
-
-                texcoord(s1, t0);
-                vertex  (x1, y0, 0.0f);
+                vertex(x0, y0, idx + 0.0f);
+                vertex(x0, y1, idx + 1.0f);
+                vertex(x1, y1, idx + 2.0f);
+                vertex(x1, y0, idx + 3.0f);
 
                 x0  = x1;
                 x1 += width;
@@ -254,7 +228,17 @@ struct TextBuffer
 
         end_mesh();
 
+        const float atlas_info[4] =
+        {
+            (float)(1.0f / g_cache.texture_size),
+            (float)g_cache.glyph_cols,
+            g_cache.glyph_width,
+            g_cache.glyph_height,
+        };
+
         identity();
+        shader(TEXT_SHADER_ID);
+        uniform(UNIFORM_ID, atlas_info);
         state(STATE_BLEND_ALPHA | STATE_WRITE_RGB);
         texture(CACHE_ID);
         mesh(GUI_TEXT_MESH_ID);
@@ -443,6 +427,7 @@ static void text(const char* string, uint32_t color, float x, float y)
 
     for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
     {
+        // TODO : The codepoint-to-index should be handled by the glyph cache.
         if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
         {
             g_text_buffer.add(codepoint - 32);
@@ -524,6 +509,15 @@ static void setup()
     clear_depth(1.0f);
 
     create_font(FONT_ID, g_font_data);
+
+    // TODO : Add `MiNiMo` support for backend-specific shader selection.
+#if BX_PLATFORM_OSX
+    create_shader(TEXT_SHADER_ID, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
+#elif BX_PLATFORM_WINDOWS
+    create_shader(TEXT_SHADER_ID, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
+#endif
+
+    create_uniform(UNIFORM_ID, UNIFORM_VEC4, "u_atlas_info");
 }
 
 static void update()
