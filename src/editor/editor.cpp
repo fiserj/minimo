@@ -21,29 +21,30 @@
 // RESOURCE IDS
 // -----------------------------------------------------------------------------
 
-// TODO : Better names.
+// Passes.
+#define DEFAULT_PASS            63
+#define GLYPH_CACHE_PASS        62
 
-#define FONT_ID      127
+// Framebuffers.
+#define GLYPH_CACHE_FRAMEBUFFER 127
 
-#define FBUF_ID      127
+// Textures.
+#define TMP_TEXT_ATLAS          1023
+#define GLYPH_CACHE_TEXTURE     1022
 
-#define ATLAS_ID     1023
+// Meshes.
+#define TMP_TEXT_MESH           4095
+#define GUI_RECT_MESH           4094
+#define GUI_TEXT_MESH           4093
 
-#define CACHE_ID     1022
+// Fonts.
+#define GUI_FONT                127
 
-#define TEXT_ID      4095
+// Shaders programs.
+#define GUI_TEXT_SHADER         127
 
-#define RECTS_ID     4094
-
-#define PASS_CACHE   62
-
-#define PASS_DEFAULT 63
-
-#define GUI_TEXT_MESH_ID 4093
-
-#define TEXT_SHADER_ID   127
-
-#define UNIFORM_ID       255
+// Uniforms.
+#define GUI_TEXT_INFO_UNIFORM   255
 
 
 // -----------------------------------------------------------------------------
@@ -93,11 +94,11 @@ struct GlyphCache
     void rebuild(float cap_height)
     {
         // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
-        begin_atlas(ATLAS_ID, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, FONT_ID, cap_height * dpi());
+        begin_atlas(TMP_TEXT_ATLAS, ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, GUI_FONT, cap_height * dpi());
         glyph_range(0x20, 0x7e);
         end_atlas();
 
-        text_size(ATLAS_ID, "X", 0, 1.0f, &glyph_width, &glyph_height);
+        text_size(TMP_TEXT_ATLAS, "X", 0, 1.0f, &glyph_width, &glyph_height);
 
         glyph_width  += 1.0f;
         glyph_height *= 2.0f;
@@ -114,7 +115,7 @@ struct GlyphCache
             }
         }
 
-        begin_text(TEXT_ID, ATLAS_ID, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
+        begin_text(TMP_TEXT_MESH, TMP_TEXT_ATLAS, TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT);
         {
             color(0xffffffff);
 
@@ -132,15 +133,15 @@ struct GlyphCache
         }
         end_text();
 
-        create_texture(CACHE_ID, TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET, texture_size, texture_size);
+        create_texture(GLYPH_CACHE_TEXTURE, TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET, texture_size, texture_size);
 
-        begin_framebuffer(FBUF_ID);
-        texture(CACHE_ID);
+        begin_framebuffer(GLYPH_CACHE_FRAMEBUFFER);
+        texture(GLYPH_CACHE_TEXTURE);
         end_framebuffer();
 
-        pass(PASS_CACHE);
+        pass(GLYPH_CACHE_PASS);
 
-        framebuffer(FBUF_ID);
+        framebuffer(GLYPH_CACHE_FRAMEBUFFER);
         clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
         viewport(0, 0, texture_size, texture_size);
 
@@ -149,7 +150,7 @@ struct GlyphCache
         projection();
 
         identity();
-        mesh(TEXT_ID);
+        mesh(TMP_TEXT_MESH);
     }
 };
 
@@ -193,7 +194,7 @@ struct TextBuffer
     {
         ASSERT(data.size() >= 4);
 
-        begin_mesh(GUI_TEXT_MESH_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
+        begin_mesh(GUI_TEXT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
 
         identity();
 
@@ -237,11 +238,11 @@ struct TextBuffer
         };
 
         identity();
-        shader(TEXT_SHADER_ID);
-        uniform(UNIFORM_ID, atlas_info);
+        shader(GUI_TEXT_SHADER);
+        uniform(GUI_TEXT_INFO_UNIFORM, atlas_info);
         state(STATE_BLEND_ALPHA | STATE_WRITE_RGB);
-        texture(CACHE_ID);
-        mesh(GUI_TEXT_MESH_ID);
+        texture(GLYPH_CACHE_TEXTURE);
+        mesh(GUI_TEXT_MESH);
 
         data.clear();
         offset = 0;
@@ -472,7 +473,7 @@ static void update_gui()
 
     identity();
 
-    begin_mesh(RECTS_ID, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
+    begin_mesh(GUI_RECT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
     {
         for (const ColorRect& rect : g_color_rect_list)
         {
@@ -489,7 +490,7 @@ static void update_gui()
     g_color_rect_list.clear();
 
     state(STATE_WRITE_RGB);
-    mesh(RECTS_ID);
+    mesh(GUI_RECT_MESH);
 }
 
 
@@ -503,21 +504,21 @@ static void setup()
 
     title("MiNiMo Editor");
 
-    pass(PASS_DEFAULT);
+    pass(DEFAULT_PASS);
 
     clear_color(0x303030ff);
     clear_depth(1.0f);
 
-    create_font(FONT_ID, g_font_data);
+    create_font(GUI_FONT, g_font_data);
 
     // TODO : Add `MiNiMo` support for backend-specific shader selection.
 #if BX_PLATFORM_OSX
-    create_shader(TEXT_SHADER_ID, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
+    create_shader(GUI_TEXT_SHADER, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
 #elif BX_PLATFORM_WINDOWS
-    create_shader(TEXT_SHADER_ID, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
+    create_shader(GUI_TEXT_SHADER, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
 #endif
 
-    create_uniform(UNIFORM_ID, UNIFORM_VEC4, "u_atlas_info");
+    create_uniform(GUI_TEXT_INFO_UNIFORM, UNIFORM_VEC4, "u_atlas_info");
 }
 
 static void update()
@@ -532,7 +533,7 @@ static void update()
         g_cache.rebuild(8.0f);
     }
 
-    pass(PASS_DEFAULT);
+    pass(DEFAULT_PASS);
 
     identity();
     ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
