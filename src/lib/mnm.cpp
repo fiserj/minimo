@@ -2153,20 +2153,20 @@ static void submit_mesh
     switch (mesh.type())
     {
     case MESH_TRANSIENT:
-                                        encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
+                                      encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
         break;
 
     case MESH_STATIC:
-                                        encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+                                      encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                        encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
         break;
 
     case MESH_DYNAMIC:
-                                        encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+                                      encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                        encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
         break;
 
     default:
