@@ -2151,57 +2151,57 @@ static void submit_mesh
     };
 
     switch (mesh.type())
+    {
+    case MESH_TRANSIENT:
+                                        encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
+        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
+        break;
+
+    case MESH_STATIC:
+                                        encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                                        encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+        break;
+
+    case MESH_DYNAMIC:
+                                        encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                                        encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+        break;
+
+    default:
+        ASSERT(false && "Invalid mesh type.");
+        break;
+    }
+
+    if (bgfx::isValid(state.texture) && bgfx::isValid(state.sampler))
+    {
+        encoder.setTexture(0, state.sampler, state.texture);
+    }
+
+    if (mesh.flags & VERTEX_PIXCOORD)
+    {
+        const float data[] =
         {
-        case MESH_TRANSIENT:
-                                          encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
-            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
-            break;
+            static_cast<float>(state.texture_size[0]),
+            static_cast<float>(state.texture_size[1]),
+            static_cast<float>(state.texture_size[0]) ? 1.0f / static_cast<float>(state.texture_size[0]) : 0.0f,
+            static_cast<float>(state.texture_size[1]) ? 1.0f / static_cast<float>(state.texture_size[1]) : 0.0f
+        };
 
-        case MESH_STATIC:
-                                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
-            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                          encoder.setIndexBuffer (   mesh.indices  .static_buffer);
-            break;
+        encoder.setUniform(default_uniforms.texture_size, data);
+    }
 
-        case MESH_DYNAMIC:
-                                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
-            if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                          encoder.setIndexBuffer (   mesh.indices  .static_buffer);
-            break;
+    encoder.setTransform(&transform);
 
-        default:
-            ASSERT(false && "Invalid mesh type.");
-            break;
-        }
+    uint64_t flags = translate_draw_state_flags(state.flags);
 
-        if (bgfx::isValid(state.texture) && bgfx::isValid(state.sampler))
-        {
-            encoder.setTexture(0, state.sampler, state.texture);
-        }
+    flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
 
-        if (mesh.flags & VERTEX_PIXCOORD)
-        {
-            const float data[] =
-            {
-                static_cast<float>(state.texture_size[0]),
-                static_cast<float>(state.texture_size[1]),
-                static_cast<float>(state.texture_size[0]) ? 1.0f / static_cast<float>(state.texture_size[0]) : 0.0f,
-                static_cast<float>(state.texture_size[1]) ? 1.0f / static_cast<float>(state.texture_size[1]) : 0.0f
-            };
+    encoder.setState(flags);
 
-            encoder.setUniform(default_uniforms.texture_size, data);
-        }
-
-        encoder.setTransform(&transform);
-
-        uint64_t flags = translate_draw_state_flags(state.flags);
-
-        flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
-
-        encoder.setState(flags);
-
-        ASSERT(bgfx::isValid(state.program));
-        encoder.submit(state.pass, state.program);
+    ASSERT(bgfx::isValid(state.program));
+    encoder.submit(state.pass, state.program);
 }
 
 
