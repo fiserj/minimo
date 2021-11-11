@@ -192,6 +192,11 @@ struct TextBuffer
     //        coordinate and resolve the texcoord in the vertex shader.
     void submit()
     {
+        if (BX_UNLIKELY(data.empty()))
+        {
+            return;
+        }
+
         ASSERT(data.size() >= 4);
 
         begin_mesh(GUI_TEXT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
@@ -438,7 +443,15 @@ static void text(const char* string, uint32_t color, float x, float y)
     g_text_buffer.end();
 }
 
-static bool tab(uint8_t id, const Rect& rect, const char* text)
+// Single-line text.
+static void text_size(const char* string, float& out_width, float& out_height)
+{
+    g_cache.get_size(out_width, out_height);
+
+    out_width *= (float)utf8size_lazy(string);
+}
+
+static bool tab(uint8_t id, const Rect& rect, const char* label)
 {
     State      state   = STATE_COLD;
     const bool clicked = button_logic(id, rect, true, state);
@@ -452,7 +465,11 @@ static bool tab(uint8_t id, const Rect& rect, const char* text)
 
     ::rect(colors[state], rect);
 
-    // TODO : Issue text.
+    float width;
+    float height;
+    text_size(label, width, height);
+
+    text(label, 0xffffffff, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
 
     return clicked;
 }
@@ -539,17 +556,19 @@ static void update()
     ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
     projection();
 
-    if (tab(ID, { 100.0f, 50.0f, 250.0f, 75.0f }, "Untitled"))
+    if (tab(ID, { 100.0f, 50.0f, 250.0f, 75.0f }, "First"))
     {
-        printf("ACTION!\n");
+        printf("First!\n");
     }
 
-    if (tab(ID, { 275.0f, 50.0f, 425.0f, 75.0f }, "Untitled"))
+    if (tab(ID, { 275.0f, 50.0f, 425.0f, 75.0f }, "Second"))
     {
-        printf("ACTION!\n");
+        printf("Second!\n");
     }
 
     update_gui();
+
+    g_text_buffer.submit();
 }
 
 
