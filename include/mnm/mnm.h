@@ -415,6 +415,13 @@ void mesh(int id);
 ///
 void alias(int flags);
 
+/// Sets element range for the for next submitted mesh call.
+///
+/// @param[in] start First element.
+/// @param[in] count Element count.
+///
+void range(int start, int count);
+
 /// Sets state for next submitted mesh call, after which it gets reset.
 /// `STATE_DEFAULT` by default.
 ///

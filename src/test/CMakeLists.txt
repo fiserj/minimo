@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    font_atlas.c
+    element_range.c
 )
 
 target_include_directories(${NAME} PRIVATE

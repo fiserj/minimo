@@ -575,6 +575,8 @@ struct DrawState
 {
     Mat4                     transform       = HMM_Mat4d(1.0f);
     const InstanceData*      instances       = nullptr;
+    uint32_t                 element_start   = 0;
+    uint32_t                 element_count   = UINT32_MAX;
     bgfx::ViewId             pass            = UINT16_MAX;
     bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
@@ -4976,6 +4978,11 @@ void mesh(int id)
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
+    if (state.element_start != 0 || state.element_count != UINT32_MAX)
+    {
+        // ...
+    }
+
     submit_mesh(
         mesh,
         t_ctx->matrix_stack.top(),
@@ -4991,6 +4998,14 @@ void mesh(int id)
 void alias(int flags)
 {
     mnm::t_ctx->draw_state.vertex_alias = { static_cast<uint16_t>(flags) };
+}
+
+void range(int start, int count)
+{
+    ASSERT(start >= 0);
+
+    mnm::t_ctx->draw_state.element_start =              static_cast<uint32_t>(start) ;
+    mnm::t_ctx->draw_state.element_count = count >= 0 ? static_cast<uint32_t>(count) : UINT32_MAX;
 }
 
 void state(int flags)
