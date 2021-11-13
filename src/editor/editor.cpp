@@ -398,6 +398,28 @@ static bool button_logic(uint8_t id, const Rect& rect, bool enabled, State& out_
     return mouse_up(MOUSE_LEFT) && is_active(id) && mouse_over(rect);
 }
 
+static void drag_logic(uint8_t id, const Rect& rect, float& out_x, float& out_y)
+{
+    static float start_x;
+    static float start_y;
+
+    if (mouse_down(MOUSE_LEFT) && mouse_over(rect) && none_active())
+    {
+        make_active(id);
+
+        start_x = out_x - mouse_x();
+        start_y = out_y - mouse_y();
+    }
+
+    if (mouse_held(MOUSE_LEFT) && is_active(id))
+    {
+        out_x = start_x + mouse_x();
+        out_y = start_y + mouse_y();
+    }
+
+    // TODO (?) : Return a boolean? When true? All the time when mouse held just when clicked and activated?
+}
+
 static Vector<ColorRect> g_color_rect_list;
 
 static inline void rect(uint32_t color, const Rect& rect)
