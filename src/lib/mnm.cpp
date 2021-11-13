@@ -188,9 +188,12 @@ constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTE
 
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
+constexpr uint32_t USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | OPTIMIZE_GEOMETRY | KEEP_CPU_GEOMETRY;
+
+constexpr uint32_t INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
+
 static_assert(
-    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | KEEP_CPU_GEOMETRY) &
-          (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD)),
+    0 == (USER_MESH_FLAGS & INTERNAL_MESH_FLAGS),
     "Internal mesh flags interfere with the user-exposed ones."
 );
 
@@ -575,6 +578,8 @@ struct DrawState
 {
     Mat4                     transform       = HMM_Mat4d(1.0f);
     const InstanceData*      instances       = nullptr;
+    uint32_t                 element_start   = 0;
+    uint32_t                 element_count   = UINT32_MAX;
     bgfx::ViewId             pass            = UINT16_MAX;
     bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
@@ -1867,13 +1872,15 @@ private:
             );
         }
 
+        const bool optimize_geometry = (mesh.flags & OPTIMIZE_GEOMETRY) && ((mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS);
+
         if (mesh.type() == MESH_STATIC)
         {
             update_persistent_index_buffer(
                 mesh.element_count,
                 indexed_vertex_count,
                 remap_table,
-                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                optimize_geometry,
                 static_cast<float*>(vertex_positions),
                 mesh.indices.static_buffer
             );
@@ -1884,7 +1891,7 @@ private:
                 mesh.element_count,
                 indexed_vertex_count,
                 remap_table,
-                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                optimize_geometry,
                 static_cast<float*>(vertex_positions),
                 mesh.indices.dynamic_buffer
             );
@@ -1950,6 +1957,8 @@ private:
             meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
 
             meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
+
+            // meshopt_optimizeVertexFetch(vertices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float));
         }
     }
 
@@ -2153,20 +2162,20 @@ static void submit_mesh
     switch (mesh.type())
     {
     case MESH_TRANSIENT:
-                                      encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
-        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
+                                      encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index], state.element_start, state.element_count);
+        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], state.element_start, state.element_count, state.vertex_alias);
         break;
 
     case MESH_STATIC:
                                       encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
         break;
 
     case MESH_DYNAMIC:
                                       encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
         break;
 
     default:
@@ -4976,6 +4985,20 @@ void mesh(int id)
         state.program = g_ctx.program_cache.builtin(mesh_flags);
     }
 
+    if (state.element_start != 0 || state.element_count != UINT32_MAX)
+    {
+        // TODO : Emit warning if mesh has `OPTIMIZE_GEOMETRY` on.
+
+        if (mesh_flags & PRIMITIVE_QUADS)
+        {
+            ASSERT(state.element_start % 4 == 0);
+            ASSERT(state.element_count % 4 == 0);
+
+            state.element_start = (state.element_start >> 1) * 3;
+            state.element_count = (state.element_count >> 1) * 3;
+        }
+    }
+
     submit_mesh(
         mesh,
         t_ctx->matrix_stack.top(),
@@ -4991,6 +5014,14 @@ void mesh(int id)
 void alias(int flags)
 {
     mnm::t_ctx->draw_state.vertex_alias = { static_cast<uint16_t>(flags) };
+}
+
+void range(int start, int count)
+{
+    ASSERT(start >= 0);
+
+    mnm::t_ctx->draw_state.element_start =              static_cast<uint32_t>(start) ;
+    mnm::t_ctx->draw_state.element_count = count >= 0 ? static_cast<uint32_t>(count) : UINT32_MAX;
 }
 
 void state(int flags)
