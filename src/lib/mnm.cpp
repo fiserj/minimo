@@ -2162,20 +2162,20 @@ static void submit_mesh
     switch (mesh.type())
     {
     case MESH_TRANSIENT:
-                                      encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index]);
-        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], 0, UINT32_MAX, state.vertex_alias);
+                                      encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index], state.element_start, state.element_count);
+        if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], state.element_start, state.element_count, state.vertex_alias);
         break;
 
     case MESH_STATIC:
                                       encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
         break;
 
     case MESH_DYNAMIC:
                                       encoder.setVertexBuffer(0, mesh.positions.static_buffer);
         if (mesh_attribs(mesh.flags)) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
-                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer);
+                                      encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
         break;
 
     default:
@@ -4987,7 +4987,16 @@ void mesh(int id)
 
     if (state.element_start != 0 || state.element_count != UINT32_MAX)
     {
-        // ...
+        // TODO : Emit warning if mesh has `OPTIMIZE_GEOMETRY` on.
+
+        if (mesh_flags & PRIMITIVE_QUADS)
+        {
+            ASSERT(state.element_start % 4 == 0);
+            ASSERT(state.element_count % 4 == 0);
+
+            state.element_start = (state.element_start >> 1) * 3;
+            state.element_count = (state.element_count >> 1) * 3;
+        }
     }
 
     submit_mesh(

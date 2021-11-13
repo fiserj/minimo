@@ -48,7 +48,7 @@ static void draw(void)
     projection();
 
     identity();
-    range(0, 4);
+    range(((int)elapsed() % 3) * 4, 4);
     mesh(SQUARES_ID);
 }
 
