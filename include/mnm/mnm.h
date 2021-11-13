@@ -316,8 +316,13 @@ enum
     // Texcoord uses full float range.
     TEXCOORD_F32             = 0x1000,
 
+    // Optimizes the mesh data for beter rendering performance, potentially
+    // changing the primitive ordering - don't use if you plan to use `range`.
+    // Only useful for static or dynamic meshes, and for triangles or quads.
+    OPTIMIZE_GEOMETRY        = 0x2000,
+
     // Keeps the geometry on CPU (positions only).
-    KEEP_CPU_GEOMETRY        = 0x2000, // TODO : Add support.
+    KEEP_CPU_GEOMETRY        = 0x4000, // TODO : Add support.
 };
 
 /// Mesh draw state flags. Subset of the most comonly used ones from BGFX.

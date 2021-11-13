@@ -188,9 +188,12 @@ constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTE
 
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
+constexpr uint32_t USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | OPTIMIZE_GEOMETRY | KEEP_CPU_GEOMETRY;
+
+constexpr uint32_t INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
+
 static_assert(
-    0 == ((MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 | KEEP_CPU_GEOMETRY) &
-          (INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD)),
+    0 == (USER_MESH_FLAGS & INTERNAL_MESH_FLAGS),
     "Internal mesh flags interfere with the user-exposed ones."
 );
 
@@ -1869,13 +1872,15 @@ private:
             );
         }
 
+        const bool optimize_geometry = (mesh.flags & OPTIMIZE_GEOMETRY) && ((mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS);
+
         if (mesh.type() == MESH_STATIC)
         {
             update_persistent_index_buffer(
                 mesh.element_count,
                 indexed_vertex_count,
                 remap_table,
-                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                optimize_geometry,
                 static_cast<float*>(vertex_positions),
                 mesh.indices.static_buffer
             );
@@ -1886,7 +1891,7 @@ private:
                 mesh.element_count,
                 indexed_vertex_count,
                 remap_table,
-                (mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS,
+                optimize_geometry,
                 static_cast<float*>(vertex_positions),
                 mesh.indices.dynamic_buffer
             );
@@ -1952,6 +1957,8 @@ private:
             meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
 
             meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
+
+            // meshopt_optimizeVertexFetch(vertices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float));
         }
     }
 
