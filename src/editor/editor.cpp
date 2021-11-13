@@ -545,7 +545,7 @@ static void update()
         quit();
     }
 
-    if (frame() == 0) // dpi_changed())
+    if (dpi_changed())
     {
         g_cache.rebuild(8.0f);
     }

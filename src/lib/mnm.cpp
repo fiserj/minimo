@@ -4759,7 +4759,7 @@ float dpi(void)
 
 int dpi_changed(void)
 {
-    return mnm::g_ctx.window.display_scale_x_changed;
+    return mnm::g_ctx.window.display_scale_x_changed || !mnm::g_ctx.frame_number;
 }
 
 int pixel_width(void)
