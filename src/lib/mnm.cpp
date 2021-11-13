@@ -4277,6 +4277,7 @@ struct GlobalContext
     Timer               total_time;
     Timer               frame_time;
 
+    int                 active_cursor     = 0;
     uint32_t            frame_number      = 0;
     uint32_t            bgfx_frame_number = 0;
 
@@ -4784,19 +4785,22 @@ void cursor(int type)
     ASSERT(t_ctx->is_main_thread);
     ASSERT(type >= CURSOR_ARROW && type <= CURSOR_LOCKED);
 
-    switch (type)
+    if (type != g_ctx.active_cursor)
     {
-    case CURSOR_HIDDEN:
-        glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
-        break;
-    case CURSOR_LOCKED:
-        glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        break;
-    default:
-        if (type >= CURSOR_ARROW && type <= CURSOR_LOCKED)
+        switch (type)
         {
-            glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            glfwSetCursor   (g_ctx.window.handle, g_ctx.cursors[type]);
+        case CURSOR_HIDDEN:
+            glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+            break;
+        case CURSOR_LOCKED:
+            glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            break;
+        default:
+            if (type >= CURSOR_ARROW && type <= CURSOR_LOCKED)
+            {
+                glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                glfwSetCursor   (g_ctx.window.handle, g_ctx.cursors[type]);
+            }
         }
     }
 }
