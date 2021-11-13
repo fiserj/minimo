@@ -104,6 +104,37 @@ int pixel_height(void);
 
 
 // -----------------------------------------------------------------------------
+/// @section CURSOR
+
+/// Cursor type enum.
+///
+enum
+{
+    // Standard cursor shapes.
+    CURSOR_ARROW,
+    CURSOR_CROSSHAIR,
+    CURSOR_H_RESIZE,
+    CURSOR_HAND,
+    CURSOR_I_BEAM,
+    CURSOR_V_RESIZE,
+
+    // Cursor not visible, but otherwise behaving normally.
+    CURSOR_HIDDEN,
+
+    // Cursor locked to the current window, providing unlimited movement.
+    CURSOR_LOCKED,
+};
+
+/// Changes the active cursor.
+///
+/// @param[in] type Cursor type.
+///
+/// @warning This function must be called from the main thread only.
+///
+void cursor(int type);
+
+
+// -----------------------------------------------------------------------------
 /// @section INPUT
 
 /// Special keys enum (alphabetical keys can be passed as characters).

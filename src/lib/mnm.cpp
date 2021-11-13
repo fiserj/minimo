@@ -4271,6 +4271,7 @@ struct GlobalContext
     FontDataRegistry    font_data_registry;
     Vector<uint32_t>    codepoint_queue; // TODO : Make thread safe.
 
+    GLFWcursor*         cursors[6] = { nullptr };
     Window              window;
 
     Timer               total_time;
@@ -4376,6 +4377,13 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             return 3;
         }
     }
+
+    g_ctx.cursors[CURSOR_ARROW    ] = glfwCreateStandardCursor(GLFW_HAND_CURSOR     );
+    g_ctx.cursors[CURSOR_CROSSHAIR] = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+    g_ctx.cursors[CURSOR_H_RESIZE ] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR  );
+    g_ctx.cursors[CURSOR_HAND     ] = glfwCreateStandardCursor(GLFW_HAND_CURSOR     );
+    g_ctx.cursors[CURSOR_I_BEAM   ] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR    );
+    g_ctx.cursors[CURSOR_V_RESIZE ] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR  );
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
@@ -4659,6 +4667,13 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     bgfx::shutdown();
 
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_ARROW    ]);
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_CROSSHAIR]);
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_H_RESIZE ]);
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_HAND     ]);
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_I_BEAM   ]);
+    glfwDestroyCursor(g_ctx.cursors[CURSOR_V_RESIZE ]);
+
     glfwDestroyWindow(g_ctx.window.handle);
     glfwTerminate();
 
@@ -4755,6 +4770,35 @@ int pixel_width(void)
 int pixel_height(void)
 {
     return mnm::g_ctx.window.framebuffer_height;
+}
+
+
+// -----------------------------------------------------------------------------
+/// PUBLIC API IMPLEMENTATION - CURSOR
+// -----------------------------------------------------------------------------
+
+void cursor(int type)
+{
+    using namespace mnm;
+
+    ASSERT(t_ctx->is_main_thread);
+    ASSERT(type >= CURSOR_ARROW && type <= CURSOR_LOCKED);
+
+    switch (type)
+    {
+    case CURSOR_HIDDEN:
+        glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        break;
+    case CURSOR_LOCKED:
+        glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        break;
+    default:
+        if (type >= CURSOR_ARROW && type <= CURSOR_LOCKED)
+        {
+            glfwSetInputMode(g_ctx.window.handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            glfwSetCursor   (g_ctx.window.handle, g_ctx.cursors[type]);
+        }
+    }
 }
 
 
