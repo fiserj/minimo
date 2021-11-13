@@ -4379,7 +4379,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         }
     }
 
-    g_ctx.cursors[CURSOR_ARROW    ] = glfwCreateStandardCursor(GLFW_HAND_CURSOR     );
+    g_ctx.cursors[CURSOR_ARROW    ] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR    );
     g_ctx.cursors[CURSOR_CROSSHAIR] = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
     g_ctx.cursors[CURSOR_H_RESIZE ] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR  );
     g_ctx.cursors[CURSOR_HAND     ] = glfwCreateStandardCursor(GLFW_HAND_CURSOR     );
@@ -4787,6 +4787,8 @@ void cursor(int type)
 
     if (type != g_ctx.active_cursor)
     {
+        g_ctx.active_cursor = type;
+
         switch (type)
         {
         case CURSOR_HIDDEN:
