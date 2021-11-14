@@ -178,9 +178,7 @@ struct TextBuffer
 
         ASSERT(data.size() >= 4);
 
-        begin_mesh(GUI_TEXT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
-
-        identity();
+        begin_mesh(GUI_TEXT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
 
         float width, height;
         g_cache.get_size(width, height);
@@ -529,9 +527,7 @@ static void update_gui()
         return;
     }
 
-    identity();
-
-    begin_mesh(GUI_RECT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR);
+    begin_mesh(GUI_RECT_MESH, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
     {
         for (const ColorRect& rect : g_color_rect_list)
         {
@@ -547,6 +543,7 @@ static void update_gui()
 
     g_color_rect_list.clear();
 
+    identity();
     state(STATE_WRITE_RGB);
     mesh(GUI_RECT_MESH);
 }

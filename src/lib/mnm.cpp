@@ -4956,7 +4956,18 @@ void end_mesh(void)
 
 void vertex(float x, float y, float z)
 {
-    mnm::t_ctx->mesh_recorder.vertex((mnm::t_ctx->matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+    using namespace mnm;
+
+    // TODO : We should measure whether branch prediction minimizes the cost of
+    //        having a condition in here.
+    if (!(t_ctx->mesh_recorder.flags() & NO_VERTEX_TRANSFORM))
+    {
+        t_ctx->mesh_recorder.vertex((t_ctx->matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+    }
+    else
+    {
+        t_ctx->mesh_recorder.vertex(HMM_Vec3(x, y, z));
+    }
 }
 
 void color(unsigned int rgba)
