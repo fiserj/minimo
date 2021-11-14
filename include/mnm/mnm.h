@@ -312,8 +312,7 @@ double toc(void);
 /// correspond to BGFX notation.
 ///
 /// Transient meshes do not have index buffers, while index buffer of static and
-/// dynamic meshes is automatically created from the list of submitted vertices,
-/// using the meshoptimizer library to optimize for vertex cache and overdraw.
+/// dynamic meshes is automatically created from the list of submitted vertices.
 
 /// Mesh flags.
 ///
@@ -352,8 +351,11 @@ enum
     // Only useful for static or dynamic meshes, and for triangles or quads.
     OPTIMIZE_GEOMETRY        = 0x2000,
 
+    // Disables transformation of submitted vertices by the current matrix.
+    NO_VERTEX_TRANSFORM      = 0x4000,
+
     // Keeps the geometry on CPU (positions only).
-    KEEP_CPU_GEOMETRY        = 0x4000, // TODO : Add support.
+    KEEP_CPU_GEOMETRY        = 0x8000, // TODO : Add support.
 };
 
 /// Mesh draw state flags. Subset of the most comonly used ones from BGFX.
@@ -409,7 +411,8 @@ void begin_mesh(int id, int flags);
 void end_mesh(void);
 
 /// Emits a vertex with given coordinates and current state (color, etc.). The
-/// vertex position is multiplied by the current model matrix.
+/// vertex position is multiplied by the current model matrix, unless the
+/// `NO_VERTEX_TRANSFORM` flag was provided in the `begin_mesh` call.
 ///
 /// @param[in] x X coordinate of the vertex.
 /// @param[in] y Y coordinate of the vertex.
