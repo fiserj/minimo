@@ -7,7 +7,7 @@
 
 #include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY
 
-#include <utf8.h>                 // utf8codepoint
+#include <utf8.h>                 // utf8codepoint, utf8size_lazy
 
 #include <mnm/mnm.h>
 
@@ -158,29 +158,8 @@ static GlyphCache g_cache;
 
 
 // -----------------------------------------------------------------------------
-// GUI HELPERS
+// TEXT RECORDER
 // -----------------------------------------------------------------------------
-
-enum State
-{
-    STATE_COLD,
-    STATE_HOT,
-    STATE_ACTIVE,
-};
-
-struct Rect
-{
-    float x0 = 0.0f;
-    float y0 = 0.0f;
-    float x1 = 0.0f;
-    float y1 = 0.0f;
-};
-
-struct ColorRect
-{
-    uint32_t color = 0x00000000;
-    Rect     rect;
-};
 
 struct TextBuffer
 {
@@ -280,6 +259,26 @@ struct TextBuffer
 };
 
 static TextBuffer g_text_buffer;
+
+
+// -----------------------------------------------------------------------------
+// GUI LOGIC
+// -----------------------------------------------------------------------------
+
+enum State
+{
+    STATE_COLD,
+    STATE_HOT,
+    STATE_ACTIVE,
+};
+
+struct Rect
+{
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+};
 
 class IdStack
 {
@@ -398,7 +397,7 @@ static bool button_logic(uint8_t id, const Rect& rect, bool enabled, State& out_
     return mouse_up(MOUSE_LEFT) && is_active(id) && mouse_over(rect);
 }
 
-static void drag_logic(uint8_t id, const Rect& rect, State& out_state, float& out_x, float& out_y)
+static bool drag_logic(uint8_t id, const Rect& rect, State& out_state, float& out_x, float& out_y)
 {
     static float start_x;
     static float start_y;
@@ -426,8 +425,19 @@ static void drag_logic(uint8_t id, const Rect& rect, State& out_state, float& ou
         out_y = start_y + mouse_y();
     }
 
-    // TODO (?) : Return a boolean? When true? All the time when mouse held just when clicked and activated?
+    return out_state != STATE_COLD;
 }
+
+
+// -----------------------------------------------------------------------------
+// GUI RENDERING
+// -----------------------------------------------------------------------------
+
+struct ColorRect
+{
+    uint32_t color = 0x00000000;
+    Rect     rect;
+};
 
 static Vector<ColorRect> g_color_rect_list;
 
