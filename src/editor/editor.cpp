@@ -349,6 +349,8 @@ static IdStack g_active_stack;
 
 static IdStack g_current_stack;
 
+static int g_cursor = CURSOR_ARROW;
+
 static bool mouse_over(const Rect& rect)
 {
     const float x = mouse_x();
@@ -495,6 +497,11 @@ static bool tab(uint8_t id, const Rect& rect, const char* label)
     State      state   = STATE_COLD;
     const bool clicked = button_logic(id, rect, true, state);
 
+    if (state != STATE_COLD)
+    {
+        g_cursor = CURSOR_HAND;
+    }
+
     constexpr uint32_t colors[] =
     {
         0xff0000ff,
@@ -516,6 +523,9 @@ static bool tab(uint8_t id, const Rect& rect, const char* label)
 static void update_gui()
 {
     ASSERT(g_current_stack.empty());
+
+    cursor(g_cursor);
+    g_cursor = CURSOR_ARROW;
 
     if (!(mouse_down(MOUSE_LEFT) || mouse_held(MOUSE_LEFT)))
     {
