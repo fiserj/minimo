@@ -520,6 +520,29 @@ static bool tab(uint8_t id, const Rect& rect, const char* label)
     return clicked;
 }
 
+static bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thickness)
+{
+    State      state  = STATE_COLD;
+    float      out_y  = 0.0f;
+    const bool active = drag_logic(id, { inout_x, y0, inout_x + thickness, y1 }, state, inout_x, out_y);
+
+    if (state != STATE_COLD)
+    {
+        g_cursor = CURSOR_H_RESIZE;
+    }
+
+    constexpr uint32_t colors[] =
+    {
+        0xff0000ff,
+        0x00ff00ff,
+        0x0000ffff,
+    };
+
+    vline(colors[state], inout_x, y0, y1, thickness);
+
+    return active;
+}
+
 static void update_gui()
 {
     ASSERT(g_current_stack.empty());
@@ -613,6 +636,9 @@ static void update()
     {
         printf("Second!\n");
     }
+
+    static float split_x = 100.0f;
+    vdivider(ID, split_x, 100.0f, 400.0f, 4.0f);
 
     update_gui();
 
