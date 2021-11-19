@@ -5,7 +5,9 @@
 
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
-#include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY
+#include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY, memCopy, min/max
+#include <bx/math.h>              // ceil, floor, mod
+#include <bx/string.h>            // snprintf, strLen
 
 #include <utf8.h>                 // utf8codepoint, utf8size_lazy
 
@@ -82,8 +84,8 @@ struct GlyphCache
 {
     int   texture_size = 0;
     int   glyph_cols   = 0;
-    float glyph_width  = 0.0f;
-    float glyph_height = 0.0f;
+    float glyph_width  = 0.0f; // In pixels.
+    float glyph_height = 0.0f; // In pixels.
 
     inline void get_size(float& out_width, float& out_height)
     {
@@ -466,6 +468,7 @@ static inline void vline(uint32_t color, float x, float y0, float y1, float thic
 }
 
 // Single-line text.
+// TODO : Unify `text` implementation and add `max_length` parameter.
 static void text(const char* string, uint32_t color, float x, float y)
 {
     g_text_buffer.start(color, x, y);
@@ -473,6 +476,26 @@ static void text(const char* string, uint32_t color, float x, float y)
     utf8_int32_t codepoint = 0;
 
     for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+    {
+        // TODO : The codepoint-to-index should be handled by the glyph cache.
+        if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
+        {
+            g_text_buffer.add(codepoint - 32);
+        }
+    }
+
+    g_text_buffer.end();
+}
+
+// Single-line text.
+// TODO : Unify `text` implementation and add `max_length` parameter.
+static void text(const char* start, const char* end, uint32_t color, float x, float y)
+{
+    g_text_buffer.start(color, x, y);
+
+    utf8_int32_t codepoint = 0;
+
+    for (void* it = utf8codepoint(start, &codepoint); it != end; it = utf8codepoint(it, &codepoint))
     {
         // TODO : The codepoint-to-index should be handled by the glyph cache.
         if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
@@ -543,6 +566,119 @@ static bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thick
     return active;
 }
 
+
+
+// TEXT EDITOR
+// -----------------------------------------------------------------------------
+
+struct ByteRange
+{
+    uint32_t start = 0;
+    uint32_t end   = 0;
+};
+
+struct TextEditor
+{
+    Vector<char>      buffer;
+    Vector<ByteRange> lines;
+    ByteRange         selection;
+    float             scroll_offset = 0.0f;
+    bool              cursor_at_end = false;
+
+    void set_content(const char* string)
+    {
+        buffer.clear();
+        lines .clear();
+
+        lines.reserve(256);
+        lines.push_back({});
+
+        selection     = {};
+        scroll_offset = 0.0f;
+        cursor_at_end = false;
+
+        if (BX_UNLIKELY(!string))
+        {
+            return;
+        }
+
+        utf8_int32_t codepoint = 0;
+        void*        it        = nullptr;
+
+        for (it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+        {
+            if (codepoint == '\n')
+            {
+                const uint32_t offset = static_cast<char*>(it) - string;
+
+                lines.back().end = offset;
+                lines.push_back({ offset });
+            }
+        }
+
+        const uint32_t size = static_cast<char*>(it) - string - 1; // Null terminator not included.
+        ASSERT(size == utf8size_lazy(string));
+
+        if (size)
+        {
+            lines.back().end = size;
+
+            buffer.reserve(size + 1024);
+            buffer.resize (size);
+
+            bx::memCopy(buffer.data(), string, size);
+        }
+    }
+
+    void submit(const Rect& viewport)
+    {
+        rect(0x000000ff, viewport);
+
+        float char_width;
+        float line_height;
+        g_cache.get_size(char_width, line_height);
+
+        const size_t first_line  = static_cast<size_t>(bx::floor(scroll_offset / line_height));
+        const size_t line_count  = static_cast<size_t>(bx::ceil ((viewport.y1 - viewport.y0) / line_height)) + 1;
+        const size_t last_line   = bx::min(first_line + line_count, lines.size());
+
+        char  line_number[8];
+        char  line_format[8];
+        float line_number_width = 0.0f;
+
+        for (size_t i = lines.size(), j = 0; ; i /= 10, j++)
+        {
+            if (i == 0)
+            {
+                (void)bx::snprintf(line_format, sizeof(line_format), "%%%zuzu ", bx::max(j + 1, static_cast<size_t>(3)));
+                (void)bx::snprintf(line_number, sizeof(line_number), line_format, static_cast<size_t>(1));
+
+                line_number_width = char_width * static_cast<float>(bx::strLen(line_number));
+
+                break;
+            }
+        }
+
+        float y = viewport.y0 - bx::mod(scroll_offset, line_height);
+
+        for (size_t i = first_line; i < last_line; i++, y += line_height)
+        {
+            (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
+
+            text(line_number, 0xaaaaaaff, viewport.x0, y);
+            text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, 0xffffffff, viewport.x0 + line_number_width, y);
+        }
+    }
+};
+
+static TextEditor g_editor;
+
+
+// -----------------------------------------------------------------------------
+// GUI UPDATE / RENDERING
+// -----------------------------------------------------------------------------
+
+
 static void update_gui()
 {
     ASSERT(g_current_stack.empty());
@@ -588,7 +724,7 @@ static void update_gui()
 
 static void setup()
 {
-    // vsync(1);
+    vsync(1);
 
     title("MiNiMo Editor");
 
@@ -607,6 +743,8 @@ static void setup()
 #endif
 
     create_uniform(GUI_TEXT_INFO_UNIFORM, UNIFORM_VEC4, "u_atlas_info");
+
+    g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
 }
 
 static void update()
@@ -637,8 +775,11 @@ static void update()
         printf("Second!\n");
     }
 
-    static float split_x = 100.0f;
-    vdivider(ID, split_x, 100.0f, 400.0f, 4.0f);
+    static float split_x = width() * 0.5f;
+
+    g_editor.submit({ split_x, 0.0f, width(), height() });
+
+    vdivider(ID, split_x, 0.0f, height(), 4.0f);
 
     update_gui();
 
