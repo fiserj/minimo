@@ -278,6 +278,16 @@ struct Rect
     float y0 = 0.0f;
     float x1 = 0.0f;
     float y1 = 0.0f;
+
+    inline float width() const
+    {
+        return x1 - x0;
+    }
+
+    inline float height() const
+    {
+        return y1 - y0;
+    }
 };
 
 class IdStack
@@ -489,22 +499,26 @@ static void text(const char* string, uint32_t color, float x, float y)
 
 // Single-line text.
 // TODO : Unify `text` implementation and add `max_length` parameter.
-static void text(const char* start, const char* end, uint32_t color, float x, float y)
+static void text(const char* start, const char* end, uint32_t max_chars, uint32_t color, float x, float y)
 {
-    g_text_buffer.start(color, x, y);
-
-    utf8_int32_t codepoint = 0;
-
-    for (void* it = utf8codepoint(start, &codepoint); it != end; it = utf8codepoint(it, &codepoint))
+    if (start != end)
     {
-        // TODO : The codepoint-to-index should be handled by the glyph cache.
-        if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
-        {
-            g_text_buffer.add(codepoint - 32);
-        }
-    }
+        g_text_buffer.start(color, x, y);
 
-    g_text_buffer.end();
+        utf8_int32_t codepoint = 0;
+        uint32_t     i         = 0;
+
+        for (void* it = utf8codepoint(start, &codepoint); it != end && i < max_chars; it = utf8codepoint(it, &codepoint), i++)
+        {
+            // TODO : The codepoint-to-index should be handled by the glyph cache.
+            if (BX_LIKELY(codepoint >= 32 && codepoint <= 126))
+            {
+                g_text_buffer.add(codepoint - 32);
+            }
+        }
+
+        g_text_buffer.end();
+    }
 }
 
 // Single-line text.
@@ -567,7 +581,7 @@ static bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thick
 }
 
 
-
+// -----------------------------------------------------------------------------
 // TEXT EDITOR
 // -----------------------------------------------------------------------------
 
@@ -639,7 +653,7 @@ struct TextEditor
         g_cache.get_size(char_width, line_height);
 
         const size_t first_line  = static_cast<size_t>(bx::floor(scroll_offset / line_height));
-        const size_t line_count  = static_cast<size_t>(bx::ceil ((viewport.y1 - viewport.y0) / line_height)) + 1;
+        const size_t line_count  = static_cast<size_t>(bx::ceil (viewport.height() / line_height)) + 1;
         const size_t last_line   = bx::min(first_line + line_count, lines.size());
 
         char  line_number[8];
@@ -659,6 +673,8 @@ struct TextEditor
             }
         }
 
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.width() - line_number_width) / char_width)));
+
         float y = viewport.y0 - bx::mod(scroll_offset, line_height);
 
         for (size_t i = first_line; i < last_line; i++, y += line_height)
@@ -666,12 +682,37 @@ struct TextEditor
             (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
             text(line_number, 0xaaaaaaff, viewport.x0, y);
-            text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, 0xffffffff, viewport.x0 + line_number_width, y);
+            text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.x0 + line_number_width, y);
         }
     }
 };
 
 static TextEditor g_editor;
+
+void editor(uint8_t id, const Rect& rect, TextEditor& ed)
+{
+    if (mouse_over(rect) && none_active())
+    {
+        make_active(id);
+    }
+
+    if (!is_active(id))
+    {
+        return;
+    }
+
+    if (scroll_y())
+    {
+        float char_width;
+        float line_height;
+        g_cache.get_size(char_width, line_height);
+
+        constexpr float scroll_mul = 10.0f;
+        const     float max_scroll = line_height * bx::max(0.0f, static_cast<float>(ed.lines.size()) - 1.0f);
+
+        ed.scroll_offset = bx::clamp(ed.scroll_offset - scroll_y() * scroll_mul, 0.0f, max_scroll);
+    }
+}
 
 
 // -----------------------------------------------------------------------------
@@ -776,10 +817,11 @@ static void update()
     }
 
     static float split_x = width() * 0.5f;
-
-    g_editor.submit({ split_x, 0.0f, width(), height() });
-
     vdivider(ID, split_x, 0.0f, height(), 4.0f);
+
+    const Rect viewport = { split_x + 4.0f, 0.0f, width(), height() };
+    editor(ID, viewport, g_editor);
+    g_editor.submit(viewport);
 
     update_gui();
 
