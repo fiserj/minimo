@@ -236,6 +236,18 @@ int mouse_clicked(int button);
 ///
 float mouse_held_time(int button);
 
+/// Returns horizontal scroll offset. Typical mouse wheel does not provide any.
+///
+/// @returns Scroll offset in arbitrary units.
+///
+float scroll_x(void);
+
+/// Returns vertical scroll offset.
+///
+/// @returns Scroll offset in arbitrary units.
+///
+float scroll_y(void);
+
 /// Checks whether a particular key went down in the current frame.
 ///
 /// @returns Non-zero if key went down.

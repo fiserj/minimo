@@ -3869,6 +3869,7 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
     float                  curr  [2]            = { 0.0f };
     float                  prev  [2]            = { 0.0f };
     float                  delta [2]            = { 0.0f };
+    float                  scroll[2]            = { 0.0f };
     int                    clicks[INPUT_COUNT]  = { 0    };
 
     inline int repeated_click_count(int app_input) const
@@ -4538,7 +4539,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         glfwPollEvents();
 
-        bool update_cursor_position = false;
+        bool   update_cursor_position = false;
+        double scroll_accumulator[2]  = { 0.0, 0.0 }; // NOTE : Not sure if we can get multiple scroll events in a single frame.
 
         GLEQevent event;
         while (gleqNextEvent(&event))
@@ -4565,6 +4567,11 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 update_cursor_position = true;
                 break;
 
+            case GLEQ_SCROLLED:
+                scroll_accumulator[0] += event.scroll.x;
+                scroll_accumulator[1] += event.scroll.y;
+                break;
+
             case GLEQ_CODEPOINT_INPUT:
                 g_ctx.codepoint_queue.push_back(event.codepoint);
                 break;
@@ -4580,6 +4587,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             gleqFreeEvent(&event);
         }
+
+        g_ctx.mouse.scroll[0] = static_cast<float>(scroll_accumulator[0]);
+        g_ctx.mouse.scroll[1] = static_cast<float>(scroll_accumulator[1]);
 
         if (g_ctx.reset_back_buffer)
         {
@@ -4857,6 +4867,16 @@ int mouse_clicked(int button)
 float mouse_held_time(int button)
 {
     return mnm::g_ctx.mouse.held_time(button, static_cast<float>(mnm::g_ctx.total_time.elapsed()));
+}
+
+float scroll_x(void)
+{
+    return mnm::g_ctx.mouse.scroll[0];
+}
+
+float scroll_y(void)
+{
+    return mnm::g_ctx.mouse.scroll[1];
 }
 
 int key_down(int key)
