@@ -632,7 +632,6 @@ static bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thick
 static void scrollbar(uint8_t id, const Rect& rect, float& out_handle_pos, float handle_size, float &out_val, float val_min, float val_max)
 {
     State state = STATE_COLD;
-    // float dummy = 0.0f;
 
     (void)scrollbar_logic(id, rect, state, out_handle_pos, handle_size, out_val, val_min, val_max);
 
@@ -765,12 +764,22 @@ void editor(uint8_t id, const Rect& rect, TextEditor& ed)
     float line_height;
     g_cache.get_size(char_width, line_height);
 
-    const float max_scroll = line_height * bx::max(0.0f, static_cast<float>(ed.lines.size()) - 1.0f);
+    float max_scroll = 0.0f;
 
-    static float handle_pos = 0.0f;
-    scrollbar(id, { rect.x1 - 10.0f, rect.y0, rect.x1, rect.y1 }, handle_pos, 50.0f, ed.scroll_offset, 0.0f, max_scroll);
+    if (ed.lines.size() > 1)
+    {
+        max_scroll = line_height * bx::max(0.0f, static_cast<float>(ed.lines.size()) - 1.0f);
 
-    ed.scroll_offset = round_to_pixel(ed.scroll_offset);
+        const size_t line_count  = static_cast<size_t>(bx::ceil (rect.height() / line_height)) + 1;
+
+        static float    handle_pos      = 0.0f;
+        constexpr float min_handle_size = 20.0f;
+        const float     handle_size     = bx::max(rect.height() * rect.height() / (max_scroll + rect.height()), min_handle_size);
+
+        scrollbar(id, { rect.x1 - 10.0f, rect.y0, rect.x1, rect.y1 }, handle_pos, handle_size, ed.scroll_offset, 0.0f, max_scroll);
+
+        ed.scroll_offset = round_to_pixel(ed.scroll_offset);
+    }
 
     if (mouse_over(rect) && none_active() && scroll_y())
     {
