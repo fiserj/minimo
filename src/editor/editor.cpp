@@ -363,6 +363,11 @@ static IdStack g_current_stack;
 
 static int g_cursor = CURSOR_ARROW;
 
+static float round_to_pixel(float value)
+{
+    return bx::round(value * dpi()) / dpi();
+}
+
 static bool mouse_over(const Rect& rect)
 {
     const float x = mouse_x();
@@ -765,6 +770,8 @@ void editor(uint8_t id, const Rect& rect, TextEditor& ed)
     static float handle_pos = 0.0f;
     scrollbar(id, { rect.x1 - 10.0f, rect.y0, rect.x1, rect.y1 }, handle_pos, 50.0f, ed.scroll_offset, 0.0f, max_scroll);
 
+    ed.scroll_offset = round_to_pixel(ed.scroll_offset);
+
     if (mouse_over(rect) && none_active() && scroll_y())
     {
         // NOTE : Not calling `make_active` since that would block the overlayed
@@ -879,6 +886,7 @@ static void update()
 
     static float split_x = width() * 0.5f;
     vdivider(ID, split_x, 0.0f, height(), 4.0f);
+    split_x = round_to_pixel(split_x);
 
     const Rect viewport = { split_x + 4.0f, 0.0f, width(), height() };
     editor(ID, viewport, g_editor);
