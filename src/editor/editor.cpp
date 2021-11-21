@@ -709,7 +709,9 @@ struct TextEditor
 
     void submit(const Rect& viewport)
     {
-        rect(0x000000ff, viewport);
+        constexpr float scrollbar_width = 14.0f;
+
+        // rect(0x000000ff, viewport);
 
         float char_width;
         float line_height;
@@ -736,7 +738,7 @@ struct TextEditor
             }
         }
 
-        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.width() - line_number_width) / char_width)));
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.width() - line_number_width - scrollbar_width) / char_width)));
 
         float y = viewport.y0 - bx::mod(scroll_offset, line_height);
 
@@ -754,25 +756,21 @@ static TextEditor g_editor;
 
 void editor(uint8_t id, const Rect& rect, TextEditor& ed)
 {
-    if (mouse_over(rect) && none_active())
-    {
-        make_active(id);
-    }
+    float char_width;
+    float line_height;
+    g_cache.get_size(char_width, line_height);
 
-    if (!is_active(id))
-    {
-        return;
-    }
+    const float max_scroll = line_height * bx::max(0.0f, static_cast<float>(ed.lines.size()) - 1.0f);
 
-    if (scroll_y())
+    static float handle_pos = 0.0f;
+    scrollbar(id, { rect.x1 - 10.0f, rect.y0, rect.x1, rect.y1 }, handle_pos, 50.0f, ed.scroll_offset, 0.0f, max_scroll);
+
+    if (mouse_over(rect) && none_active() && scroll_y())
     {
-        float char_width;
-        float line_height;
-        g_cache.get_size(char_width, line_height);
+        // NOTE : Not calling `make_active` since that would block the overlayed
+        //        scrollbar from being activated.
 
         constexpr float scroll_mul = 10.0f;
-        const     float max_scroll = line_height * bx::max(0.0f, static_cast<float>(ed.lines.size()) - 1.0f);
-
         ed.scroll_offset = bx::clamp(ed.scroll_offset - scroll_y() * scroll_mul, 0.0f, max_scroll);
     }
 }
