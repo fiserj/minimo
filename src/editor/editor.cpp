@@ -440,6 +440,49 @@ static bool drag_logic(uint8_t id, const Rect& rect, State& out_state, float& ou
     return out_state != STATE_COLD;
 }
 
+static float remap_range(float in, float in_min, float in_max, float out_min, float out_max)
+{
+    const float percent = (in - in_min) / (in_max - in_min);
+
+    return bx::clamp(out_min + percent * (out_max - out_min), out_min, out_max);
+}
+
+static bool scrollbar_logic(uint8_t id, const Rect& rect, State& out_state, float& out_handle_pos, float handle_size, float &out_val, float val_min, float val_max)
+{
+    static float start_y;
+
+    out_state = STATE_COLD;
+
+    if (mouse_over(rect) && none_active())
+    {
+        out_state = STATE_HOT;
+
+        if (mouse_down(MOUSE_LEFT))
+        {
+            make_active(id);
+
+            out_handle_pos = remap_range(out_val, val_min, val_max, rect.y0, rect.y1 - handle_size);
+
+            if (mouse_y() < out_handle_pos || mouse_y() > out_handle_pos + handle_size)
+            {
+                out_handle_pos = mouse_y() - handle_size * 0.5f;
+            }
+
+            start_y = mouse_y() - out_handle_pos;
+        }
+    }
+
+    if (is_active(id))
+    {
+        out_state = STATE_ACTIVE;
+        out_val   = remap_range(mouse_y() - start_y, rect.y0, rect.y1 - handle_size, val_min, val_max);
+    }
+
+    out_handle_pos = remap_range(out_val, val_min, val_max, rect.y0, rect.y1 - handle_size);
+
+    return out_state != STATE_COLD;
+}
+
 
 // -----------------------------------------------------------------------------
 // GUI RENDERING
@@ -579,6 +622,26 @@ static bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thick
 
     return active;
 }
+
+// !! TEST
+static void scrollbar(uint8_t id, const Rect& rect, float& out_handle_pos, float handle_size, float &out_val, float val_min, float val_max)
+{
+    State state = STATE_COLD;
+    // float dummy = 0.0f;
+
+    (void)scrollbar_logic(id, rect, state, out_handle_pos, handle_size, out_val, val_min, val_max);
+
+    constexpr uint32_t colors[] =
+    {
+        0xff0000ff,
+        0x00ff00ff,
+        0x0000ffff,
+    };
+
+    ::rect(0xffffffff, rect);
+    ::rect(colors[state], { rect.x1 - 10.0f, out_handle_pos, rect.x1, out_handle_pos + handle_size });
+}
+// !! TEST
 
 
 // -----------------------------------------------------------------------------
