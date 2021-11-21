@@ -387,11 +387,11 @@ static inline void make_active(uint8_t id)
     g_active_stack = g_current_stack.copy_and_push(id);
 }
 
-static bool button_logic(uint8_t id, const Rect& rect, bool enabled, State& out_state)
+static bool button_logic(uint8_t id, const Rect& rect, State& out_state)
 {
     out_state = STATE_COLD;
 
-    if (enabled && mouse_over(rect) && none_active())
+    if (mouse_over(rect) && none_active())
     {
         out_state = STATE_HOT;
 
@@ -429,7 +429,7 @@ static bool drag_logic(uint8_t id, const Rect& rect, State& out_state, float& ou
         }
     }
 
-    if ((mouse_held(MOUSE_LEFT) || mouse_down(MOUSE_LEFT)) && is_active(id))
+    if (is_active(id))
     {
         out_state = STATE_ACTIVE;
 
@@ -532,7 +532,7 @@ static void text_size(const char* string, float& out_width, float& out_height)
 static bool tab(uint8_t id, const Rect& rect, const char* label)
 {
     State      state   = STATE_COLD;
-    const bool clicked = button_logic(id, rect, true, state);
+    const bool clicked = button_logic(id, rect, state);
 
     if (state != STATE_COLD)
     {
