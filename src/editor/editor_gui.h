@@ -1,676 +1,684 @@
 #pragma once
 
-#include <math.h>        // fminf/fmaxf
-#include <stdbool.h>     // bool
-#include <stdint.h>      // uint*_t
-#include <string.h>      // memset
+namespace gui
+{
 
-#ifndef ASSERT
-#   include <assert.h>   // assert
-#   define ASSERT(cond) assert(cond)
-#endif
+// -----------------------------------------------------------------------------
+// LIMITS
+// -----------------------------------------------------------------------------
 
-#include <utf8.h>        // utf8codepoint, utf8size_lazy
+constexpr uint32_t MAX_RECT_BUFFER_SIZE = 512;
 
-#include <mnm/mnm.h>
+constexpr uint32_t MAX_TEXT_BUFFER_SIZE = 4096;
 
-#include "editor_font.h" // g_font_*
 
-#define MNM_GUI_API static
+// -----------------------------------------------------------------------------
+// DATA TYPES AND STRUCTURES
+// -----------------------------------------------------------------------------
 
-#define MNM_GUI_MAX_RECT_BUFFER_SIZE 512
-
-#define MNM_GUI_MAX_TEXT_BUFFER_SIZE 4096
-
-typedef enum State
+enum State
 {
     STATE_COLD,
     STATE_HOT,
     STATE_ACTIVE,
+};
 
-} State;
-
-typedef struct Rect
+struct Rect
 {
-    float x0;
-    float y0;
-    float x1;
-    float y1;
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
 
-} Rect;
-
-typedef struct ColorRect
-{
-    uint32_t color;
-    Rect     rect;
-
-} ColorRect;
-
-typedef struct ByteRange
-{
-    uint32_t start;
-    uint32_t end;
-
-} ByteRange;
-
-typedef union IdStack
-{
-    struct
+    inline float width() const
     {
-        uint8_t size;
-        uint8_t elements[7];
+        return x1 - x0;
+    }
 
-    }           stack;
+    inline float height() const
+    {
+        return y1 - y0;
+    }
 
-    uint64_t    hash;
+    bool is_hovered() const
+    {
+        const float x = mouse_x();
+        const float y = mouse_y();
 
-} IdStack;
+        return x >= x0 && x < x1 && y >= y0 && y < y1;
+    }
+};
 
-typedef union ClipStack
+struct ColorRect
 {
-    Rect    elements[4];
-    uint8_t size;
+    uint32_t color = 0x00000000;
+    Rect     rect;
+};
 
-} ClipStack;
+struct ByteRange
+{
+    uint32_t start = 0;
+    uint32_t end   = 0;
+};
+
+struct IdStack
+{
+    union
+    {
+        struct
+        {
+            uint8_t  size;
+            uint8_t  stack[7];
+        };
+
+        uint64_t     hash = 0;
+    };
+
+    inline bool operator==(IdStack other) const
+    {
+        return hash == other.hash;
+    }
+
+    inline void clear()
+    {
+        hash = 0;
+    }
+
+    inline bool is_empty() const
+    {
+        return size == 0;
+    }
+
+    inline uint8_t top() const
+    {
+        ASSERT(size > 0);
+
+        return stack[size - 1];
+    }
+
+    inline void push(uint8_t id)
+    {
+        ASSERT(size < 7);
+
+        stack[size++] = id;
+    }
+
+    inline uint8_t pop()
+    {
+        const uint8_t value = top();
+
+        // NOTE : We have to explicitly clear the popped value, so that the hash
+        //        is consistent.
+        stack[size-- - 1] = 0;
+
+        return value;
+    }
+
+    IdStack copy_and_push(uint8_t id) const
+    {
+        IdStack copy = *this;
+        copy.push(id);
+
+        return copy;
+    }
+};
+
+struct Resources
+{
+    int font_atlas              = 0;
+
+    int framebuffer_glyph_cache = 0;
+
+    int mesh_tmp_text           = 0;
+    int mesh_gui_rects          = 0;
+    int mesh_gui_text           = 0;
+
+    int pass_glyph_cache        = 0;
+    int pass_gui                = 0;
+
+    int program_gui_text        = 0;
+
+    int texture_glyph_cache     = 0;
+    int texture_tmp_atlas       = 0;
+
+    int uniform_text_info       = 0;
+};
 
 // TODO : (1) Add "unknown" glyph character.
 //        (2) Add support for non-ASCII characters.
 //        (3) Add support for on-demand atlas update.
-typedef struct GlyphCache
+struct GlyphCache
 {
-    int   texture_size;
-    int   glyph_cols;
-    float glyph_width;  // In pixels.
-    float glyph_height; // In pixels.
+    int   texture_size = 0;
+    int   glyph_cols   = 0;
+    float glyph_width  = 0.0f; // In pixels.
+    float glyph_height = 0.0f; // In pixels.
 
-} GlyphCache;
+    inline float glyph_screen_width() const
+    {
+        return (glyph_width  - 1.0f) / dpi();
+    }
 
-typedef struct TextBuffer
+    inline float glyph_screen_height() const
+    {
+        return glyph_height / dpi();
+    }
+
+    void rebuild(float cap_height, const Resources& res)
+    {
+        ASSERT(cap_height > 0.0f);
+
+        begin_atlas(
+            res.texture_tmp_atlas,
+            ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
+            res.font_atlas,
+            cap_height * dpi()
+        );
+        glyph_range(0x20, 0x7e);
+        end_atlas();
+
+        text_size(res.texture_tmp_atlas, "X", 0, 1.0f, &glyph_width, &glyph_height);
+
+        glyph_width  += 1.0f;
+        glyph_height *= 2.0f;
+
+        for (texture_size = 128; ; texture_size *= 2)
+        {
+            // TODO : Rounding and padding.
+            glyph_cols = (int)(texture_size / glyph_width );
+            const int rows = (int)(texture_size / glyph_height);
+
+            if (glyph_cols * rows >= 95)
+            {
+                break;
+            }
+        }
+
+        begin_text(
+            res.mesh_tmp_text,
+            res.texture_tmp_atlas,
+            TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT
+        );
+        {
+            color(0xffffffff);
+
+            for (int i = 0; i < 95; i++)
+            {
+                const int x = i % glyph_cols;
+                const int y = i / glyph_cols;
+
+                identity();
+                translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
+
+                char letter[2] = { (char)(i + 32), 0 };
+                text(letter, 0);
+            }
+        }
+        end_text();
+
+        create_texture(
+            res.texture_glyph_cache,
+            TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET,
+            texture_size,
+            texture_size
+        );
+
+        begin_framebuffer(res.framebuffer_glyph_cache);
+        texture(res.texture_glyph_cache);
+        end_framebuffer();
+
+        pass(res.pass_glyph_cache);
+
+        framebuffer(res.framebuffer_glyph_cache);
+        clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
+        viewport(0, 0, texture_size, texture_size);
+
+        identity();
+        ortho(0.0f, (float)texture_size, (float)texture_size, 0.0f, 1.0f, -1.0f);
+        projection();
+
+        identity();
+        mesh(res.mesh_tmp_text);
+    }
+};
+
+struct TextBuffer
 {
-    uint32_t data[MNM_GUI_MAX_TEXT_BUFFER_SIZE]; // TODO : Dynamic memory ?
-    uint32_t size;
+    uint32_t data[MAX_TEXT_BUFFER_SIZE] = { 0 }; // TODO : Dynamic memory ?
+    uint32_t size                       =   0  ;
+    uint32_t offset                     =   0  ;
 
-    uint32_t offset;
-    uint32_t length;
+    inline void clear()
+    {
+        size = 0;
+    }
 
-} TextBuffer;
+    void start(uint32_t color, float x, float y)
+    {
+        ASSERT(size + 4 < MAX_TEXT_BUFFER_SIZE);
 
-typedef struct RectBuffer
+        offset = size++;
+
+        data[size++] = color;
+        data[size++] = *(uint32_t*)&x;
+        data[size++] = *(uint32_t*)&y;
+    }
+
+    inline void add(uint32_t index)
+    {
+        ASSERT(size < MAX_TEXT_BUFFER_SIZE);
+
+        data[size++] = index;
+    }
+
+    inline void end()
+    {
+        data[offset] = size - offset - 4;
+    }
+
+    void submit(const GlyphCache& gc, const Resources& res)
+    {
+        if (size == 0)
+        {
+            return;
+        }
+
+        ASSERT(size >= 4);
+
+        begin_mesh(res.mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
+
+        const float width  = gc.glyph_screen_width ();
+        const float height = gc.glyph_screen_height();
+
+        for (uint32_t i = 0; i < size;)
+        {
+            const uint32_t length =           data[i++];
+            const uint32_t color  =           data[i++];
+            float          x0     = *(float*)&data[i++];
+            const float    y0     = *(float*)&data[i++];
+            float          x1     = x0 + width;
+            const float    y1     = y0 + height;
+
+            ::color(color);
+
+            for (uint32_t j = 0; j < length; j++, i++)
+            {
+                // TODO ? Pack also color and clip rectangle index (from a palette of, say, 16 colors) ?
+                const float idx = (float)data[i] * 4.0f;
+
+                vertex(x0, y0, idx + 0.0f);
+                vertex(x0, y1, idx + 1.0f);
+                vertex(x1, y1, idx + 2.0f);
+                vertex(x1, y0, idx + 3.0f);
+
+                x0  = x1;
+                x1 += width;
+            }
+        }
+
+        end_mesh();
+
+        const float atlas_info[4] =
+        {
+            1.0f / gc.texture_size,
+            (float)gc.glyph_cols,
+            gc.glyph_width,
+            gc.glyph_height,
+        };
+
+        identity();
+        state   (STATE_BLEND_ALPHA | STATE_WRITE_RGB);
+        uniform (res.uniform_text_info, atlas_info);
+        texture (res.texture_glyph_cache);
+        shader  (res.program_gui_text);
+        mesh    (res.mesh_gui_text);
+
+        offset = 0;
+    }
+};
+
+struct RectBuffer
 {
-    ColorRect data[MNM_GUI_MAX_RECT_BUFFER_SIZE]; // TODO : Dynamic memory ?
-    uint32_t  size;
+    ColorRect data[MAX_RECT_BUFFER_SIZE]; // TODO : Dynamic memory ?
+    uint32_t  size = 0 ;
 
-} RectBuffer;
+    inline void clear()
+    {
+        size = 0;
+    }
 
-typedef struct Resources
+    inline void add(const ColorRect& rect)
+    {
+        ASSERT(size < MAX_RECT_BUFFER_SIZE);
+
+        data[size++] = rect;
+    }
+
+    void submit(const Resources& res)
+    {
+        if (size == 0)
+        {
+            return;
+        }
+
+        begin_mesh(res.mesh_gui_rects, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
+        {
+            for (const ColorRect* rect = data, *end = data + size; rect < end; rect++)
+            {
+                color (rect->color);
+                vertex(rect->rect.x0, rect->rect.y0, 0.0f);
+                vertex(rect->rect.x0, rect->rect.y1, 0.0f);
+                vertex(rect->rect.x1, rect->rect.y1, 0.0f);
+                vertex(rect->rect.x1, rect->rect.y0, 0.0f);
+            }
+        }
+        end_mesh();
+
+        identity();
+        state(STATE_WRITE_RGB);
+        mesh (res.mesh_gui_rects);
+    }
+};
+
+struct Context
 {
-    int font_atlas;
-
-    int framebuffer_glyph_cache;
-
-    int mesh_tmp_text;
-    int mesh_gui_rects;
-    int mesh_gui_text;
-
-    int pass_glyph_cache;
-    int pass_gui;
-
-    int program_gui_text;
-
-    int texture_glyph_cache;
-    int texture_tmp_atlas;
-
-    int uniform_text_info;
-
-} Resources;
-
-typedef struct Gui
-{
-    TextBuffer  text_buffer;
-    RectBuffer  rect_buffer;
+    Resources   resources;
     IdStack     active_stack;
     IdStack     current_stack;
-    ClipStack   clip_stack;
+    TextBuffer  text_buffer;
+    RectBuffer  rect_buffer;
     GlyphCache  glyph_cache;
-    Resources res;
-    float       font_cap_height;
-    int         cursor;
+    int         cursor          = CURSOR_ARROW;
+    float       drag_start_x    = 0.0f;
+    float       drag_start_y    = 0.0f;
+    float       scroll_start_y  = 0.0f;
+    float       font_cap_height = 8.0f; // In screen coordinates.
 
-} Gui;
-
-MNM_GUI_API inline float rect_width(const Rect* rect)
-{
-    ASSERT(rect);
-
-    return rect->x1 - rect->x0;
-}
-
-MNM_GUI_API inline float rect_height(const Rect* rect)
-{
-    ASSERT(rect);
-
-    return rect->y1 - rect->y0;
-}
-
-MNM_GUI_API bool rect_mouse_over(const Rect* rect)
-{
-    ASSERT(rect);
-
-    const float x = mouse_x();
-    const float y = mouse_y();
-
-    return x >= rect->x0 && x < rect->x1 &&
-           y >= rect->y0 && y < rect->y1 ;
-}
-
-MNM_GUI_API inline uint8_t id_stack_top(IdStack* s)
-{
-    ASSERT(s);
-    ASSERT(s->stack.size);
-
-    return s->stack.elements[s->stack.size - 1];
-}
-
-MNM_GUI_API inline void id_stack_push(IdStack* s, uint8_t id)
-{
-    ASSERT(s);
-    ASSERT(s->stack.size < 7);
-
-    s->stack.elements[s->stack.size++] = id;
-}
-
-MNM_GUI_API inline uint8_t id_stack_pop(IdStack* s)
-{
-    const uint8_t value = id_stack_top(s);
-
-    // NOTE : For hash consistency, we have to explicitly clear the popped slot.
-    s->stack.elements[s->stack.size-- - 1] = 0;
-
-    return value;
-}
-
-MNM_GUI_API inline IdStack id_stack_copy_and_push(const IdStack* s, uint8_t id)
-{
-    ASSERT(s);
-
-    IdStack copy = *s;
-    id_stack_push(&copy, id);
-
-    return copy;
-}
-
-MNM_GUI_API void glyph_screen_size(const GlyphCache* gc, float* out_width, float* out_height)
-{
-    ASSERT(gc);
-
-    if (out_width)
+    void begin_frame()
     {
-        *out_width = (gc->glyph_width - 1.0f) / dpi();
-    }
-
-    if (out_height)
-    {
-        *out_height = gc->glyph_height / dpi();
-    }
-}
-
-MNM_GUI_API void glyph_cache_rebuild(GlyphCache* gc, const Resources* res, float cap_height)
-{
-    ASSERT(gc);
-
-    begin_atlas(
-        res->texture_tmp_atlas,
-        ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
-        res->font_atlas,
-        cap_height * dpi()
-    );
-    glyph_range(0x20, 0x7e);
-    end_atlas();
-
-    text_size(res->texture_tmp_atlas, "X", 0, 1.0f, &gc->glyph_width, &gc->glyph_height);
-
-    gc->glyph_width  += 1.0f;
-    gc->glyph_height *= 2.0f;
-
-    for (gc->texture_size = 128; ; gc->texture_size *= 2)
-    {
-        // TODO : Rounding and padding.
-        gc->glyph_cols = (int)(gc->texture_size / gc->glyph_width );
-        const int rows = (int)(gc->texture_size / gc->glyph_height);
-
-        if (gc->glyph_cols * rows >= 95)
+        if (dpi_changed())
         {
-            break;
+            glyph_cache.rebuild(font_cap_height, resources);
         }
     }
 
-    begin_text(
-        res->mesh_tmp_text,
-        res->texture_tmp_atlas,
-        TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT
-    );
+    void end_frame()
     {
-        color(0xffffffff);
+        ASSERT(current_stack.is_empty());
 
-        for (int i = 0; i < 95; i++)
+        ::cursor(cursor);
+        cursor = CURSOR_ARROW;
+
+        if (!(mouse_down(MOUSE_LEFT) || mouse_held(MOUSE_LEFT)))
         {
-            const int x = i % gc->glyph_cols;
-            const int y = i / gc->glyph_cols;
-
-            identity();
-            translate(x * gc->glyph_width, (y + 0.25f) * gc->glyph_height, 0.0f);
-
-            char letter[2] = { (char)(i + 32), 0 };
-            text(letter, 0);
+            active_stack.clear();
         }
-    }
-    end_text();
 
-    create_texture(
-        res->texture_glyph_cache,
-        TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET,
-        gc->texture_size,
-        gc->texture_size
-    );
+        pass(resources.pass_gui);
 
-    begin_framebuffer(res->framebuffer_glyph_cache);
-    texture(res->texture_glyph_cache);
-    end_framebuffer();
+        identity();
+        ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
+        projection();
 
-    pass(res->pass_glyph_cache);
+        rect_buffer.submit(resources);
+        rect_buffer.clear ();
 
-    framebuffer(res->framebuffer_glyph_cache);
-    clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
-    viewport(0, 0, gc->texture_size, gc->texture_size);
-
-    identity();
-    ortho(0.0f, (float)gc->texture_size, (float)gc->texture_size, 0.0f, 1.0f, -1.0f);
-    projection();
-
-    identity();
-    mesh(res->mesh_tmp_text);
-}
-
-MNM_GUI_API void text_buffer_start(TextBuffer* tb, uint32_t color, float x, float y)
-{
-    ASSERT(tb);
-
-    tb->offset = tb->size++;
-    tb->length = 0;
-
-    tb->data[tb->size++] = color;
-    tb->data[tb->size++] = *(uint32_t*)&x;
-    tb->data[tb->size++] = *(uint32_t*)&y;
-}
-
-MNM_GUI_API inline void text_buffer_add(TextBuffer* tb, uint32_t index)
-{
-    ASSERT(tb);
-    ASSERT(tb->size + tb->length < MNM_GUI_MAX_TEXT_BUFFER_SIZE);
-
-    tb->data[tb->length++] = index;
-}
-
-MNM_GUI_API inline void text_buffer_end(TextBuffer* tb)
-{
-    ASSERT(tb);
-
-    tb->data[tb->offset] = tb->length;
-    tb->size += tb->length;
-}
-
-MNM_GUI_API void text_buffer_submit(TextBuffer* tb, const GlyphCache* gc, const Resources* res)
-{
-    ASSERT(tb);
-    ASSERT(gc);
-    ASSERT(res);
-
-    if (tb->size == 0)
-    {
-        return;
+        text_buffer.submit(glyph_cache, resources);
+        text_buffer.clear ();
     }
 
-    ASSERT(tb->size >= 4);
-
-    begin_mesh(res->mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
-
-    float width, height;
-    glyph_screen_size(gc, &width, &height);
-
-    for (uint32_t i = 0; i < tb->size;)
+    inline bool none_active() const
     {
-        const uint32_t length =           tb->data[i++];
-        const uint32_t color_ =           tb->data[i++];
-        float          x0     = *(float*)&tb->data[i++];
-        const float    y0     = *(float*)&tb->data[i++];
-        float          x1     = x0 + width;
-        const float    y1     = y0 + height;
+        return active_stack.is_empty();
+    }
 
-        color(color_);
+    inline bool is_active(uint8_t id) const
+    {
+        return active_stack == current_stack.copy_and_push(id);
+    }
 
-        for (uint32_t j = 0; j < length; j++, i++)
+    inline void make_active(uint8_t id)
+    {
+        active_stack = current_stack.copy_and_push(id);
+    }
+
+    bool button_logic(uint8_t id, const Rect& rect, State& out_state)
+    {
+        out_state = STATE_COLD;
+
+        if (rect.is_hovered() && none_active())
         {
-            // TODO ? Pack also color and clip rectangle index (from a palette of, say, 16 colors) ?
-            const float idx = (float)tb->data[i] * 4.0f;
+            out_state = STATE_HOT;
 
-            vertex(x0, y0, idx + 0.0f);
-            vertex(x0, y1, idx + 1.0f);
-            vertex(x1, y1, idx + 2.0f);
-            vertex(x1, y0, idx + 3.0f);
-
-            x0  = x1;
-            x1 += width;
+            if (mouse_down(MOUSE_LEFT))
+            {
+                make_active(id);
+            }
         }
-    }
 
-    end_mesh();
-
-    const float atlas_info[4] =
-    {
-        1.0f / gc->texture_size,
-        (float)gc->glyph_cols,
-        gc->glyph_width,
-        gc->glyph_height,
-    };
-
-    identity();
-    state   (STATE_BLEND_ALPHA | STATE_WRITE_RGB);
-    uniform (res->uniform_text_info, atlas_info);
-    texture (res->texture_glyph_cache);
-    shader  (res->program_gui_text);
-    mesh    (res->mesh_gui_text);
-
-    tb->offset =
-    tb->length = 0;
-}
-
-MNM_GUI_API void gui_init(Gui* g, const Resources* res, float font_cap_height)
-{
-    ASSERT(g);
-    ASSERT(res);
-
-    memset(g, 0, sizeof(*g));
-    g->res             = *res;
-    g->font_cap_height = font_cap_height;
-
-    create_font(g->res.font_atlas, g_font_data);
-}
-
-MNM_GUI_API void gui_init_default(Gui* g)
-{
-    Resources res = { 0 };
-
-    // TODO : Change when limits can be queried.
-    res.font_atlas              = 127;
-    res.framebuffer_glyph_cache = 127;
-    res.mesh_tmp_text           = 4093;
-    res.mesh_gui_rects          = 4094;
-    res.mesh_gui_text           = 4095;
-    res.pass_glyph_cache        = 62;
-    res.pass_gui                = 63;
-    res.program_gui_text        = 127;
-    res.texture_glyph_cache     = 1022;
-    res.texture_tmp_atlas       = 1023;
-    res.uniform_text_info       = 255;
-
-    gui_init(g, &res, 8.0f);
-}
-
-MNM_GUI_API void gui_begin_frame(Gui* g)
-{
-    ASSERT(g);
-
-    if (dpi_changed())
-    {
-        glyph_cache_rebuild(&g->glyph_cache, &g->res, g->font_cap_height);
-    }
-
-    g->cursor = CURSOR_ARROW;
-    g->rect_buffer.size = 0;
-}
-
-MNM_GUI_API void gui_end_frame(Gui* g)
-{
-    ASSERT(g);
-    ASSERT(g->current_stack.stack.size == 0);
-
-    cursor(g->cursor);
-
-    if (!(mouse_down(MOUSE_LEFT) || mouse_held(MOUSE_LEFT)))
-    {
-        g->active_stack.hash = 0;
-    }
-
-    if (g->rect_buffer.size == 0)
-    {
-        return;
-    }
-
-    begin_mesh(g->res.mesh_gui_rects, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
-    {
-        for (uint32_t i = 0; i < g->rect_buffer.size; i++)
+        if (is_active(id))
         {
-            const ColorRect* rect = &g->rect_buffer.data[i];
-
-            color(rect->color);
-
-            vertex(rect->rect.x0, rect->rect.y0, 0.0f);
-            vertex(rect->rect.x0, rect->rect.y1, 0.0f);
-            vertex(rect->rect.x1, rect->rect.y1, 0.0f);
-            vertex(rect->rect.x1, rect->rect.y0, 0.0f);
+            out_state = STATE_ACTIVE;
         }
+
+        return mouse_up(MOUSE_LEFT) && is_active(id) && rect.is_hovered();
     }
-    end_mesh();
 
-    identity();
-    state(STATE_WRITE_RGB);
-    mesh(g->res.mesh_gui_rects);
-}
-
-MNM_GUI_API inline void gui_rect(Gui* g, uint32_t color, Rect rect)
-{
-    ASSERT(g);
-
-    g->rect_buffer.data[g->rect_buffer.size++] = (ColorRect) { color, rect };
-}
-
-MNM_GUI_API inline void gui_hline(Gui* g, uint32_t color, float y, float x0, float x1, float thickness)
-{
-    gui_rect(g, color, (Rect) { x0, y, x1, y + thickness });
-}
-
-MNM_GUI_API inline void gui_vline(Gui* g, uint32_t color, float x, float y0, float y1, float thickness)
-{
-    gui_rect(g, color, (Rect) { x, y0, x + thickness, y1 });
-}
-
-MNM_GUI_API void gui_text(Gui* g, const char* string, uint32_t color, float x, float y)
-{
-    ASSERT(g);
-
-    text_buffer_start(&g->text_buffer, color, x, y);
-
-    utf8_int32_t codepoint = 0;
-
-    for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+    bool drag_logic(uint8_t id, const Rect& rect, State& out_state, float& out_x, float& out_y)
     {
-        // TODO : The codepoint-to-index should be handled by the glyph cache.
-        if (codepoint >= 32 && codepoint <= 126)
+        out_state = STATE_COLD;
+
+        if (rect.is_hovered() && none_active())
         {
-            text_buffer_add(&g->text_buffer, codepoint - 32);
+            out_state = STATE_HOT;
+
+            if (mouse_down(MOUSE_LEFT))
+            {
+                make_active(id);
+
+                drag_start_x = out_x - mouse_x();
+                drag_start_y = out_y - mouse_y();
+            }
         }
+
+        if (is_active(id))
+        {
+            out_state = STATE_ACTIVE;
+
+            out_x = drag_start_x + mouse_x();
+            out_y = drag_start_y + mouse_y();
+        }
+
+        return out_state != STATE_COLD;
     }
 
-    text_buffer_end(&g->text_buffer);
-}
-
-MNM_GUI_API void gui_text_ex(Gui* g, const char* start, const char* end, uint32_t max_chars, uint32_t color, float x, float y)
-{
-    ASSERT(g);
-
-    if (start != end)
+    static inline float remap_range(float in, float in_min, float in_max, float out_min, float out_max)
     {
-        text_buffer_start(&g->text_buffer, color, x, y);
+        const float percent = (in - in_min) / (in_max - in_min);
+
+        return bx::clamp(out_min + percent * (out_max - out_min), out_min, out_max);
+    }
+
+    bool scrollbar_logic(uint8_t id, const Rect& rect, State& out_state, float& out_handle_pos,
+        float handle_size, float &out_val, float val_min, float val_max)
+    {
+        out_state = STATE_COLD;
+
+        if (rect.is_hovered() && none_active())
+        {
+            out_state = STATE_HOT;
+
+            if (mouse_down(MOUSE_LEFT))
+            {
+                make_active(id);
+
+                out_handle_pos = remap_range(out_val, val_min, val_max, rect.y0, rect.y1 - handle_size);
+
+                if (mouse_y() < out_handle_pos || mouse_y() > out_handle_pos + handle_size)
+                {
+                    out_handle_pos = mouse_y() - handle_size * 0.5f;
+                }
+
+                scroll_start_y = mouse_y() - out_handle_pos;
+            }
+        }
+
+        if (is_active(id))
+        {
+            out_state = STATE_ACTIVE;
+            out_val   = remap_range(mouse_y() - scroll_start_y, rect.y0, rect.y1 - handle_size, val_min, val_max);
+        }
+
+        out_handle_pos = remap_range(out_val, val_min, val_max, rect.y0, rect.y1 - handle_size);
+
+        return out_state != STATE_COLD;
+    }
+
+    inline void rect(uint32_t color, const Rect& rect)
+    {
+        rect_buffer.add({ color, rect });
+    }
+
+    inline void rect(uint32_t color, float x, float y, float width, float height)
+    {
+        rect_buffer.add({ color, { x, y, x + width, y + height } });
+    }
+
+    inline void hline(uint32_t color, float y, float x0, float x1, float thickness = 1.0f)
+    {
+        // TODO : We could center it around the given `y`, but then we'd need to
+        //        handle DPI here explicitly.
+        rect_buffer.add({ color, { x0, y, x1, y + thickness } });
+    }
+
+    inline void vline(uint32_t color, float x, float y0, float y1, float thickness = 1.0f)
+    {
+        // TODO : We could center it around the given `x`, but then we'd need to
+        //        handle DPI here explicitly.
+        rect_buffer.add({ color, { x, y0, x + thickness, y1 } });
+    }
+
+    // Single-line text.
+    inline void text_size(const char* string, float& out_width, float& out_height)
+    {
+        out_width  = glyph_cache.glyph_screen_width () * static_cast<float>(utf8size_lazy(string));
+        out_height = glyph_cache.glyph_screen_height();
+    }
+
+    // Single-line text.
+    void text(const char* string, uint32_t color, float x, float y)
+    {
+        text_buffer.start(color, x, y);
 
         utf8_int32_t codepoint = 0;
-        uint32_t     i         = 0;
 
-        for (void* it = utf8codepoint(start, &codepoint); it != end && i < max_chars; it = utf8codepoint(it, &codepoint), i++)
+        for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
         {
             // TODO : The codepoint-to-index should be handled by the glyph cache.
             if (codepoint >= 32 && codepoint <= 126)
             {
-                text_buffer_add(&g->text_buffer, codepoint - 32);
+                text_buffer.add(codepoint - 32);
             }
         }
 
-        text_buffer_end(&g->text_buffer);
+        text_buffer.end();
     }
-}
 
-MNM_GUI_API inline bool gui_none_active(const Gui* g)
-{
-    ASSERT(g);
-
-    return g->active_stack.stack.size == 0;
-}
-
-MNM_GUI_API inline bool gui_is_active(const Gui* g, uint8_t id)
-{
-    ASSERT(g);
-
-    return g->active_stack.hash == id_stack_copy_and_push(&g->current_stack, id).hash;
-}
-
-MNM_GUI_API inline void gui_make_active(Gui* g, uint8_t id)
-{
-    ASSERT(g);
-
-    g->active_stack = id_stack_copy_and_push(&g->current_stack, id);
-}
-
-MNM_GUI_API bool button_logic(Gui* g, uint8_t id, const Rect* rect, State* out_state)
-{
-    ASSERT(g);
-    ASSERT(rect);
-    ASSERT(out_state);
-
-    *out_state = STATE_COLD;
-
-    if (rect_mouse_over(rect) && gui_none_active(g))
+    // Single-line text.
+    void text(const char* start, const char* end, uint32_t max_chars, uint32_t color, float x, float y)
     {
-        *out_state = STATE_HOT;
-
-        if (mouse_down(MOUSE_LEFT))
+        if (start != end)
         {
-            gui_make_active(g, id);
-        }
-    }
+            text_buffer.start(color, x, y);
 
-    if (gui_is_active(g, id))
-    {
-        *out_state = STATE_ACTIVE;
-    }
+            utf8_int32_t codepoint = 0;
+            uint32_t     i         = 0;
 
-    return mouse_up(MOUSE_LEFT) && gui_is_active(g, id) && rect_mouse_over(rect);
-}
-
-MNM_GUI_API bool gui_drag_logic(Gui* g, uint8_t id, const Rect* rect, State* out_state, float* out_x, float* out_y)
-{
-    ASSERT(g);
-    ASSERT(rect);
-    ASSERT(out_state);
-    ASSERT(out_x || out_y);
-
-    static float start_x;
-    static float start_y;
-
-    *out_state = STATE_COLD;
-
-    if (gui_mouse_over(rect) && gui_none_active(g))
-    {
-        *out_state = STATE_HOT;
-
-        if (mouse_down(MOUSE_LEFT))
-        {
-            gui_make_active(g, id);
-
-            if (out_x)
+            for (void* it = utf8codepoint(start, &codepoint); it != end && i < max_chars; it = utf8codepoint(it, &codepoint), i++)
             {
-                start_x = *out_x - mouse_x();
+                // TODO : The codepoint-to-index should be handled by the glyph cache.
+                if (codepoint >= 32 && codepoint <= 126)
+                {
+                    text_buffer.add(codepoint - 32);
+                }
             }
 
-            if (out_y)
-            {
-                start_y = *out_y - mouse_y();
-            }
+            text_buffer.end();
         }
     }
-
-    if (gui_is_active(g, id))
+    
+    bool tab(uint8_t id, const Rect& rect, const char* label)
     {
-        *out_state = STATE_ACTIVE;
+        State      state   = STATE_COLD;
+        const bool clicked = button_logic(id, rect, state);
 
-        if (out_x)
+        if (state != STATE_COLD)
         {
-            *out_x = start_x + mouse_x();
+            cursor = CURSOR_HAND;
         }
 
-        if (out_y)
+        // TODO : Centralize colors.
+        constexpr uint32_t colors[] =
         {
-            *out_y = start_y + mouse_y();
-        }
+            0xff0000ff,
+            0x00ff00ff,
+            0x0000ffff,
+        };
+
+        this->rect(colors[state], rect);
+
+        float width;
+        float height;
+        text_size(label, width, height);
+
+        text(label, 0xffffffff, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
+
+        return clicked;
     }
 
-    return *out_state != STATE_COLD;
-}
-
-MNM_GUI_API float remap_range(float in, float in_min, float in_max, float out_min, float out_max)
-{
-    const float percent = (in - in_min) / (in_max - in_min);
-
-    return fminf(fmaxf(out_min + percent * (out_max - out_min), out_min), out_max);
-}
-
-MNM_GUI_API bool gui_scrollbar_logic(Gui* g, uint8_t id, const Rect* rect, State* out_state,
-    float* out_handle_pos, float handle_size, float *out_val, float val_min, float val_max)
-{
-    ASSERT(g);
-    ASSERT(rect);
-    ASSERT(out_state);
-    ASSERT(out_handle_pos);
-    ASSERT(out_val);
-
-    static float start_y;
-
-    *out_state = STATE_COLD;
-
-    if (rect_mouse_over(rect) && gui_none_active(g))
+    bool vdivider(uint8_t id, float& inout_x, float y0, float y1, float thickness)
     {
-        *out_state = STATE_HOT;
+        State      state  = STATE_COLD;
+        float      out_y  = 0.0f;
+        const bool active = drag_logic(id, { inout_x, y0, inout_x + thickness, y1 }, state, inout_x, out_y);
 
-        if (mouse_down(MOUSE_LEFT))
+        if (state != STATE_COLD)
         {
-            make_active(id);
-
-            *out_handle_pos = remap_range(*out_val, val_min, val_max, rect->y0, rect->y1 - handle_size);
-
-            if (mouse_y() < *out_handle_pos || mouse_y() > *out_handle_pos + handle_size)
-            {
-                *out_handle_pos = mouse_y() - handle_size * 0.5f;
-            }
-
-            start_y = mouse_y() - *out_handle_pos;
+            cursor = CURSOR_H_RESIZE;
         }
+
+        // TODO : Centralize colors.
+        constexpr uint32_t colors[] =
+        {
+            0xff0000ff,
+            0x00ff00ff,
+            0x0000ffff,
+        };
+
+        vline(colors[state], inout_x, y0, y1, thickness);
+
+        return active;
     }
 
-    if (gui_is_active(g, id))
+    bool scrollbar(uint8_t id, const Rect& rect, float& out_handle_pos,
+        float handle_size, float &out_val, float val_min, float val_max)
     {
-        *out_state = STATE_ACTIVE;
-        *out_val   = remap_range(mouse_y() - start_y, rect->y0, rect->y1 - handle_size, val_min, val_max);
+        State      state  = STATE_COLD;
+        const bool active = scrollbar_logic(id, rect, state, out_handle_pos, handle_size, out_val, val_min, val_max);
+
+        // TODO : Centralize colors.
+        constexpr uint32_t colors[] =
+        {
+            0xff0000ff,
+            0x00ff00ff,
+            0x0000ffff,
+        };
+
+        this->rect(0xffffffff, rect);
+        this->rect(colors[state], { rect.x0, out_handle_pos, rect.x1, out_handle_pos + handle_size });
+
+        return active;
     }
+};
 
-    *out_handle_pos = remap_range(*out_val, val_min, val_max, rect->y0, rect->y1 - handle_size);
-
-    return *out_state != STATE_COLD;
-}
+} // namespace gui

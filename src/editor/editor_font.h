@@ -1,7 +1,6 @@
-// File: 'InputMono-Regular.ttf' (109088 bytes)
-// Exported using binary_to_compressed_c.cpp
-static const unsigned int g_font_size = 109088;
-static const unsigned int g_font_data[109088/4] =
+#pragma once
+
+static const uint32_t g_font_data[] =
 {
     0x00000100, 0x80000f00, 0x70000300, 0x42555347, 0x9849171d, 0x6c9e0100, 0xb20b0000, 0x322f534f, 0x5df9ce5b, 0x78010000, 0x60000000, 0x70616d63, 
     0x8a2a4789, 0x580f0000, 0x7a1e0000, 0x20747663, 0x2f07a401, 0xc42f0000, 0x26000000, 0x6d677066, 0xfada3b92, 0xd42d0000, 0x61010000, 0x70736167, 
@@ -2277,4 +2276,3 @@ static const unsigned int g_font_data[109088/4] =
     0x35033403, 0x37033603, 0x0200fe01, 0xc3010200, 0x0000cc01, 0xfc01fc01, 0x01000a00, 0x01000000, 0x02000800, 0x0b001c00, 0x24030d03, 0x26032503, 
     0x28032703, 0x2a032903, 0x2c032b03, 0x02002d03, 0x03000200, 0x00000300, 0xcc01c301, 0x00000100, 
 };
-

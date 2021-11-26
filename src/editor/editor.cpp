@@ -16,7 +16,11 @@
 #include <shaders/text_fs.h>      // text_fs
 #include <shaders/text_vs.h>      // text_vs
 
+// TODO : Better assert.
+#define ASSERT(cond) assert(cond)
+
 #include "editor_font.h"          // g_font_*
+#include "editor_gui.h"           // gui::Context
 
 
 // -----------------------------------------------------------------------------
@@ -53,9 +57,6 @@
 // UTILITY MACROS
 // -----------------------------------------------------------------------------
 
-// TODO : Better assert.
-#define ASSERT(cond) assert(cond)
-
 #define ID (__COUNTER__)
 
 
@@ -67,6 +68,7 @@ template <typename T>
 using Vector = std::vector<T>;
 
 
+#if 0
 // -----------------------------------------------------------------------------
 // GLYPH CACHE
 //
@@ -717,6 +719,14 @@ struct TextEditor
 
         // rect(0x000000ff, viewport);
 
+        // !! TEST
+        {
+            char buf[32];
+            bx::snprintf(buf, sizeof(buf), "%6.1f", scroll_offset);
+            text(buf, 0xffffffff, 10.0f, 10.0f);
+        }
+        // !! TEST
+
         float char_width;
         float line_height;
         g_cache.get_size(char_width, line_height);
@@ -834,6 +844,9 @@ static void update_gui()
     state(STATE_WRITE_RGB);
     mesh(GUI_RECT_MESH);
 }
+#endif // 0
+
+static gui::Context g_gui;
 
 
 // -----------------------------------------------------------------------------
@@ -842,6 +855,20 @@ static void update_gui()
 
 static void setup()
 {
+    // TODO : Change when limits can be queried.
+    gui::Resources& res = g_gui.resources;
+    res.font_atlas              = 127;
+    res.framebuffer_glyph_cache = 127;
+    res.mesh_tmp_text           = 4093;
+    res.mesh_gui_rects          = 4094;
+    res.mesh_gui_text           = 4095;
+    res.pass_glyph_cache        = 62;
+    res.pass_gui                = 63;
+    res.program_gui_text        = 127;
+    res.texture_glyph_cache     = 1022;
+    res.texture_tmp_atlas       = 1023;
+    res.uniform_text_info       = 255;
+
     vsync(1);
 
     title("MiNiMo Editor");
@@ -851,18 +878,18 @@ static void setup()
     clear_color(0x303030ff);
     clear_depth(1.0f);
 
-    create_font(GUI_FONT, g_font_data);
+    create_font(res.font_atlas, g_font_data);
 
     // TODO : Add `MiNiMo` support for backend-specific shader selection.
 #if BX_PLATFORM_OSX
-    create_shader(GUI_TEXT_SHADER, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
+    create_shader(res.program_gui_text, text_vs_mtl , sizeof(text_vs_mtl ), text_fs_mtl , sizeof(text_fs_mtl ));
 #elif BX_PLATFORM_WINDOWS
-    create_shader(GUI_TEXT_SHADER, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
+    create_shader(res.program_gui_text, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
 #endif
 
-    create_uniform(GUI_TEXT_INFO_UNIFORM, UNIFORM_VEC4, "u_atlas_info");
+    create_uniform(res.uniform_text_info, UNIFORM_VEC4, "u_atlas_info");
 
-    g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
+    // g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
 }
 
 static void update()
@@ -872,17 +899,21 @@ static void update()
         quit();
     }
 
-    if (dpi_changed())
+    g_gui.begin_frame();
+
+    if (g_gui.tab(ID, { 100.0f, 50.0f, 250.0f, 75.0f }, "First"))
     {
-        g_cache.rebuild(8.0f);
+        printf("First!\n");
     }
 
-    pass(DEFAULT_PASS);
+    if (g_gui.tab(ID, { 275.0f, 50.0f, 425.0f, 75.0f }, "Second"))
+    {
+        printf("Second!\n");
+    }
 
-    identity();
-    ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
-    projection();
+    g_gui.end_frame();
 
+#if 0
     if (tab(ID, { 100.0f, 50.0f, 250.0f, 75.0f }, "First"))
     {
         printf("First!\n");
@@ -897,6 +928,14 @@ static void update()
     vdivider(ID, split_x, 0.0f, height(), 4.0f);
     split_x = round_to_pixel(split_x);
 
+    // !! TEST
+    {
+        char buf[32];
+        bx::snprintf(buf, sizeof(buf), "%6.1f", split_x);
+        text(buf, 0xffffffff, 10.0f, 30.0f);
+    }
+    // !! TEST
+
     const Rect viewport = { split_x + 4.0f, 0.0f, width(), height() };
     editor(ID, viewport, g_editor);
     g_editor.submit(viewport);
@@ -904,6 +943,23 @@ static void update()
     update_gui();
 
     g_text_buffer.submit();
+#endif // 0
+
+    // {
+    //     static unsigned char data[1024 * 1024 * 16] = { 0 };
+    //     static int           saved                  =   0  ;
+
+    //     if (frame() == 0)
+    //     {
+    //         read_texture(GLYPH_CACHE_TEXTURE, data);
+    //     }
+
+    //     if (!saved && readable(GLYPH_CACHE_TEXTURE))
+    //     {
+    //         save_image("texture_readback.png", data, g_cache.texture_size, g_cache.texture_size, 1);
+    //         saved = 1;
+    //     }
+    // }
 }
 
 
