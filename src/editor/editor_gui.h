@@ -924,14 +924,14 @@ struct Editor
         }
 
         // Caret.
-        const PositionRange selection_range = get_position_range(selection);
-        const Position      cursor_position = cursor_at_end ? selection_range.end : selection_range.start;
+        const uint32_t caret_offset = cursor_at_end ? selection.end : selection.start;
 
-        // TODO : We can skip this based on the byte range, no need to compute cursor position to do that.
-        if (cursor_position.line >= first_line && cursor_position.line < last_line)
+        if (visible_range.overlaps({ caret_offset, caret_offset }))
         {
-            const float x = viewport.rect.x0 + line_number_width + char_width * cursor_position.character;
-            const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (cursor_position.line - first_line);
+            const Position caret_position = get_position(caret_offset, first_line);
+
+            const float x = viewport.rect.x0 + line_number_width + char_width * caret_position.character;
+            const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
 
             // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
             ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
