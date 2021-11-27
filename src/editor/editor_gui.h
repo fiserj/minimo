@@ -924,17 +924,20 @@ struct Editor
         }
 
         // Caret.
-        const uint32_t caret_offset = cursor_at_end ? selection.end : selection.start;
-
-        if (visible_range.overlaps({ caret_offset, caret_offset }))
+        if (bx::fract(static_cast<float>(elapsed())) < 0.5f)
         {
-            const Position caret_position = get_position(caret_offset, first_line);
+            const uint32_t caret_offset = cursor_at_end ? selection.end : selection.start;
 
-            const float x = viewport.rect.x0 + line_number_width + char_width * caret_position.character;
-            const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
+            if (visible_range.overlaps({ caret_offset, caret_offset }))
+            {
+                const Position caret_position = get_position(caret_offset, first_line);
 
-            // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
-            ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
+                const float x = viewport.rect.x0 + line_number_width + char_width * caret_position.character;
+                const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
+
+                // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
+                ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
+            }
         }
 
         ctx.pop_id();
