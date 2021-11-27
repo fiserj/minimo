@@ -55,12 +55,6 @@ struct ColorRect
     Rect     rect;
 };
 
-struct ByteRange
-{
-    uint32_t start = 0;
-    uint32_t end   = 0;
-};
-
 struct IdStack
 {
     union
@@ -710,6 +704,24 @@ struct Editor
         OVERLAY,
     };
 
+    struct ByteRange
+    {
+        uint32_t start = 0;
+        uint32_t end   = 0;
+    };
+
+    struct Position
+    {
+        uint32_t line      = 0;
+        uint32_t character = 0;
+    };
+
+    struct PositionRange
+    {
+        Position start;
+        Position end;
+    };
+
     Vector<char>      buffer;
     Vector<ByteRange> lines;
     ByteRange         selection;
@@ -765,6 +777,7 @@ struct Editor
 
     void update(Context& ctx, uint8_t id)
     {
+        constexpr float caret_width       =  2.0f;
         constexpr float divider_thickness =  4.0f;
         constexpr float scrollbar_width   = 10.0f;
         constexpr float scrolling_speed   = 10.0f; // TODO : Is this cross-platform stable ?
@@ -865,7 +878,47 @@ struct Editor
             ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.rect.x0 + line_number_width, y);
         }
 
+        // TODO ? Maybe cache this ?
+        const PositionRange selection_range = get_position_range(selection);
+        const Position      cursor_position = cursor_at_end ? selection_range.end : selection_range.start;
+
+        if (cursor_position.line >= first_line && cursor_position.line < last_line)
+        {
+            const float x = viewport.rect.x0 + line_number_width + char_width * cursor_position.character;
+            const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (cursor_position.line - first_line);
+
+            ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
+        }
+
         ctx.pop_id();
+    }
+
+    Position get_position(uint32_t offset, uint32_t line = 0) const
+    {
+        Position position = {};
+
+        for (; line < lines.size(); line++)
+        {
+            // NOTE : We need both `>=` and `<=` because of possibly empty lines.
+            if (offset >= lines[line].start && offset <= lines[line].end)
+            {
+                position.line      = line;
+                position.character = utf8nlen(buffer.data() + lines[line].start, offset - lines[line].start);
+                break;
+            }
+        }
+
+        return position;
+    }
+
+    inline PositionRange get_position_range(ByteRange range) const
+    {
+        ASSERT(range.start <= range.end);
+
+        const Position start = get_position(range.start);
+        const Position end   = get_position(range.end, start.line);
+
+        return { start, end };
     }
 };
 

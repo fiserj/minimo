@@ -9,7 +9,7 @@
 #include <bx/math.h>              // ceil, floor, mod
 #include <bx/string.h>            // snprintf, strLen
 
-#include <utf8.h>                 // utf8codepoint, utf8size_lazy
+#include <utf8.h>                 // utf8codepoint, utf8nlen, utf8size_lazy
 
 #include <mnm/mnm.h>
 
