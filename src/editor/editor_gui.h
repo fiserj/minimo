@@ -427,6 +427,16 @@ struct Context
         text_buffer.clear ();
     }
 
+    inline void push_id(uint8_t id)
+    {
+        current_stack.push(id);
+    }
+
+    inline void pop_id()
+    {
+        current_stack.pop();
+    }
+
     inline bool none_active() const
     {
         return active_stack.is_empty();
@@ -532,6 +542,11 @@ struct Context
         out_handle_pos = remap_range(out_val, val_min, val_max, rect.y0, rect.y1 - handle_size);
 
         return out_state != STATE_COLD;
+    }
+
+    inline void rect(const ColorRect& rect)
+    {
+        rect_buffer.add(rect);
     }
 
     inline void rect(uint32_t color, const Rect& rect)
@@ -678,6 +693,179 @@ struct Context
         this->rect(colors[state], { rect.x0, out_handle_pos, rect.x1, out_handle_pos + handle_size });
 
         return active;
+    }
+};
+
+static float round_to_pixel(float value)
+{
+    return bx::round(value * dpi()) / dpi();
+}
+
+struct Editor
+{
+    enum DisplayMode
+    {
+        RIGHT,
+        LEFT,
+        OVERLAY,
+    };
+
+    Vector<char>      buffer;
+    Vector<ByteRange> lines;
+    ByteRange         selection;
+    DisplayMode       display_mode  = RIGHT;
+    float             split_x       = 0.0f;
+    float             scroll_offset = 0.0f;
+    bool              cursor_at_end = false;
+
+    void set_content(const char* string)
+    {
+        buffer.clear();
+        lines .clear();
+
+        lines.reserve(256);
+        lines.push_back({});
+
+        selection     = {};
+        scroll_offset = 0.0f;
+        cursor_at_end = false;
+
+        if (!string)
+        {
+            return;
+        }
+
+        utf8_int32_t codepoint = 0;
+        void*        it        = nullptr;
+
+        for (it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+        {
+            if (codepoint == '\n')
+            {
+                const uint32_t offset = static_cast<char*>(it) - string;
+
+                lines.back().end = offset;
+                lines.push_back({ offset });
+            }
+        }
+
+        const uint32_t size = static_cast<char*>(it) - string - 1; // Null terminator not included.
+        ASSERT(size == utf8size_lazy(string));
+
+        if (size)
+        {
+            lines.back().end = size;
+
+            buffer.reserve(size + 1024);
+            buffer.resize (size);
+
+            bx::memCopy(buffer.data(), string, size);
+        }
+    }
+
+    void update(Context& ctx, uint8_t id)
+    {
+        constexpr float divider_thickness =  4.0f;
+        constexpr float scrollbar_width   = 10.0f;
+        constexpr float scrolling_speed   = 10.0f; // TODO : Is this cross-platform stable ?
+        constexpr float min_handle_size   = 20.0f;
+
+        ctx.push_id(id);
+
+        if (split_x == 0.0f)
+        {
+            split_x = width() * 0.5f;
+        }
+
+        if (display_mode != OVERLAY)
+        {
+            ctx.vdivider(ID, split_x, 0.0f, height(), divider_thickness);
+        }
+
+        split_x = round_to_pixel(split_x);
+
+        ColorRect viewport;
+        switch (display_mode)
+        {
+        case RIGHT:
+            viewport.rect  = { split_x + divider_thickness, 0.0f, width(), height() };
+            viewport.color = 0x000000ff;
+            break;
+        case LEFT:
+            viewport.rect  = { 0.0f, 0.0f, split_x, height()};
+            viewport.color = 0x000000ff;
+            break;
+        case OVERLAY:
+            viewport.rect  = { 0.0f, 0.0f, width(), height() };
+            viewport.color = 0x000000aa;
+            break;
+        }
+
+        ctx.rect(viewport);
+
+        const float char_width  = ctx.glyph_cache.glyph_screen_width ();
+        const float line_height = ctx.glyph_cache.glyph_screen_height();
+        float       max_scroll  = 0.0f;
+
+        if (lines.size() > 1)
+        {
+            max_scroll = line_height * bx::max(0.0f, static_cast<float>(lines.size()) - 1.0f);
+
+            static float handle_pos  = 0.0f;
+            const float  handle_size = bx::max(viewport.rect.height() * viewport.rect.height() / (max_scroll + viewport.rect.height()), min_handle_size);
+
+            (void)ctx.scrollbar(
+                ID,
+                { viewport.rect.x1 - scrollbar_width, viewport.rect.y0, viewport.rect.x1, viewport.rect.y1 },
+                handle_pos,
+                handle_size,
+                scroll_offset,
+                0.0f,
+                max_scroll
+            );
+        }
+
+        if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
+        {
+            scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed, 0.0f, max_scroll);
+        }
+
+        scroll_offset = round_to_pixel(scroll_offset);
+
+        const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset / line_height));
+        const size_t line_count = static_cast<size_t>(bx::ceil (viewport.rect.height() / line_height)) + 1;
+        const size_t last_line  = bx::min(first_line + line_count, lines.size());
+
+        char  line_number[8];
+        char  line_format[8];
+        float line_number_width = 0.0f;
+
+        for (size_t i = lines.size(), j = 0; ; i /= 10, j++)
+        {
+            if (i == 0)
+            {
+                (void)bx::snprintf(line_format, sizeof(line_format), "%%%zuzu ", bx::max(j + 1, static_cast<size_t>(3)));
+                (void)bx::snprintf(line_number, sizeof(line_number), line_format, static_cast<size_t>(1));
+
+                line_number_width = char_width * static_cast<float>(bx::strLen(line_number));
+
+                break;
+            }
+        }
+
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.rect.width() - line_number_width - scrollbar_width) / char_width)));
+
+        float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height);
+
+        for (size_t i = first_line; i < last_line; i++, y += line_height)
+        {
+            (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
+
+            ctx.text(line_number, 0xaaaaaaff, viewport.rect.x0, y);
+            ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.rect.x0 + line_number_width, y);
+        }
+
+        ctx.pop_id();
     }
 };
 
