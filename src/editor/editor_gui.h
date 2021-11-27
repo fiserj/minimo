@@ -708,6 +708,24 @@ struct Editor
     {
         uint32_t start = 0;
         uint32_t end   = 0;
+
+        inline bool is_empty() const
+        {
+            return start == end;
+        }
+
+        inline bool overlaps(ByteRange other) const
+        {
+            return
+                (start <= other.start && end   >= other.end) ||
+                (start >= other.start && start <= other.end) ||
+                (end   >= other.start && end   <= other.end) ;
+        }
+
+        inline ByteRange intersect(ByteRange other) const
+        {
+            return { bx::max(start, other.start), bx::min(end, other.end) };
+        }
     };
 
     struct Position
@@ -870,6 +888,7 @@ struct Editor
 
         float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height);
 
+        // Text and line numbers submission.
         for (size_t i = first_line; i < last_line; i++, y += line_height)
         {
             (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
@@ -878,15 +897,43 @@ struct Editor
             ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.rect.x0 + line_number_width, y);
         }
 
-        // TODO ? Maybe cache this ?
+        // Selection.
+        const ByteRange visible_range = { lines[first_line].start, lines[last_line].start };
+
+        if (!selection.is_empty() && selection.overlaps(visible_range))
+        {
+            const ByteRange visible_selection = selection.intersect(visible_range);
+            ASSERT(!visible_selection.is_empty());
+
+            Position position = get_position(visible_selection.start, first_line);
+            float    y        = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (position.line - first_line);
+
+            for (;; y += line_height, position.line++, position.character = 0)
+            {
+                const uint32_t offset = bx::max(selection.start, lines[position.line].start);
+                if (offset >= selection.end)
+                {
+                    break;
+                }
+
+                const float x0 = viewport.rect.x0 + line_number_width + position.character * char_width;
+                const float x1 = x0 + char_width * utf8nlen(buffer.data() + offset, bx::min(selection.end, lines[position.line].end) - offset);
+
+                ctx.rect(0x00ff00ff, { x0, y, x1, y + line_height });
+            }
+        }
+
+        // Caret.
         const PositionRange selection_range = get_position_range(selection);
         const Position      cursor_position = cursor_at_end ? selection_range.end : selection_range.start;
 
+        // TODO : We can skip this based on the byte range, no need to compute cursor position to do that.
         if (cursor_position.line >= first_line && cursor_position.line < last_line)
         {
             const float x = viewport.rect.x0 + line_number_width + char_width * cursor_position.character;
             const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (cursor_position.line - first_line);
 
+            // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
             ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
         }
 
