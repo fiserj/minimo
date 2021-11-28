@@ -826,6 +826,49 @@ struct Editor
                 selection.end   = (left ? selection.start : selection.end);
             }
         }
+
+        if (up || down)
+        {
+            Position position;
+
+            if (selection.is_empty())
+            {
+                position = get_position(selection.start);
+            }
+            else
+            {
+                selection.start = 
+                selection.end   = (up ? selection.start : selection.end);
+
+                position        = get_position(selection.start);
+                cursor_column   = position.character;
+            }
+
+            if (up && position.line)
+            {
+                position.line--;
+            }
+
+            if (down && position.line + 1 < lines.size())
+            {
+                position.line++;
+            }
+
+            uint32_t     column    = 0;
+            uint32_t     offset    = lines[position.line].start;
+            utf8_int32_t codepoint = 0;
+
+            for (const void* it = utf8codepoint(&buffer[offset], &codepoint);
+                codepoint && codepoint != '\n' && column < cursor_column;
+                it = utf8codepoint(it, &codepoint), column++)
+            {
+                // TODO : This could be provided by a tweaked version of `utf8codepoint`, but low impact / priority.
+                offset += utf8codepointsize(codepoint);
+            }
+
+            selection.start = 
+            selection.end   = offset;
+        }
     }
 
     void update(Context& ctx, uint8_t id)
