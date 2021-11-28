@@ -747,6 +747,7 @@ struct Editor
     DisplayMode       display_mode  = RIGHT;
     float             split_x       = 0.0f;
     float             scroll_offset = 0.0f;
+    int               cursor_column = 0;
     bool              cursor_at_end = false;
 
     void set_content(const char* string)
@@ -759,6 +760,7 @@ struct Editor
 
         selection     = {};
         scroll_offset = 0.0f;
+        cursor_column = 0;
         cursor_at_end = false;
 
         if (!string)
@@ -791,6 +793,40 @@ struct Editor
             buffer.resize (size);
 
             bx::memCopy(buffer.data(), string, size);
+        }
+    }
+
+    void handle_input()
+    {
+        const bool up    = key_down(KEY_UP   );
+        const bool down  = key_down(KEY_DOWN );
+        const bool left  = key_down(KEY_LEFT );
+        const bool right = key_down(KEY_RIGHT);
+
+        if (left || right)
+        {
+            if (selection.is_empty())
+            {
+                if (left)
+                {
+                    while (
+                        selection.start &&
+                        (buffer[--selection.start] & 0b11000000) == 0b10000000);
+                }
+
+                if (right && selection.start + 1 < buffer.size())
+                {
+                    selection.start += utf8codepointcalcsize(&buffer[selection.start]);
+                }
+
+                selection.end = selection.start;
+                cursor_column = get_position(selection.start).character;
+            }
+            else
+            {
+                selection.start = 
+                selection.end   = (left ? selection.start : selection.end);
+            }
         }
     }
 
@@ -856,6 +892,9 @@ struct Editor
                 max_scroll
             );
         }
+
+        // TODO : Need some way broadcast the editor has focus / is active.
+        handle_input();
 
         if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
         {
