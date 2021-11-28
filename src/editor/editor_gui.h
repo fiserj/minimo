@@ -809,9 +809,7 @@ struct Editor
             {
                 if (left)
                 {
-                    while (
-                        selection.start &&
-                        (buffer[--selection.start] & 0b11000000) == 0b10000000);
+                    while (selection.start && (buffer[--selection.start] & 0b11000000) == 0b10000000);
                 }
 
                 if (right && selection.start + 1 < buffer.size())
