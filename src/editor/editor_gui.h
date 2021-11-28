@@ -976,7 +976,7 @@ struct Editor
                 const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
 
                 // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
-                ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y - line_height * 0.25f, x + caret_width * 0.5f, y + line_height * 1.25f });
+                ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y, x + caret_width * 0.5f, y + line_height });
             }
         }
 
