@@ -707,7 +707,7 @@ struct Editor
     struct ByteRange
     {
         uint32_t start = 0;
-        uint32_t end   = 0;
+        uint32_t end   = 0; // "One past".
 
         inline bool is_empty() const
         {
@@ -716,6 +716,7 @@ struct Editor
 
         inline bool overlaps(ByteRange other) const
         {
+            // TODO ! Make sure the `<=` are correct !
             return
                 (start <= other.start && end   >= other.end) ||
                 (start >= other.start && start <= other.end) ||
@@ -949,8 +950,7 @@ struct Editor
 
         for (; line < lines.size(); line++)
         {
-            // NOTE : We need both `>=` and `<=` because of possibly empty lines.
-            if (offset >= lines[line].start && offset <= lines[line].end)
+            if (offset >= lines[line].start && offset < lines[line].end)
             {
                 position.line      = line;
                 position.character = utf8nlen(buffer.data() + lines[line].start, offset - lines[line].start);
