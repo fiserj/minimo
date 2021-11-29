@@ -778,7 +778,7 @@ struct Editor
                 const uint32_t offset = static_cast<char*>(it) - string;
 
                 lines.back().end = offset;
-                lines.push_back({ offset });
+                lines.push_back({ offset, offset });
             }
         }
 
