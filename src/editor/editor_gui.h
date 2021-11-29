@@ -855,15 +855,6 @@ struct Editor
                 position.line++;
             }
 
-            scroll_offset = bx::min(
-                    position.line * line_height,
-                    bx::max(
-                        0.0f,
-                        scroll_offset,
-                        (position.line + 2) * line_height - viewport.height()
-                    )
-            );
-
             uint32_t     column    = 0;
             uint32_t     offset    = lines[position.line].start;
             utf8_int32_t codepoint = 0;
@@ -882,6 +873,17 @@ struct Editor
 
         if (up || down || left || right)
         {
+            const uint32_t line = get_position(selection.start).line;
+
+            scroll_offset = bx::min(
+                    line * line_height,
+                    bx::max(
+                        0.0f,
+                        scroll_offset,
+                        (line + 2) * line_height - viewport.height()
+                    )
+            );
+
             blink_base_time = elapsed();
         }
     }
