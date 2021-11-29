@@ -744,11 +744,12 @@ struct Editor
     Vector<char>      buffer;
     Vector<ByteRange> lines;
     ByteRange         selection;
-    DisplayMode       display_mode  = RIGHT;
-    float             split_x       = 0.0f;
-    float             scroll_offset = 0.0f;
-    int               cursor_column = 0;
-    bool              cursor_at_end = false;
+    double            blink_base_time = 0.0f;
+    DisplayMode       display_mode    = RIGHT;
+    float             split_x         = 0.0f;
+    float             scroll_offset   = 0.0f;
+    int               cursor_column   = 0;
+    bool              cursor_at_end   = false;
 
     void set_content(const char* string)
     {
@@ -868,6 +869,11 @@ struct Editor
 
             selection.start = 
             selection.end   = offset;
+        }
+
+        if (up || down || left || right)
+        {
+            blink_base_time = elapsed();
         }
     }
 
@@ -1005,7 +1011,7 @@ struct Editor
         }
 
         // Caret.
-        if (bx::fract(static_cast<float>(elapsed())) < 0.5f)
+        if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)
         {
             const uint32_t caret_offset = cursor_at_end ? selection.end : selection.start;
 
