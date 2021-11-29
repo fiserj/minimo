@@ -797,7 +797,7 @@ struct Editor
         }
     }
 
-    void handle_input()
+    void handle_input(const Rect& viewport, float line_height)
     {
         const bool up    = key_down(KEY_UP   );
         const bool down  = key_down(KEY_DOWN );
@@ -854,6 +854,15 @@ struct Editor
             {
                 position.line++;
             }
+
+            scroll_offset = bx::min(
+                    position.line * line_height,
+                    bx::max(
+                        0.0f,
+                        scroll_offset,
+                        (position.line + 2) * line_height - viewport.height()
+                    )
+            );
 
             uint32_t     column    = 0;
             uint32_t     offset    = lines[position.line].start;
@@ -941,7 +950,7 @@ struct Editor
         }
 
         // TODO : Need some way broadcast the editor has focus / is active.
-        handle_input();
+        handle_input(viewport.rect, line_height);
 
         if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
         {
