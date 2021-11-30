@@ -880,10 +880,28 @@ struct Editor
 
         if (lmb && viewport.is_hovered())
         {
-            const Position position = get_nearest_position(mouse_x(), mouse_y(), viewport, line_number_width, line_height, char_width);
+            // TODO : Subtract also horizontal scroll offset when supported.
+            const float x = mouse_x() - viewport.x0 - line_number_width;
+            const float y = mouse_y() - viewport.y0 + scroll_offset;
+
+            const uint32_t line = bx::min(
+                static_cast<uint32_t>(lines.size() - 1),
+                static_cast<uint32_t>(y / line_height)
+            );
+
+            const int32_t line_length = static_cast<int32_t>(utf8nlen(
+                &buffer[lines[line].start],
+                lines[line].end - lines[line].start
+            ));
+
+            const uint32_t character = static_cast<uint32_t>(bx::clamp(
+                static_cast<int32_t>(x / char_width),
+                0,
+                bx::max(0, line_length - 1)
+            ));
 
             selection.start =
-            selection.end   = get_offset(position);
+            selection.end   = get_offset({ line, character });
         }
     }
 
@@ -1065,31 +1083,6 @@ struct Editor
         const Position end   = get_position(range.end, start.line);
 
         return { start, end };
-    }
-
-    Position get_nearest_position(float x, float y, const Rect& viewport, float line_number_width, float line_height, float char_width) const
-    {
-        // TODO : Subtract also horizontal scroll offset when supported.
-        x = x - viewport.x0 - line_number_width;
-        y = y - viewport.y0 + scroll_offset;
-
-        const uint32_t line = bx::min(
-            static_cast<uint32_t>(lines.size() - 1),
-            static_cast<uint32_t>(y / line_height)
-        );
-
-        const int32_t line_length = static_cast<int32_t>(utf8nlen(
-            &buffer[lines[line].start],
-            lines[line].end - lines[line].start
-        ));
-
-        const uint32_t char_ = static_cast<uint32_t>(bx::clamp(
-            static_cast<int32_t>(x / char_width),
-            0,
-            bx::max(0, line_length - 1)
-        ));
-
-        return { line, char_ };
     }
 
     float get_offset(const Position& position)
