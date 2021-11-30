@@ -779,7 +779,7 @@ struct Editor
                 const uint32_t offset = static_cast<char*>(it) - string;
 
                 lines.back().end = offset;
-                lines.push_back({ offset, offset });
+                lines.push_back({ offset });
             }
         }
 
@@ -797,7 +797,8 @@ struct Editor
         }
     }
 
-    void handle_input(const Rect& viewport, float line_height)
+    // TODO : Probably just inline this, as the parameters keep on adding.
+    void handle_input(const Rect& viewport, float line_number_width, float line_height, float char_width)
     {
         const bool up    = key_down(KEY_UP   );
         const bool down  = key_down(KEY_DOWN );
@@ -855,20 +856,8 @@ struct Editor
                 position.line++;
             }
 
-            uint32_t     column    = 0;
-            uint32_t     offset    = lines[position.line].start;
-            utf8_int32_t codepoint = 0;
-
-            for (const void* it = utf8codepoint(&buffer[offset], &codepoint);
-                codepoint && codepoint != '\n' && column < cursor_column;
-                it = utf8codepoint(it, &codepoint), column++)
-            {
-                // TODO : This could be provided by a tweaked version of `utf8codepoint`, but low impact / priority.
-                offset += utf8codepointsize(codepoint);
-            }
-
             selection.start = 
-            selection.end   = offset;
+            selection.end   = get_offset(position);
         }
 
         if (up || down || left || right)
@@ -885,6 +874,16 @@ struct Editor
             );
 
             blink_base_time = elapsed();
+        }
+
+        const bool lmb = mouse_down(MOUSE_LEFT);
+
+        if (lmb && viewport.is_hovered())
+        {
+            const Position position = get_nearest_position(mouse_x(), mouse_y(), viewport, line_number_width, line_height, char_width);
+
+            selection.start =
+            selection.end   = get_offset(position);
         }
     }
 
@@ -951,20 +950,6 @@ struct Editor
             );
         }
 
-        // TODO : Need some way broadcast the editor has focus / is active.
-        handle_input(viewport.rect, line_height);
-
-        if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
-        {
-            scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed, 0.0f, max_scroll);
-        }
-
-        scroll_offset = round_to_pixel(scroll_offset);
-
-        const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset / line_height));
-        const size_t line_count = static_cast<size_t>(bx::ceil (viewport.rect.height() / line_height)) + 1;
-        const size_t last_line  = bx::min(first_line + line_count, lines.size());
-
         char  line_number[8];
         char  line_format[8];
         float line_number_width = 0.0f;
@@ -981,6 +966,20 @@ struct Editor
                 break;
             }
         }
+
+        // TODO : Need some way broadcast the editor has focus / is active.
+        handle_input(viewport.rect, line_number_width, line_height, char_width);
+
+        if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
+        {
+            scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed, 0.0f, max_scroll);
+        }
+
+        scroll_offset = round_to_pixel(scroll_offset);
+
+        const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset / line_height));
+        const size_t line_count = static_cast<size_t>(bx::ceil (viewport.rect.height() / line_height)) + 1;
+        const size_t last_line  = bx::min(first_line + line_count, lines.size());
 
         const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.rect.width() - line_number_width - scrollbar_width) / char_width)));
 
@@ -1066,6 +1065,50 @@ struct Editor
         const Position end   = get_position(range.end, start.line);
 
         return { start, end };
+    }
+
+    Position get_nearest_position(float x, float y, const Rect& viewport, float line_number_width, float line_height, float char_width) const
+    {
+        // TODO : Subtract also horizontal scroll offset when supported.
+        x = x - viewport.x0 - line_number_width;
+        y = y - viewport.y0 + scroll_offset;
+
+        const uint32_t line = bx::min(
+            static_cast<uint32_t>(lines.size() - 1),
+            static_cast<uint32_t>(y / line_height)
+        );
+
+        const int32_t line_length = static_cast<int32_t>(utf8nlen(
+            &buffer[lines[line].start],
+            lines[line].end - lines[line].start
+        ));
+
+        const uint32_t char_ = static_cast<uint32_t>(bx::clamp(
+            static_cast<int32_t>(x / char_width),
+            0,
+            bx::max(0, line_length - 1)
+        ));
+
+        return { line, char_ };
+    }
+
+    float get_offset(const Position& position)
+    {
+        ASSERT(position.line < lines.size());
+
+        uint32_t     character = 0;
+        uint32_t     offset    = lines[position.line].start;
+        utf8_int32_t codepoint = 0;
+
+        for (const void* it = utf8codepoint(&buffer[offset], &codepoint);
+            codepoint && codepoint != '\n' && character < position.character;
+            it = utf8codepoint(it, &codepoint), character++)
+        {
+            // TODO : This could be provided by a tweaked version of `utf8codepoint`, but low impact / priority.
+            offset += utf8codepointsize(codepoint);
+        }
+
+        return offset;
     }
 };
 
