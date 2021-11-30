@@ -986,11 +986,24 @@ struct Editor
         }
 
         // TODO : Need some way broadcast the editor has focus / is active.
-        handle_input(viewport.rect, line_number_width, line_height, char_width);
-
-        if (viewport.rect.is_hovered() && ctx.none_active() && scroll_y())
+        if (ctx.none_active())
         {
-            scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed, 0.0f, max_scroll);
+            handle_input(viewport.rect, line_number_width, line_height, char_width);
+        }
+
+        if (viewport.rect.is_hovered() && ctx.none_active())
+        {
+            if (scroll_y())
+            {
+                scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed, 0.0f, max_scroll);
+            }
+
+            // TODO : Exclude scrollbar and line number areas.
+            if ((mouse_x() >= viewport.rect.x0 + line_number_width) &&
+                (mouse_x() <  viewport.rect.x1 - scrollbar_width))
+            {
+                ctx.cursor = CURSOR_I_BEAM;
+            }
         }
 
         scroll_offset = round_to_pixel(scroll_offset);
