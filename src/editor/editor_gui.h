@@ -23,6 +23,12 @@ enum State
     STATE_ACTIVE,
 };
 
+enum Color : uint8_t
+{
+    COLOR_EDITOR_TEXT,
+    COLOR_EDITOR_LINE_NUMBER,
+};
+
 struct Rect
 {
     float x0 = 0.0f;
@@ -238,13 +244,27 @@ struct GlyphCache
 
 struct TextBuffer
 {
-    uint32_t data[MAX_TEXT_BUFFER_SIZE] = { 0 }; // TODO : Dynamic memory ?
-    uint32_t size                       =   0  ;
-    uint32_t offset                     =   0  ;
-
-    static inline float encode_base_vertex(uint32_t glyph_index)
+    struct Header
     {
-        return glyph_index * 4.0f;
+        uint16_t glyph_count = 0;
+        uint8_t  color_index = 0;
+        uint8_t  pad         = 0;
+    };
+
+    struct Item
+    {
+        Header   header;
+        uint32_t u32;
+        float    f32;
+    };
+
+    Item     data[MAX_TEXT_BUFFER_SIZE]; // TODO : Dynamic memory ?
+    uint32_t size   = 0;
+    uint32_t offset = 0;
+
+    static inline float encode_base_vertex(uint32_t glyph_index, uint8_t color_index)
+    {
+        return ((glyph_index * 16.0f) + color_index) * 4.0f;
     }
 
     inline void clear()
@@ -252,27 +272,27 @@ struct TextBuffer
         size = 0;
     }
 
-    void start(uint32_t color, float x, float y)
+    void start(float x, float y, uint8_t color_index)
     {
-        ASSERT(size + 4 < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size + 3 < MAX_TEXT_BUFFER_SIZE);
 
-        offset = size++;
+        offset = size;
 
-        data[size++] = color;
-        data[size++] = *(uint32_t*)&x;
-        data[size++] = *(uint32_t*)&y;
+        data[size++].header = { 0, color_index };
+        data[size++].f32    = x;
+        data[size++].f32    = y;
     }
 
     inline void add(uint32_t index)
     {
         ASSERT(size < MAX_TEXT_BUFFER_SIZE);
 
-        data[size++] = index;
+        data[size++].u32 = index;
     }
 
     inline void end()
     {
-        data[offset] = size - offset - 4;
+        data[offset].header.glyph_count = static_cast<uint16_t>(size - offset - 3);
     }
 
     void submit(const GlyphCache& gc, const Resources& res)
@@ -291,21 +311,20 @@ struct TextBuffer
 
         for (uint32_t i = 0; i < size;)
         {
-            const uint32_t length =           data[i++];
-            const uint32_t color  =           data[i++];
-            float          x0     = *(float*)&data[i++];
-            const float    y0     = *(float*)&data[i++];
-            float          x1     = x0 + width;
-            const float    y1     = y0 + height;
+            const Header header = data[i++].header;
+            float        x0     = data[i++].f32;
+            const float  y0     = data[i++].f32;
+            float        x1     = x0 + width;
+            const float  y1     = y0 + height;
 
-            for (uint32_t j = 0; j < length; j++, i++)
+            for (uint32_t j = 0; j < header.glyph_count; j++, i++)
             {
-                const float idx = encode_base_vertex(data[i]);
+                const float vtx = encode_base_vertex(data[i].u32, header.color_index);
 
-                vertex(x0, y0, idx + 0.0f);
-                vertex(x0, y1, idx + 1.0f);
-                vertex(x1, y1, idx + 2.0f);
-                vertex(x1, y0, idx + 3.0f);
+                vertex(x0, y0, vtx + 0.0f);
+                vertex(x0, y1, vtx + 1.0f);
+                vertex(x1, y1, vtx + 2.0f);
+                vertex(x1, y0, vtx + 3.0f);
 
                 x0  = x1;
                 x1 += width;
@@ -577,9 +596,9 @@ struct Context
     }
 
     // Single-line text.
-    void text(const char* string, uint32_t color, float x, float y)
+    void text(const char* string, Color color, float x, float y)
     {
-        text_buffer.start(color, x, y);
+        text_buffer.start(x, y, color);
 
         utf8_int32_t codepoint = 0;
 
@@ -596,11 +615,11 @@ struct Context
     }
 
     // Single-line text.
-    void text(const char* start, const char* end, uint32_t max_chars, uint32_t color, float x, float y)
+    void text(const char* start, const char* end, uint32_t max_chars, Color color, float x, float y)
     {
         if (start != end)
         {
-            text_buffer.start(color, x, y);
+            text_buffer.start(x, y, color);
 
             utf8_int32_t codepoint = 0;
             uint32_t     i         = 0;
@@ -642,7 +661,7 @@ struct Context
         float height;
         text_size(label, width, height);
 
-        text(label, 0xffffffff, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
+        text(label, COLOR_EDITOR_TEXT, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
 
         return clicked;
     }
@@ -1023,8 +1042,8 @@ struct Editor
         {
             (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
-            ctx.text(line_number, 0xaaaaaaff, viewport.rect.x0, y);
-            ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.rect.x0 + line_number_width, y);
+            ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.rect.x0, y);
+            ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, COLOR_EDITOR_TEXT, viewport.rect.x0 + line_number_width, y);
         }
 
         // Selection.
