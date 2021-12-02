@@ -242,6 +242,11 @@ struct TextBuffer
     uint32_t size                       =   0  ;
     uint32_t offset                     =   0  ;
 
+    static inline float encode_base_vertex(uint32_t glyph_index)
+    {
+        return glyph_index * 4.0f;
+    }
+
     inline void clear()
     {
         size = 0;
@@ -279,7 +284,7 @@ struct TextBuffer
 
         ASSERT(size >= 4);
 
-        begin_mesh(res.mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
+        begin_mesh(res.mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | NO_VERTEX_TRANSFORM);
 
         const float width  = gc.glyph_screen_width ();
         const float height = gc.glyph_screen_height();
@@ -293,12 +298,9 @@ struct TextBuffer
             float          x1     = x0 + width;
             const float    y1     = y0 + height;
 
-            ::color(color);
-
             for (uint32_t j = 0; j < length; j++, i++)
             {
-                // TODO ? Pack also color and clip rectangle index (from a palette of, say, 16 colors) ?
-                const float idx = (float)data[i] * 4.0f;
+                const float idx = encode_base_vertex(data[i]);
 
                 vertex(x0, y0, idx + 0.0f);
                 vertex(x0, y1, idx + 1.0f);
