@@ -33,10 +33,10 @@ void main()
     gl_Position = mul(u_modelViewProj, vec4(a_position.xy, 0.0, 1.0));
 
     // Decode vertex properties.
-    const float vertex_index = mod(a_position.z , 4.0);
-    const float glyph_index  = floor(a_position.z / 256.0);
-    const float color_index  = mod(floor(a_position.z / 16.0), 4.0);
-    const float clip_index   = mod(floor(a_position.z / 4.0), 16.0);
+    const float vertex_index = mod(a_position.z, 4.0);
+    const float clip_index   = mod(a_position.z / 4.0, 16.0);
+    const float color_index  = mod(a_position.z / 16.0, 4.0);
+    const float glyph_index  = a_position.z / 256.0;
 
     const float col = mod  (glyph_index , glyph_cols);
     const float row = floor(glyph_index / glyph_cols);
