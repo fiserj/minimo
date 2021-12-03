@@ -248,7 +248,7 @@ struct TextBuffer
     {
         uint16_t glyph_count = 0;
         uint8_t  color_index = 0;
-        uint8_t  pad         = 0;
+        uint8_t  clip_index  = 0;
     };
 
     struct Item
@@ -262,9 +262,9 @@ struct TextBuffer
     uint32_t size   = 0;
     uint32_t offset = 0;
 
-    static inline float encode_base_vertex(uint32_t glyph_index, uint8_t color_index)
+    static inline float encode_base_vertex(uint32_t glyph_index, uint8_t color_index, uint8_t clip_index = 0)
     {
-        return ((glyph_index * 16.0f) + color_index) * 4.0f;
+        return (((glyph_index * 16.0f) + color_index) * 4.0f + clip_index) * 4.0f;
     }
 
     inline void clear()
