@@ -1,4 +1,5 @@
 #include <assert.h>               // assert
+#include <stddef.h>               // offsetof
 #include <stdint.h>               // uint*_t
 
 #include <vector>                 // vector
@@ -90,7 +91,7 @@ static void setup()
     create_shader(res.program_gui_text, text_vs_dx11, sizeof(text_vs_dx11), text_fs_dx11, sizeof(text_fs_dx11));
 #endif
 
-    create_uniform(res.uniform_text_info, UNIFORM_VEC4 | UNIFORM_2, "u_atlas_info");
+    create_uniform(res.uniform_text_info, UNIFORM_VEC4, gui::Uniforms::COUNT, "u_atlas_info");
 
     g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
 }

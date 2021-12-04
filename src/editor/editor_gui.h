@@ -7,7 +7,11 @@ namespace gui
 // LIMITS
 // -----------------------------------------------------------------------------
 
-constexpr uint32_t MAX_DRAW_LIST_SIZE = 4096;
+constexpr uint32_t MAX_DRAW_LIST_SIZE     = 4096;
+
+constexpr uint32_t MAX_COLOR_PALETTE_SIZE = 16;
+
+constexpr uint32_t MAX_CLIP_STACK_SIZE    = 4;
 
 
 // -----------------------------------------------------------------------------
@@ -40,6 +44,15 @@ struct Rect
     float x1 = 0.0f;
     float y1 = 0.0f;
 
+    inline bool operator==(const Rect& other) const
+    {
+        return
+            x0 == other.x0 &&
+            y0 == other.y0 &&
+            x1 == other.x1 &&
+            y1 == other.y1 ;
+    }
+
     inline float width() const
     {
         return x1 - x0;
@@ -57,12 +70,6 @@ struct Rect
 
         return x >= x0 && x < x1 && y >= y0 && y < y1;
     }
-};
-
-struct ColorRect
-{
-    uint32_t color = 0x00000000;
-    Rect     rect;
 };
 
 struct IdStack
@@ -246,6 +253,112 @@ struct GlyphCache
     }
 };
 
+struct AtlasInfo
+{
+    float texel_size;
+    float glyph_cols;
+    float glyph_texel_width;
+    float glyph_texel_height;
+    float glyph_texel_to_screen_width_ratio;
+    float glyph_texel_to_screen_hegiht_ratio;
+
+    float _unused[2];
+};
+
+static_assert(sizeof(AtlasInfo) % (4 * sizeof(float)) == 0, "Invalid `AtlasInfo` size assumption.");
+
+struct Colors
+{
+    float colors[MAX_COLOR_PALETTE_SIZE][4] = {};
+
+    void set(Color color, uint32_t rgba)
+    {
+        ASSERT(color < MAX_COLOR_PALETTE_SIZE);
+
+        colors[color][0] = (rgba & 0xff000000) / 255.0f;
+        colors[color][1] = (rgba & 0x00ff0000) / 255.0f;
+        colors[color][2] = (rgba & 0x0000ff00) / 255.0f;
+        colors[color][3] = (rgba & 0x000000ff) / 255.0f;
+    }
+};
+
+static_assert(sizeof(Colors) % (4 * sizeof(float)) == 0, "Invalid `Colors` size assumption.");
+
+// Very limited clip stack. Can only host `MAX_CLIP_STACK_SIZE` unique values
+// after being reset.
+struct ClipStack
+{
+    Rect    rects[MAX_CLIP_STACK_SIZE]; // Unique values, not in LIFO order!
+    uint8_t stack[MAX_CLIP_STACK_SIZE];
+    uint8_t size = 0;
+    uint8_t used = 0;
+
+    void reset(const Rect& viewport)
+    {
+        rects[0] = viewport;
+        stack[0] = 0;
+        size     = 1;
+        used     = 1;
+    }
+
+    uint8_t push(const Rect& rect)
+    {
+        ASSERT(size < MAX_CLIP_STACK_SIZE);
+
+        uint8_t idx = UINT8_MAX;
+
+        for (uint8_t i = 0; i < used; i++)
+        {
+            if (rects[i] == rect)
+            {
+                idx = i;
+                break;
+            }
+        }
+
+        ASSERT(idx != UINT8_MAX || used < MAX_CLIP_STACK_SIZE);
+
+        if (idx == UINT8_MAX && used < MAX_CLIP_STACK_SIZE)
+        {
+            idx = used++;
+            rects[idx] = rect;
+        }
+
+        stack[size++] = idx;
+
+        return idx;
+    }
+
+    inline void pop()
+    {
+        ASSERT(size > 0);
+        size--;
+    }
+
+    uint8_t top() const
+    {
+        ASSERT(size > 0);
+        return stack[size];
+    }
+};
+
+struct Uniforms
+{
+    AtlasInfo atlas_info;
+    Colors    colors;
+    ClipStack clip_stack; // NOTE : Must be last.
+
+    static constexpr int COUNT =
+        (sizeof(AtlasInfo) + sizeof(Colors) + sizeof(ClipStack::rects)) / (sizeof(float) * 4);
+};
+
+// NOTE : This is to ensure that we can safely copy instance of `Uniforms`
+//        object into shader without shuffling with the layout in any way.
+static_assert(offsetof(Uniforms, clip_stack) + offsetof(ClipStack, stack) == 
+    sizeof(AtlasInfo) + sizeof(Colors) + sizeof(ClipStack::rects),
+    "Invalid assumption about `Uniforms` memory layout."
+);
+
 // Simple draw list, supports only rectangles.
 struct DrawList
 {
@@ -270,7 +383,7 @@ struct DrawList
 
     static inline float encode_base_vertex(uint32_t glyph_index, uint8_t color_index, uint8_t clip_index)
     {
-        return (((glyph_index * 16.0f) + color_index) * 4.0f + clip_index) * 4.0f;
+        return (((glyph_index * MAX_COLOR_PALETTE_SIZE) + color_index) * MAX_CLIP_STACK_SIZE + clip_index) * 4;
     }
 
     inline void clear()
@@ -278,7 +391,7 @@ struct DrawList
         size = 0;
     }
 
-    void add_rect(const Rect& rect, uint8_t color_index, uint8_t clip_index = 0)
+    void add_rect(const Rect& rect, uint8_t color_index, uint8_t clip_index)
     {
         ASSERT(size + 5 < MAX_DRAW_LIST_SIZE);
 
@@ -289,7 +402,7 @@ struct DrawList
         data[size++].f32    = rect.y1;
     }
 
-    void start_string(float x, float y, uint8_t color_index, uint8_t clip_index = 0)
+    void start_string(float x, float y, uint8_t color_index, uint8_t clip_index)
     {
         ASSERT(size + 3 < MAX_DRAW_LIST_SIZE);
 
@@ -323,7 +436,7 @@ struct DrawList
         }
     }
 
-    void submit(const GlyphCache& gc, const Resources& res)
+    void submit(const GlyphCache& gc, const Resources& res, Uniforms& uniforms)
     {
         if (size == 0)
         {
@@ -379,7 +492,7 @@ struct DrawList
 
         end_mesh();
 
-        const float atlas_info[8] =
+        uniforms.atlas_info =
         {
             1.0f / gc.texture_size, // Texel size.
             (float)gc.glyph_cols,
@@ -387,13 +500,11 @@ struct DrawList
             gc.glyph_height / gc.texture_size,
             gc.glyph_width / (gc.texture_size * width), // Glyph texel to screen size ratio.
             gc.glyph_height / (gc.texture_size * height),
-            0.0f, // Unused.
-            0.0f, // Unused.
         };
 
         identity();
         state   (STATE_BLEND_ALPHA | STATE_WRITE_RGB);
-        uniform (res.uniform_text_info, atlas_info);
+        uniform (res.uniform_text_info, &uniforms);
         texture (res.texture_glyph_cache);
         shader  (res.program_gui_text);
         mesh    (res.mesh_gui_text);
@@ -409,6 +520,7 @@ struct Context
     IdStack     current_stack;
     DrawList    draw_list;
     GlyphCache  glyph_cache;
+    Uniforms    uniforms;
     int         cursor          = CURSOR_ARROW;
     float       drag_start_x    = 0.0f;
     float       drag_start_y    = 0.0f;
@@ -421,6 +533,8 @@ struct Context
         {
             glyph_cache.rebuild(font_cap_height, resources);
         }
+
+        uniforms.clip_stack.reset({ 0.0f, 0.0f, width(), height() });
     }
 
     void end_frame()
@@ -441,7 +555,7 @@ struct Context
         ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
         projection();
 
-        draw_list.submit(glyph_cache, resources);
+        draw_list.submit(glyph_cache, resources, uniforms);
         draw_list.clear ();
     }
 
@@ -564,26 +678,26 @@ struct Context
 
     inline void rect(Color color, const Rect& rect)
     {
-        draw_list.add_rect(rect, color);
+        draw_list.add_rect(rect, color, uniforms.clip_stack.top());
     }
 
     inline void rect(Color color, float x, float y, float width, float height)
     {
-        draw_list.add_rect({ x, y, x + width, y + height }, color);
+        draw_list.add_rect({ x, y, x + width, y + height }, color, uniforms.clip_stack.top());
     }
 
     inline void hline(Color color, float y, float x0, float x1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `y`, but then we'd need to
         //        handle DPI here explicitly.
-        draw_list.add_rect({ x0, y, x1, y + thickness }, color);
+        draw_list.add_rect({ x0, y, x1, y + thickness }, color, uniforms.clip_stack.top());
     }
 
     inline void vline(Color color, float x, float y0, float y1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `x`, but then we'd need to
         //        handle DPI here explicitly.
-        draw_list.add_rect({ x, y0, x + thickness, y1 }, color);
+        draw_list.add_rect({ x, y0, x + thickness, y1 }, color, uniforms.clip_stack.top());
     }
 
     // Single-line text.
@@ -596,7 +710,7 @@ struct Context
     // Single-line text.
     void text(const char* string, Color color, float x, float y)
     {
-        draw_list.start_string(x, y, color);
+        draw_list.start_string(x, y, color, uniforms.clip_stack.top());
 
         utf8_int32_t codepoint = 0;
 
@@ -617,7 +731,7 @@ struct Context
     {
         if (start != end)
         {
-            draw_list.start_string(x, y, color);
+            draw_list.start_string(x, y, color, uniforms.clip_stack.top());
 
             utf8_int32_t codepoint = 0;
             uint32_t     i         = 0;
