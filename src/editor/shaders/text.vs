@@ -8,7 +8,9 @@ $output v_color0, v_texcoord0
 #define u_glyph_texel_size                 u_atlas_info[0].zw
 #define u_glyph_texel_to_screen_size_ratio u_atlas_info[1].xy
 
-uniform vec4 u_atlas_info[2];
+#define u_clip_rect(i)                     u_atlas_info[18 + i]
+
+uniform vec4 u_atlas_info[22]; // NOTE : Size has to be kept in sync with `Uniforms::COUNT`.
 
 // 0 -- 3
 // | \  |
@@ -38,20 +40,19 @@ const vec4 colors[] =
 
 void main()
 {
-    // TODO : Replace with clip passed through a uniform.
-    const vec4 clip = vec4(0.0, 0.0, 600.0, 500.0);
-
-    // Clip vertex position.
-    const vec2 position = clamp(a_position.xy, clip.xy, clip.zw);
-    const vec2 position_diff = position - a_position.xy;
-    gl_Position = mul(u_modelViewProj, vec4(position, 0.0, 1.0));
-
     // Decode vertex properties.
     const float vertex_index = mod(a_position.z, 4.0);
     const float clip_index   = mod(a_position.z * 0.25, 4.0);
     const float color_index  = mod(a_position.z * 0.0625, 16.0);
     const float glyph_index  = a_position.z * 0.00390625;
 
+    // Clip vertex position.
+    const vec4 clip          = u_clip_rect(int(clip_index));//vec4(0.0, 0.0, 600.0, 500.0);
+    const vec2 position      = clamp(a_position.xy, clip.xy, clip.zw);
+    const vec2 position_diff = position - a_position.xy;
+    gl_Position              = mul(u_modelViewProj, vec4(position, 0.0, 1.0));
+
+    // Determine glyph position in atlas.
     const float col = mod  (glyph_index , u_glyph_cols);
     const float row = floor(glyph_index / u_glyph_cols);
 
