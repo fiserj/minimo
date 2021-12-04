@@ -848,7 +848,8 @@ struct Editor
 
             if (selection.is_empty())
             {
-                position = get_position(selection.start);
+                position           = get_position(selection.start);
+                position.character = cursor_column;
             }
             else
             {
@@ -915,6 +916,7 @@ struct Editor
 
             selection.start =
             selection.end   = get_offset({ line, character });
+            cursor_column   = character;
         }
     }
 
