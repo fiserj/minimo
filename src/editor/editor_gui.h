@@ -379,12 +379,16 @@ struct DrawList
 
         end_mesh();
 
-        const float atlas_info[4] =
+        const float atlas_info[8] =
         {
             1.0f / gc.texture_size, // Texel size.
             (float)gc.glyph_cols,
-            gc.glyph_width / gc.texture_size, // Glyph size in texels.
+            gc.glyph_width / gc.texture_size, // Glyph size in texels, width includes padding.
             gc.glyph_height / gc.texture_size,
+            gc.glyph_width / (gc.texture_size * width), // Glyph texel to screen size ratio.
+            gc.glyph_height / (gc.texture_size * height),
+            0.0f, // Unused.
+            0.0f, // Unused.
         };
 
         identity();

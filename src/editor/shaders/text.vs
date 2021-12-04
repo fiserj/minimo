@@ -3,11 +3,12 @@ $output v_color0, v_texcoord0
 
 #include <bgfx_shader.sh>
 
-#define texel_size u_atlas_info.x
-#define glyph_cols u_atlas_info.y
-#define glyph_size u_atlas_info.zw
+#define u_texel_size                       u_atlas_info[0].x // 1 / texture_size
+#define u_glyph_cols                       u_atlas_info[0].y
+#define u_glyph_texel_size                 u_atlas_info[0].zw
+#define u_glyph_texel_to_screen_size_ratio u_atlas_info[1].xy
 
-uniform vec4 u_atlas_info;
+uniform vec4 u_atlas_info[2];
 
 // 0 -- 3
 // | \  |
@@ -37,19 +38,30 @@ const vec4 colors[] =
 
 void main()
 {
-    gl_Position = mul(u_modelViewProj, vec4(a_position.xy, 0.0, 1.0));
+    // TODO : Replace with clip passed through a uniform.
+    const vec4 clip = vec4(0.0, 0.0, 600.0, 500.0);
+
+    // Clip vertex position.
+    const vec2 position = clamp(a_position.xy, clip.xy, clip.zw);
+    const vec2 position_diff = position - a_position.xy;
+    gl_Position = mul(u_modelViewProj, vec4(position, 0.0, 1.0));
 
     // Decode vertex properties.
     const float vertex_index = mod(a_position.z, 4.0);
-    const float clip_index   = mod(a_position.z / 4.0, 4.0);
-    const float color_index  = mod(a_position.z / 16.0, 16.0);
-    const float glyph_index  = a_position.z / 256.0;
+    const float clip_index   = mod(a_position.z * 0.25, 4.0);
+    const float color_index  = mod(a_position.z * 0.0625, 16.0);
+    const float glyph_index  = a_position.z * 0.00390625;
 
-    const float col = mod  (glyph_index , glyph_cols);
-    const float row = floor(glyph_index / glyph_cols);
+    const float col = mod  (glyph_index , u_glyph_cols);
+    const float row = floor(glyph_index / u_glyph_cols);
 
-    vec2 uv = (vec2(col, row) + offset[int(vertex_index)]) * glyph_size;
-    uv.x -= step(1.5, vertex_index) * texel_size; // Remove X-padding from the right hand side of the quad.
+    vec2 uv = (vec2(col, row) + offset[int(vertex_index)]) * u_glyph_texel_size;
+
+    // Remove X-padding from the right hand side of the quad.
+    uv.x -= step(1.5, vertex_index) * u_texel_size;
+
+    // Clip coordinates.
+    uv += position_diff * u_glyph_texel_to_screen_size_ratio;
 
     v_texcoord0 = uv;
     v_color0    = colors[int(color_index)];
