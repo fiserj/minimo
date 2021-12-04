@@ -498,8 +498,6 @@ struct DefaultUniforms
 struct Uniform
 {
     bgfx::UniformHandle handle = BGFX_INVALID_HANDLE;
-    uint8_t             size   = 0;
-    uint8_t             _pad[1];
 
     void destroy()
     {
@@ -526,22 +524,15 @@ public:
 
     bool add(uint16_t id, uint16_t flags, const char* name)
     {
-        struct Info
+        static const bgfx::UniformType::Enum types[] =
         {
-            bgfx::UniformType::Enum type;
-            uint16_t                size;
+            bgfx::UniformType::Vec4   ,
+            bgfx::UniformType::Mat4   ,
+            bgfx::UniformType::Mat3   ,
+            bgfx::UniformType::Sampler,
         };
 
-        static const Info infos[] =
-        {
-            { bgfx::UniformType::Vec4   ,  4 * sizeof(float) },
-            { bgfx::UniformType::Mat4   , 16 * sizeof(float) },
-            { bgfx::UniformType::Mat3   ,  9 * sizeof(float) },
-            { bgfx::UniformType::Sampler,  0                 },
-        };
-
-        const Info                    info  = infos[((flags & UNIFORM_TYPE_MASK ) >> UNIFORM_TYPE_SHIFT ) - 1];
-        const bgfx::UniformType::Enum type  = info.type;
+        const bgfx::UniformType::Enum type  = types[((flags & UNIFORM_TYPE_MASK ) >> UNIFORM_TYPE_SHIFT ) - 1];
         const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
 
         bgfx::UniformHandle handle = bgfx::createUniform(name, type, count);
@@ -555,9 +546,7 @@ public:
 
         Uniform& uniform = m_uniforms[id];
         uniform.destroy();
-
         uniform.handle = handle;
-        uniform.size   = info.size * count;
 
         return true;
     }
@@ -5520,15 +5509,13 @@ void uniform(int id, const void* value)
     ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_UNIFORMS);
     ASSERT(value);
 
-    // We could instead store the uniform values in the state, but that would
-    // instead mean unnecessary copying and storage.
     if (!t_ctx->encoder)
     {
         t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
         ASSERT(t_ctx->encoder);
     }
 
-    t_ctx->encoder->setUniform(g_ctx.uniform_cache[static_cast<uint16_t>(id)].handle, value);
+    t_ctx->encoder->setUniform(g_ctx.uniform_cache[static_cast<uint16_t>(id)].handle, value, UINT16_MAX);
 }
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
