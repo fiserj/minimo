@@ -7,9 +7,7 @@ namespace gui
 // LIMITS
 // -----------------------------------------------------------------------------
 
-constexpr uint32_t MAX_RECT_BUFFER_SIZE = 512;
-
-constexpr uint32_t MAX_TEXT_BUFFER_SIZE = 4096;
+constexpr uint32_t MAX_DRAW_LIST_SIZE = 4096;
 
 
 // -----------------------------------------------------------------------------
@@ -21,6 +19,18 @@ enum State
     STATE_COLD,
     STATE_HOT,
     STATE_ACTIVE,
+};
+
+enum Color : uint8_t
+{
+    COLOR_EDITOR_TEXT,
+    COLOR_EDITOR_LINE_NUMBER,
+
+    // TODO : Replace with symbolic names.
+    COLOR_RED,
+    COLOR_GREEN,
+    COLOR_BLUE,
+    COLOR_BLACK,
 };
 
 struct Rect
@@ -236,38 +246,81 @@ struct GlyphCache
     }
 };
 
-struct TextBuffer
+// Simple draw list, supports only rectangles.
+struct DrawList
 {
-    uint32_t data[MAX_TEXT_BUFFER_SIZE] = { 0 }; // TODO : Dynamic memory ?
-    uint32_t size                       =   0  ;
-    uint32_t offset                     =   0  ;
+    struct Header
+    {
+        uint16_t glyph_count = 0;
+        uint8_t  color_index = 0;
+        uint8_t  clip_index  = 0;
+    };
+
+    struct Item
+    {
+        Header   header;
+        uint32_t u32;
+        float    f32;
+    };
+
+    Item     data[MAX_DRAW_LIST_SIZE]; // TODO : Dynamic memory ?
+    uint32_t size              = 0;
+    uint32_t offset            = 0;
+    uint32_t empty_glyph_index = 0; // TODO : Set this when space not first in the atlas.
+
+    static inline float encode_base_vertex(uint32_t glyph_index, uint8_t color_index, uint8_t clip_index)
+    {
+        return (((glyph_index * 16.0f) + color_index) * 4.0f + clip_index) * 4.0f;
+    }
 
     inline void clear()
     {
         size = 0;
     }
 
-    void start(uint32_t color, float x, float y)
+    void add_rect(const Rect& rect, uint8_t color_index, uint8_t clip_index = 0)
     {
-        ASSERT(size + 4 < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size + 5 < MAX_DRAW_LIST_SIZE);
 
-        offset = size++;
-
-        data[size++] = color;
-        data[size++] = *(uint32_t*)&x;
-        data[size++] = *(uint32_t*)&y;
+        data[size++].header = { 0, color_index, clip_index };
+        data[size++].f32    = rect.x0;
+        data[size++].f32    = rect.y0;
+        data[size++].f32    = rect.x1;
+        data[size++].f32    = rect.y1;
     }
 
-    inline void add(uint32_t index)
+    void start_string(float x, float y, uint8_t color_index, uint8_t clip_index = 0)
     {
-        ASSERT(size < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size + 3 < MAX_DRAW_LIST_SIZE);
 
-        data[size++] = index;
+        offset = size;
+
+        data[size++].header = { 0, color_index, clip_index };
+        data[size++].f32    = x;
+        data[size++].f32    = y;
     }
 
-    inline void end()
+    inline void add_glyph(uint32_t index)
     {
-        data[offset] = size - offset - 4;
+        ASSERT(size < MAX_DRAW_LIST_SIZE);
+
+        data[size++].u32 = index;
+    }
+
+    inline void end_string()
+    {
+        const uint32_t glyph_count = size - offset - 3;
+        ASSERT(glyph_count <= UINT16_MAX);
+
+        if (glyph_count)
+        {
+            data[offset].header.glyph_count = static_cast<uint16_t>(glyph_count);
+        }
+        else
+        {
+            // NOTE : Empty strings (glyphs not in the cache).
+            size -= 3;
+        }
     }
 
     void submit(const GlyphCache& gc, const Resources& res)
@@ -279,34 +332,48 @@ struct TextBuffer
 
         ASSERT(size >= 4);
 
-        begin_mesh(res.mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
+        begin_mesh(res.mesh_gui_text, MESH_TRANSIENT | PRIMITIVE_QUADS | NO_VERTEX_TRANSFORM);
 
         const float width  = gc.glyph_screen_width ();
         const float height = gc.glyph_screen_height();
 
         for (uint32_t i = 0; i < size;)
         {
-            const uint32_t length =           data[i++];
-            const uint32_t color  =           data[i++];
-            float          x0     = *(float*)&data[i++];
-            const float    y0     = *(float*)&data[i++];
-            float          x1     = x0 + width;
-            const float    y1     = y0 + height;
+            const Header header = data[i++].header;
 
-            ::color(color);
-
-            for (uint32_t j = 0; j < length; j++, i++)
+            if (header.glyph_count)
             {
-                // TODO ? Pack also color and clip rectangle index (from a palette of, say, 16 colors) ?
-                const float idx = (float)data[i] * 4.0f;
+                float        x0 = data[i++].f32;
+                const float  y0 = data[i++].f32;
+                float        x1 = x0 + width;
+                const float  y1 = y0 + height;
 
-                vertex(x0, y0, idx + 0.0f);
-                vertex(x0, y1, idx + 1.0f);
-                vertex(x1, y1, idx + 2.0f);
-                vertex(x1, y0, idx + 3.0f);
+                for (uint32_t j = 0; j < header.glyph_count; j++, i++)
+                {
+                    const float vtx = encode_base_vertex(data[i].u32, header.color_index, header.clip_index);
 
-                x0  = x1;
-                x1 += width;
+                    vertex(x0, y0, vtx + 0.0f);
+                    vertex(x0, y1, vtx + 1.0f);
+                    vertex(x1, y1, vtx + 2.0f);
+                    vertex(x1, y0, vtx + 3.0f);
+
+                    x0  = x1;
+                    x1 += width;
+                }
+            }
+            else
+            {
+                const float x0  = data[i++].f32;
+                const float y0  = data[i++].f32;
+                const float x1  = data[i++].f32;
+                const float y1  = data[i++].f32;
+
+                const float vtx = encode_base_vertex(empty_glyph_index, header.color_index, header.clip_index);
+
+                vertex(x0, y0, vtx + 0.0f);
+                vertex(x0, y1, vtx + 1.0f);
+                vertex(x1, y1, vtx + 2.0f);
+                vertex(x1, y0, vtx + 3.0f);
             }
         }
 
@@ -331,56 +398,12 @@ struct TextBuffer
     }
 };
 
-struct RectBuffer
-{
-    ColorRect data[MAX_RECT_BUFFER_SIZE]; // TODO : Dynamic memory ?
-    uint32_t  size = 0 ;
-
-    inline void clear()
-    {
-        size = 0;
-    }
-
-    inline void add(const ColorRect& rect)
-    {
-        ASSERT(size < MAX_RECT_BUFFER_SIZE);
-
-        data[size++] = rect;
-    }
-
-    void submit(const Resources& res)
-    {
-        if (size == 0)
-        {
-            return;
-        }
-
-        begin_mesh(res.mesh_gui_rects, MESH_TRANSIENT | PRIMITIVE_QUADS | VERTEX_COLOR | NO_VERTEX_TRANSFORM);
-        {
-            for (const ColorRect* rect = data, *end = data + size; rect < end; rect++)
-            {
-                color (rect->color);
-                vertex(rect->rect.x0, rect->rect.y0, 0.0f);
-                vertex(rect->rect.x0, rect->rect.y1, 0.0f);
-                vertex(rect->rect.x1, rect->rect.y1, 0.0f);
-                vertex(rect->rect.x1, rect->rect.y0, 0.0f);
-            }
-        }
-        end_mesh();
-
-        identity();
-        state(STATE_WRITE_RGB);
-        mesh (res.mesh_gui_rects);
-    }
-};
-
 struct Context
 {
     Resources   resources;
     IdStack     active_stack;
     IdStack     current_stack;
-    TextBuffer  text_buffer;
-    RectBuffer  rect_buffer;
+    DrawList    draw_list;
     GlyphCache  glyph_cache;
     int         cursor          = CURSOR_ARROW;
     float       drag_start_x    = 0.0f;
@@ -414,11 +437,8 @@ struct Context
         ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
         projection();
 
-        rect_buffer.submit(resources);
-        rect_buffer.clear ();
-
-        text_buffer.submit(glyph_cache, resources);
-        text_buffer.clear ();
+        draw_list.submit(glyph_cache, resources);
+        draw_list.clear ();
     }
 
     inline void push_id(uint8_t id)
@@ -538,33 +558,28 @@ struct Context
         return out_state != STATE_COLD;
     }
 
-    inline void rect(const ColorRect& rect)
+    inline void rect(Color color, const Rect& rect)
     {
-        rect_buffer.add(rect);
+        draw_list.add_rect(rect, color);
     }
 
-    inline void rect(uint32_t color, const Rect& rect)
+    inline void rect(Color color, float x, float y, float width, float height)
     {
-        rect_buffer.add({ color, rect });
+        draw_list.add_rect({ x, y, x + width, y + height }, color);
     }
 
-    inline void rect(uint32_t color, float x, float y, float width, float height)
-    {
-        rect_buffer.add({ color, { x, y, x + width, y + height } });
-    }
-
-    inline void hline(uint32_t color, float y, float x0, float x1, float thickness = 1.0f)
+    inline void hline(Color color, float y, float x0, float x1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `y`, but then we'd need to
         //        handle DPI here explicitly.
-        rect_buffer.add({ color, { x0, y, x1, y + thickness } });
+        draw_list.add_rect({ x0, y, x1, y + thickness }, color);
     }
 
-    inline void vline(uint32_t color, float x, float y0, float y1, float thickness = 1.0f)
+    inline void vline(Color color, float x, float y0, float y1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `x`, but then we'd need to
         //        handle DPI here explicitly.
-        rect_buffer.add({ color, { x, y0, x + thickness, y1 } });
+        draw_list.add_rect({ x, y0, x + thickness, y1 }, color);
     }
 
     // Single-line text.
@@ -575,9 +590,9 @@ struct Context
     }
 
     // Single-line text.
-    void text(const char* string, uint32_t color, float x, float y)
+    void text(const char* string, Color color, float x, float y)
     {
-        text_buffer.start(color, x, y);
+        draw_list.start_string(x, y, color);
 
         utf8_int32_t codepoint = 0;
 
@@ -586,19 +601,19 @@ struct Context
             // TODO : The codepoint-to-index should be handled by the glyph cache.
             if (codepoint >= 32 && codepoint <= 126)
             {
-                text_buffer.add(codepoint - 32);
+                draw_list.add_glyph(codepoint - 32);
             }
         }
 
-        text_buffer.end();
+        draw_list.end_string();
     }
 
     // Single-line text.
-    void text(const char* start, const char* end, uint32_t max_chars, uint32_t color, float x, float y)
+    void text(const char* start, const char* end, uint32_t max_chars, Color color, float x, float y)
     {
         if (start != end)
         {
-            text_buffer.start(color, x, y);
+            draw_list.start_string(x, y, color);
 
             utf8_int32_t codepoint = 0;
             uint32_t     i         = 0;
@@ -608,11 +623,11 @@ struct Context
                 // TODO : The codepoint-to-index should be handled by the glyph cache.
                 if (codepoint >= 32 && codepoint <= 126)
                 {
-                    text_buffer.add(codepoint - 32);
+                    draw_list.add_glyph(codepoint - 32);
                 }
             }
 
-            text_buffer.end();
+            draw_list.end_string();
         }
     }
     
@@ -626,12 +641,11 @@ struct Context
             cursor = CURSOR_HAND;
         }
 
-        // TODO : Centralize colors.
-        constexpr uint32_t colors[] =
+        constexpr Color colors[] =
         {
-            0xff0000ff,
-            0x00ff00ff,
-            0x0000ffff,
+            COLOR_RED,
+            COLOR_GREEN,
+            COLOR_BLUE,
         };
 
         this->rect(colors[state], rect);
@@ -640,7 +654,7 @@ struct Context
         float height;
         text_size(label, width, height);
 
-        text(label, 0xffffffff, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
+        text(label, COLOR_EDITOR_TEXT, (rect.x0 + rect.x1 - width) * 0.5f, (rect.y0 + rect.y1 - height) * 0.5f);
 
         return clicked;
     }
@@ -656,12 +670,11 @@ struct Context
             cursor = CURSOR_H_RESIZE;
         }
 
-        // TODO : Centralize colors.
-        constexpr uint32_t colors[] =
+        constexpr Color colors[] =
         {
-            0xff0000ff,
-            0x00ff00ff,
-            0x0000ffff,
+            COLOR_RED,
+            COLOR_GREEN,
+            COLOR_BLUE,
         };
 
         vline(colors[state], inout_x, y0, y1, thickness);
@@ -675,15 +688,14 @@ struct Context
         State      state  = STATE_COLD;
         const bool active = scrollbar_logic(id, rect, state, out_handle_pos, handle_size, out_val, val_min, val_max);
 
-        // TODO : Centralize colors.
-        constexpr uint32_t colors[] =
+        constexpr Color colors[] =
         {
-            0xff0000ff,
-            0x00ff00ff,
-            0x0000ffff,
+            COLOR_RED,
+            COLOR_GREEN,
+            COLOR_BLUE,
         };
 
-        this->rect(0xffffffff, rect);
+        this->rect(COLOR_EDITOR_TEXT, rect);
         this->rect(colors[state], { rect.x0, out_handle_pos, rect.x1, out_handle_pos + handle_size });
 
         return active;
@@ -835,7 +847,8 @@ struct Editor
 
             if (selection.is_empty())
             {
-                position = get_position(selection.start);
+                position           = get_position(selection.start);
+                position.character = cursor_column;
             }
             else
             {
@@ -902,6 +915,7 @@ struct Editor
 
             selection.start =
             selection.end   = get_offset({ line, character });
+            cursor_column   = character;
         }
     }
 
@@ -927,24 +941,21 @@ struct Editor
 
         split_x = round_to_pixel(split_x);
 
-        ColorRect viewport;
+        Rect viewport;
         switch (display_mode)
         {
         case RIGHT:
-            viewport.rect  = { split_x + divider_thickness, 0.0f, width(), height() };
-            viewport.color = 0x000000ff;
+            viewport = { split_x + divider_thickness, 0.0f, width(), height() };
             break;
         case LEFT:
-            viewport.rect  = { 0.0f, 0.0f, split_x, height()};
-            viewport.color = 0x000000ff;
+            viewport = { 0.0f, 0.0f, split_x, height()};
             break;
         case OVERLAY:
-            viewport.rect  = { 0.0f, 0.0f, width(), height() };
-            viewport.color = 0x000000aa;
+            viewport = { 0.0f, 0.0f, width(), height() };
             break;
         }
 
-        ctx.rect(viewport);
+        ctx.rect(COLOR_BLACK, viewport);
 
         const float char_width  = ctx.glyph_cache.glyph_screen_width ();
         const float line_height = ctx.glyph_cache.glyph_screen_height();
@@ -955,11 +966,11 @@ struct Editor
             max_scroll = line_height * bx::max(0.0f, static_cast<float>(lines.size()) - 1.0f);
 
             static float handle_pos  = 0.0f;
-            const float  handle_size = bx::max(viewport.rect.height() * viewport.rect.height() / (max_scroll + viewport.rect.height()), min_handle_size);
+            const float  handle_size = bx::max(viewport.height() * viewport.height() / (max_scroll + viewport.height()), min_handle_size);
 
             (void)ctx.scrollbar(
                 ID,
-                { viewport.rect.x1 - scrollbar_width, viewport.rect.y0, viewport.rect.x1, viewport.rect.y1 },
+                { viewport.x1 - scrollbar_width, viewport.y0, viewport.x1, viewport.y1 },
                 handle_pos,
                 handle_size,
                 scroll_offset,
@@ -988,10 +999,10 @@ struct Editor
         // TODO : Need some way broadcast the editor has focus / is active.
         if (ctx.none_active())
         {
-            handle_input(viewport.rect, line_number_width, line_height, char_width);
+            handle_input(viewport, line_number_width, line_height, char_width);
         }
 
-        if (viewport.rect.is_hovered() && ctx.none_active())
+        if (viewport.is_hovered() && ctx.none_active())
         {
             if (scroll_y())
             {
@@ -999,8 +1010,8 @@ struct Editor
             }
 
             // TODO : Exclude scrollbar and line number areas.
-            if ((mouse_x() >= viewport.rect.x0 + line_number_width) &&
-                (mouse_x() <  viewport.rect.x1 - scrollbar_width))
+            if ((mouse_x() >= viewport.x0 + line_number_width) &&
+                (mouse_x() <  viewport.x1 - scrollbar_width))
             {
                 ctx.cursor = CURSOR_I_BEAM;
             }
@@ -1009,20 +1020,20 @@ struct Editor
         scroll_offset = round_to_pixel(scroll_offset);
 
         const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset / line_height));
-        const size_t line_count = static_cast<size_t>(bx::ceil (viewport.rect.height() / line_height)) + 1;
+        const size_t line_count = static_cast<size_t>(bx::ceil (viewport.height() / line_height)) + 1;
         const size_t last_line  = bx::min(first_line + line_count, lines.size());
 
-        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.rect.width() - line_number_width - scrollbar_width) / char_width)));
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f, bx::ceil((viewport.width() - line_number_width - scrollbar_width) / char_width)));
 
-        float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height);
+        float y = viewport.y0 - bx::mod(scroll_offset, line_height);
 
         // Text and line numbers submission.
         for (size_t i = first_line; i < last_line; i++, y += line_height)
         {
             (void)bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
-            ctx.text(line_number, 0xaaaaaaff, viewport.rect.x0, y);
-            ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, 0xffffffff, viewport.rect.x0 + line_number_width, y);
+            ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
+            ctx.text(buffer.data() + lines[i].start, buffer.data() + lines[i].end, max_chars, COLOR_EDITOR_TEXT, viewport.x0 + line_number_width, y);
         }
 
         // Selection.
@@ -1034,7 +1045,7 @@ struct Editor
             ASSERT(!visible_selection.is_empty());
 
             Position position = get_position(visible_selection.start, first_line);
-            float    y        = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (position.line - first_line);
+            float    y        = viewport.y0 - bx::mod(scroll_offset, line_height) + line_height * (position.line - first_line);
 
             for (;; y += line_height, position.line++, position.character = 0)
             {
@@ -1044,10 +1055,10 @@ struct Editor
                     break;
                 }
 
-                const float x0 = viewport.rect.x0 + line_number_width + position.character * char_width;
+                const float x0 = viewport.x0 + line_number_width + position.character * char_width;
                 const float x1 = x0 + char_width * utf8nlen(buffer.data() + offset, bx::min(selection.end, lines[position.line].end) - offset);
 
-                ctx.rect(0x00ff00ff, { x0, y, x1, y + line_height });
+                ctx.rect(COLOR_GREEN, { x0, y, x1, y + line_height });
             }
         }
 
@@ -1060,11 +1071,11 @@ struct Editor
             {
                 const Position caret_position = get_position(caret_offset, first_line);
 
-                const float x = viewport.rect.x0 + line_number_width + char_width * caret_position.character;
-                const float y = viewport.rect.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
+                const float x = viewport.x0 + line_number_width + char_width * caret_position.character;
+                const float y = viewport.y0 - bx::mod(scroll_offset, line_height) + line_height * (caret_position.line - first_line);
 
                 // TODO : Make sure the caret rectangle is aligned to framebuffer pixels.
-                ctx.rect(0xff0000ff, { x - caret_width * 0.5f, y, x + caret_width * 0.5f, y + line_height });
+                ctx.rect(COLOR_RED, { x - caret_width * 0.5f, y, x + caret_width * 0.5f, y + line_height });
             }
         }
 
