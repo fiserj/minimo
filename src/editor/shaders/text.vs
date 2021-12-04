@@ -3,9 +3,9 @@ $output v_color0, v_texcoord0
 
 #include <bgfx_shader.sh>
 
-#define tex_inv_size u_atlas_info.x
-#define glyph_cols   u_atlas_info.y
-#define glyph_size   u_atlas_info.zw
+#define texel_size u_atlas_info.x
+#define glyph_cols u_atlas_info.y
+#define glyph_size u_atlas_info.zw
 
 uniform vec4 u_atlas_info;
 
@@ -49,8 +49,8 @@ void main()
     const float row = floor(glyph_index / glyph_cols);
 
     vec2 uv = (vec2(col, row) + offset[int(vertex_index)]) * glyph_size;
-    uv.x -= step(1.5, vertex_index); // Padding of 1 pixel only in X axis.
+    uv.x -= step(1.5, vertex_index) * texel_size; // Remove X-padding from the right hand side of the quad.
 
-    v_texcoord0 = uv * tex_inv_size;
+    v_texcoord0 = uv;
     v_color0    = colors[int(color_index)];
 }

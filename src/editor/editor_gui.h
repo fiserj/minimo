@@ -155,8 +155,8 @@ struct GlyphCache
 {
     int   texture_size = 0;
     int   glyph_cols   = 0;
-    float glyph_width  = 0.0f; // In pixels.
-    float glyph_height = 0.0f; // In pixels.
+    float glyph_width  = 0.0f; // In pixels, includes an extra pixel of padding.
+    float glyph_height = 0.0f; // In pixels, no padding.
 
     inline float glyph_screen_width() const
     {
@@ -381,10 +381,10 @@ struct DrawList
 
         const float atlas_info[4] =
         {
-            1.0f / gc.texture_size,
+            1.0f / gc.texture_size, // Texel size.
             (float)gc.glyph_cols,
-            gc.glyph_width,
-            gc.glyph_height,
+            gc.glyph_width / gc.texture_size, // Glyph size in texels.
+            gc.glyph_height / gc.texture_size,
         };
 
         identity();
