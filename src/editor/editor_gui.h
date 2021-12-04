@@ -7,9 +7,7 @@ namespace gui
 // LIMITS
 // -----------------------------------------------------------------------------
 
-constexpr uint32_t MAX_RECT_BUFFER_SIZE = 512;
-
-constexpr uint32_t MAX_TEXT_BUFFER_SIZE = 4096;
+constexpr uint32_t MAX_DRAW_LIST_SIZE = 4096;
 
 
 // -----------------------------------------------------------------------------
@@ -248,7 +246,8 @@ struct GlyphCache
     }
 };
 
-struct TextBuffer
+// Simple draw list, supports only rectangles.
+struct DrawList
 {
     struct Header
     {
@@ -264,7 +263,7 @@ struct TextBuffer
         float    f32;
     };
 
-    Item     data[MAX_TEXT_BUFFER_SIZE]; // TODO : Dynamic memory ?
+    Item     data[MAX_DRAW_LIST_SIZE]; // TODO : Dynamic memory ?
     uint32_t size              = 0;
     uint32_t offset            = 0;
     uint32_t empty_glyph_index = 0; // TODO : Set this when space not first in the atlas.
@@ -281,7 +280,7 @@ struct TextBuffer
 
     void add_rect(const Rect& rect, uint8_t color_index, uint8_t clip_index = 0)
     {
-        ASSERT(size + 5 < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size + 5 < MAX_DRAW_LIST_SIZE);
 
         data[size++].header = { 0, color_index, clip_index };
         data[size++].f32    = rect.x0;
@@ -292,7 +291,7 @@ struct TextBuffer
 
     void start_string(float x, float y, uint8_t color_index, uint8_t clip_index = 0)
     {
-        ASSERT(size + 3 < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size + 3 < MAX_DRAW_LIST_SIZE);
 
         offset = size;
 
@@ -303,7 +302,7 @@ struct TextBuffer
 
     inline void add_glyph(uint32_t index)
     {
-        ASSERT(size < MAX_TEXT_BUFFER_SIZE);
+        ASSERT(size < MAX_DRAW_LIST_SIZE);
 
         data[size++].u32 = index;
     }
@@ -404,7 +403,7 @@ struct Context
     Resources   resources;
     IdStack     active_stack;
     IdStack     current_stack;
-    TextBuffer  text_buffer;
+    DrawList    draw_list;
     GlyphCache  glyph_cache;
     int         cursor          = CURSOR_ARROW;
     float       drag_start_x    = 0.0f;
@@ -438,8 +437,8 @@ struct Context
         ortho(0.0f, width(), height(), 0.0f, 1.0f, -1.0f);
         projection();
 
-        text_buffer.submit(glyph_cache, resources);
-        text_buffer.clear ();
+        draw_list.submit(glyph_cache, resources);
+        draw_list.clear ();
     }
 
     inline void push_id(uint8_t id)
@@ -561,26 +560,26 @@ struct Context
 
     inline void rect(Color color, const Rect& rect)
     {
-        text_buffer.add_rect(rect, color);
+        draw_list.add_rect(rect, color);
     }
 
     inline void rect(Color color, float x, float y, float width, float height)
     {
-        text_buffer.add_rect({ x, y, x + width, y + height }, color);
+        draw_list.add_rect({ x, y, x + width, y + height }, color);
     }
 
     inline void hline(Color color, float y, float x0, float x1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `y`, but then we'd need to
         //        handle DPI here explicitly.
-        text_buffer.add_rect({ x0, y, x1, y + thickness }, color);
+        draw_list.add_rect({ x0, y, x1, y + thickness }, color);
     }
 
     inline void vline(Color color, float x, float y0, float y1, float thickness = 1.0f)
     {
         // TODO : We could center it around the given `x`, but then we'd need to
         //        handle DPI here explicitly.
-        text_buffer.add_rect({ x, y0, x + thickness, y1 }, color);
+        draw_list.add_rect({ x, y0, x + thickness, y1 }, color);
     }
 
     // Single-line text.
@@ -593,7 +592,7 @@ struct Context
     // Single-line text.
     void text(const char* string, Color color, float x, float y)
     {
-        text_buffer.start_string(x, y, color);
+        draw_list.start_string(x, y, color);
 
         utf8_int32_t codepoint = 0;
 
@@ -602,11 +601,11 @@ struct Context
             // TODO : The codepoint-to-index should be handled by the glyph cache.
             if (codepoint >= 32 && codepoint <= 126)
             {
-                text_buffer.add_glyph(codepoint - 32);
+                draw_list.add_glyph(codepoint - 32);
             }
         }
 
-        text_buffer.end_string();
+        draw_list.end_string();
     }
 
     // Single-line text.
@@ -614,7 +613,7 @@ struct Context
     {
         if (start != end)
         {
-            text_buffer.start_string(x, y, color);
+            draw_list.start_string(x, y, color);
 
             utf8_int32_t codepoint = 0;
             uint32_t     i         = 0;
@@ -624,11 +623,11 @@ struct Context
                 // TODO : The codepoint-to-index should be handled by the glyph cache.
                 if (codepoint >= 32 && codepoint <= 126)
                 {
-                    text_buffer.add_glyph(codepoint - 32);
+                    draw_list.add_glyph(codepoint - 32);
                 }
             }
 
-            text_buffer.end_string();
+            draw_list.end_string();
         }
     }
     
