@@ -177,14 +177,6 @@ constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
 
 constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
 
-constexpr uint16_t UNIFORM_COUNT_MASK     = UNIFORM_2 | UNIFORM_3 | UNIFORM_4 | UNIFORM_5 | UNIFORM_6 | UNIFORM_7 | UNIFORM_8;
-
-constexpr uint16_t UNIFORM_COUNT_SHIFT    = 3;
-
-constexpr uint16_t UNIFORM_TYPE_MASK      = UNIFORM_VEC4 | UNIFORM_MAT4 | UNIFORM_MAT3 | UNIFORM_SAMPLER;
-
-constexpr uint16_t UNIFORM_TYPE_SHIFT     = 0;
-
 constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
 
 constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
@@ -522,20 +514,19 @@ public:
         }
     }
 
-    bool add(uint16_t id, uint16_t flags, const char* name)
+    bool add(uint16_t id, uint16_t type, uint16_t count, const char* name)
     {
-        static const bgfx::UniformType::Enum types[] =
+        constexpr bgfx::UniformType::Enum types[] =
         {
-            bgfx::UniformType::Vec4   ,
-            bgfx::UniformType::Mat4   ,
-            bgfx::UniformType::Mat3   ,
+            bgfx::UniformType::Count,
+
+            bgfx::UniformType::Vec4,
+            bgfx::UniformType::Mat4,
+            bgfx::UniformType::Mat3,
             bgfx::UniformType::Sampler,
         };
 
-        const bgfx::UniformType::Enum type  = types[((flags & UNIFORM_TYPE_MASK ) >> UNIFORM_TYPE_SHIFT ) - 1];
-        const uint16_t                count = 1 + ((flags & UNIFORM_COUNT_MASK) >> UNIFORM_COUNT_SHIFT);
-
-        bgfx::UniformHandle handle = bgfx::createUniform(name, type, count);
+        bgfx::UniformHandle handle = bgfx::createUniform(name, types[type], count);
         if (!bgfx::isValid( handle))
         {
             ASSERT(false && "Invalid uniform handle.");
@@ -5489,15 +5480,17 @@ void end_framebuffer(void)
 // PUBLIC API IMPLEMENTATION - SHADERS
 // -----------------------------------------------------------------------------
 
-void create_uniform(int id, int flags, const char* name)
+void create_uniform(int id, int type, int count, const char* name)
 {
     ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_UNIFORMS);
-    ASSERT(flags > 0 && flags <= (UNIFORM_SAMPLER | UNIFORM_8));
+    ASSERT(type > 0 && type <= UNIFORM_SAMPLER);
+    ASSERT(count > 0);
     ASSERT(name);
 
     (void)mnm::g_ctx.uniform_cache.add(
         static_cast<uint16_t>(id),
-        static_cast<uint16_t>(flags),
+        static_cast<uint16_t>(type),
+        static_cast<uint16_t>(count),
         name
     );
 }

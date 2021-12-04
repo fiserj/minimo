@@ -884,24 +884,14 @@ void end_framebuffer(void);
 /// By default, \a MiNiMo provides basic shaders for common vertex attribute
 /// combinations, but custom shaders can be created.
 
-/// Uniform flags.
+/// Uniform type.
 ///
 enum
 {
-    // Uniform type.
     UNIFORM_VEC4    = 0x0001,
     UNIFORM_MAT4    = 0x0002,
     UNIFORM_MAT3    = 0x0003,
     UNIFORM_SAMPLER = 0x0004,
-
-    // Uniform elements count. One by default.
-    UNIFORM_2       = 0x0008,
-    UNIFORM_3       = 0x0010,
-    UNIFORM_4       = 0x0018,
-    UNIFORM_5       = 0x0020,
-    UNIFORM_6       = 0x0028,
-    UNIFORM_7       = 0x0030,
-    UNIFORM_8       = 0x0038,
 };
 
 /// Creates a uniform.
@@ -909,9 +899,10 @@ enum
 /// Using existing ID will result in destruction of the previously created data.
 ///
 /// @param[in] id Uniform identifier.
-/// @param[in] flags Uniform properties' flags.
+/// @param[in] type Uniform type.
+/// @param[in] count Number of elements in an array.
 ///
-void create_uniform(int id, int flags, const char* name);
+void create_uniform(int id, int type, int count, const char* name);
 
 /// Sets the uniform value which is used with next `mesh` call.
 ///
