@@ -53,6 +53,7 @@ static gui::Context g_gui;
 
 static gui::Editor  g_editor;
 
+static TextEditor   g_ted;
 
 // -----------------------------------------------------------------------------
 // MINIMO CALLBACKS
@@ -94,7 +95,10 @@ static void setup()
 
     create_uniform(res.uniform_text_info, UNIFORM_VEC4, gui::Uniforms::COUNT, "u_atlas_info");
 
-    g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
+    // g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
+
+    // g_ted.set_content("One two three\nfour\n\nfive\n");
+    g_ted.set_content(load_string("../src/test/instancing.c"));
 }
 
 static void update()
@@ -106,7 +110,8 @@ static void update()
 
     g_gui.begin_frame();
 
-    g_editor.update(g_gui, ID);
+    // g_editor.update(g_gui, ID);
+    g_ted.update(g_gui, ID);
 
     g_gui.end_frame();
 }
