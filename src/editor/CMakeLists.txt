@@ -12,6 +12,7 @@ target_include_directories(${NAME} PRIVATE
 target_link_libraries(${NAME} PRIVATE
     ${PROJECT_NAME}
     bgfx
+    stb
     utf8
 )
 

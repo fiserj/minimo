@@ -40,8 +40,9 @@ using Vector = std::vector<T>;
 // INTERNAL INCLUDES
 // -----------------------------------------------------------------------------
 
-#include "editor_font.h" // g_font_*
-#include "editor_gui.h"  // Context, Editor
+#include "editor_font.h"     // g_font_*
+#include "editor_gui.h"      // Context, Editor
+#include "editor_textedit.h" // ...
 
 
 // ------------/_\--------------------------------------------------------------
@@ -73,7 +74,7 @@ static void setup()
     res.texture_tmp_atlas       = 1023;
     res.uniform_text_info       = 255;
 
-    vsync(1);
+    // vsync(1);
 
     title("MiNiMo Editor");
 
