@@ -44,7 +44,6 @@ using Vector = std::vector<T>;
 #include "editor_gui.h"      // Context, Editor
 #include "editor_textedit.h" // ...
 
-#include "tmp.h"
 
 
 // ------------/_\--------------------------------------------------------------
