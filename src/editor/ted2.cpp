@@ -1,6 +1,6 @@
 #include "ted2.h"
 
-#include <string.h>  // memmove
+#include <string.h>  // memcpy, memmove
 
 #include <algorithm> // min/max
 
@@ -19,30 +19,30 @@ struct Position
     size_t y;
 };
 
-static inline bool empty(const Range& range)
+static inline bool range_empty(const Range& range)
 {
     return range.start == range.end;
 }
 
-static inline size_t size(const Range& range)
+static inline size_t range_size(const Range& range)
 {
     return range.end - range.start;
 }
 
-static inline bool contains(const Range& range, size_t offset)
+static inline bool range_contains(const Range& range, size_t offset)
 {
-    return range.start <= offset && range.end + empty(range) > offset;
+    return range.start <= offset && range.end + range_empty(range) > offset;
 }
 
-static bool overlap(const Range& first, const Range& second)
-{
-    return
-        (first.start >= second.start && first.end   <= second.end) ||
-        (first.start >= second.start && first.start <= second.end) ||
-        (first.end   >= second.start && first.end   <= second.end) ;
-}
+// static bool range_overlap(const Range& first, const Range& second)
+// {
+//     return
+//         (first.start >= second.start && first.end   <= second.end) ||
+//         (first.start >= second.start && first.start <= second.end) ||
+//         (first.end   >= second.start && first.end   <= second.end) ;
+// }
 
-static Range intersection(const Range& first, const Range& second)
+static Range range_intersection(const Range& first, const Range& second)
 {
     Range range;
     range.start = std::max(first.start, second.start);
@@ -57,15 +57,15 @@ static Range intersection(const Range& first, const Range& second)
     return range;
 }
 
-static inline const char* line(const State& state, size_t line)
+static inline const char* line_string(const State& state, size_t line)
 {
     return state.buffer.data() + state.lines[line].start;
 }
 
-static size_t offset(State& state, size_t x, size_t y)
+static size_t to_offset(State& state, size_t x, size_t y)
 {
     utf8_int32_t codepoint = 0;
-    const void*  iterator  = utf8codepoint(line(state, y), &codepoint);
+    const void*  iterator  = utf8codepoint(line_string(state, y), &codepoint);
 
     while (codepoint && codepoint != '\n' && x--)
     {
@@ -75,16 +75,16 @@ static size_t offset(State& state, size_t x, size_t y)
     return static_cast<const char*>(iterator) - state.buffer.data();
 }
 
-static Position position(State& state, size_t offset)
+static Position to_position(State& state, size_t offset)
 {
     Position position = {};
 
     for (size_t i = 0; i < state.lines.size(); i++)
     {
-        if (contains(state.lines[i], offset))
+        if (range_contains(state.lines[i], offset))
         {
             position.y = i;
-            position.x = utf8nlen(line(state, i), offset - state.lines[i].start);
+            position.x = utf8nlen(line_string(state, i), offset - state.lines[i].start);
 
             break;
         }
@@ -93,6 +93,64 @@ static Position position(State& state, size_t offset)
     return position;
 }
 
+static size_t paste_at(std::vector<char>& buffer, Cursor& cursor, const char* string, size_t size)
+{
+    const size_t selection = range_size(cursor.selection);
+
+    if (size != selection)
+    {
+        const size_t src  = cursor.selection.end;
+        const size_t dst  = cursor.selection.start + size;
+        const size_t span = buffer.size() - src;
+
+        if (size > selection)
+        {
+            buffer.resize(buffer.size() + size - selection);
+        }
+
+        memmove(buffer.data() + dst, buffer.data() + src, span);
+    }
+
+    memcpy(buffer.data() + cursor.selection.start, string, size);
+
+    cursor.selection.start =
+    cursor.selection.end   =
+    cursor.offset          = cursor.selection.start + size;
+
+    return 0;
+}
+
+static void parse_lines(const char* string, std::vector<Range>& out_lines)
+{
+    assert(string);
+
+    out_lines.clear(); // Do really all major implementations keep the memory?
+    out_lines.push_back({});
+
+    utf8_int32_t codepoint = 0;
+    const void*  iterator  = utf8codepoint(string, &codepoint);
+    size_t       offset    = 1;
+
+    while (codepoint)
+    {
+        if (codepoint == '\n')
+        {
+            out_lines.back().end = offset;
+            out_lines.push_back({ offset });
+        }
+
+        iterator = utf8codepoint(iterator, &codepoint);
+        offset++;
+    }
+
+    out_lines.back().end = offset;
+}
+
+// static void sanitize_cursors(std::vector<Cursor>& cursors)
+// {
+//     assert(false && "TODO");
+// }
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -100,17 +158,87 @@ static Position position(State& state, size_t offset)
 
 State::State()
 {
-    buffer .reserve(4096);
-    lines  .reserve(128);
-    cursors.reserve(16);
+    clear();
+}
 
-    buffer .push_back({});
-    lines  .push_back({ 0, 1 });
+void State::clear()
+{
+    buffer.clear();
+    buffer.reserve(4096);
+    buffer.push_back(0);
+
+    lines.clear();
+    lines.reserve(128);
+    lines.push_back({ 0, 1 });
+
+    cursors.clear();
+    cursors.reserve(16);
     cursors.push_back({});
 
     char_width  = 0.0f;
     line_height = 0.0f;
 }
+
+void State::paste(const char* string, size_t size)
+{
+    if (!string)
+    {
+        return;
+    }
+
+    if (!size)
+    {
+        size = utf8size_lazy(string);
+
+        if (!size)
+        {
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < cursors.size(); i++)
+    {
+        if (const size_t shift = paste_at(buffer, cursors[i], string, size))
+        {
+            for (size_t j = i + 1; j < cursors.size(); j++)
+            {
+                cursors[j].selection.start += shift;
+                cursors[j].selection.end   += shift;
+                cursors[j].offset          += shift;
+            }
+        }
+    }
+
+    parse_lines(buffer.data(), lines);
+}
+
+
+// -----------------------------------------------------------------------------
+// TESTS
+// -----------------------------------------------------------------------------
+
+#if 1
+
+#include <assert.h>
+
+static bool s_tests_done = []()
+{
+    State state;
+    assert(state.buffer .size() == 1);
+    assert(state.lines  .size() == 1);
+    assert(state.cursors.size() == 1);
+    assert(state.buffer .back() == 0);
+
+    state.paste("One\ntwo");
+    assert(state.buffer .size() == 9);
+    assert(state.lines  .size() == 1);
+    assert(state.cursors.size() == 1);
+    assert(state.buffer .back() == 0);
+
+    return true;
+}();
+
+#endif // 1
 
 
 // -----------------------------------------------------------------------------

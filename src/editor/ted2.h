@@ -41,6 +41,8 @@ struct State
 {
     State();
 
+    void clear();
+
     void click(float x, float y, bool multi_mode);
 
     void drag(float x, float y, bool multi_mode);
@@ -51,7 +53,7 @@ struct State
 
     void cut();
 
-    void paste(const char* string, size_t length = 0);
+    void paste(const char* string, size_t size = 0);
 
     std::vector<char>   buffer;
     std::vector<Range>  lines;
