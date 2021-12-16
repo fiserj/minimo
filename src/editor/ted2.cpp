@@ -115,7 +115,8 @@ static size_t paste_at(std::vector<char>& buffer, Cursor& cursor, const char* st
 
     cursor.selection.start =
     cursor.selection.end   =
-    cursor.offset          = cursor.selection.start + size;
+    cursor.offset          = 
+    cursor.preferred_x     = cursor.selection.start + size;
 
     return 0;
 }
@@ -229,11 +230,24 @@ static bool s_tests_done = []()
     assert(state.cursors.size() == 1);
     assert(state.buffer .back() == 0);
 
-    state.paste("One\ntwo");
-    assert(state.buffer .size() == 9);
-    assert(state.lines  .size() == 1);
+    state.paste("One\ntwo\nthree");
+    assert(state.buffer .size() == 14);
+    assert(state.lines  .size() == 3);
     assert(state.cursors.size() == 1);
     assert(state.buffer .back() == 0);
+    assert(state.cursors[0].offset == 13);
+
+    state.cursors[0].selection.start = 4;
+    state.cursors[0].selection.end   =
+    state.cursors[0].offset          =
+    state.cursors[0].preferred_x     = 7;
+
+    state.paste("four\nfive\n");
+    assert(state.buffer .size() == 21);
+    assert(state.lines  .size() == 5);
+    assert(state.cursors.size() == 1);
+    assert(state.buffer .back() == 0);
+    assert(state.cursors[0].offset == 14);
 
     return true;
 }();
