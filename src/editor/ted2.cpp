@@ -62,6 +62,11 @@ static inline const char* line_string(const State& state, size_t line)
     return state.buffer.data() + state.lines[line].start;
 }
 
+static inline size_t line_length(const State& state, size_t line)
+{
+    return utf8nlen(line_string(state, line), range_size(state.lines[line]));
+}
+
 static size_t to_offset(State& state, size_t x, size_t y)
 {
     utf8_int32_t codepoint = 0;
@@ -180,6 +185,36 @@ void State::clear()
     line_height = 0.0f;
 }
 
+void State::click(float x, float y, bool multi_mode)
+{
+    x = std::max(x, 0.0f);
+    y = std::max(y, 0.0f);
+
+    const size_t yi = std::min(static_cast<size_t>(y / line_height), lines.size() - 1);
+    const size_t xi = std::min(static_cast<size_t>(x / char_width + 0.5f), line_length(*this, yi) - 1);
+
+    const size_t offset = to_offset(*this, x, y);
+    Cursor*      cursor = nullptr;
+
+    if (multi_mode)
+    {
+        // ...
+    }
+    else
+    {
+        cursors.resize(1);
+        cursor = cursors.data();
+    }
+
+    if (cursor)
+    {
+        cursor->selection.start =
+        cursor->selection.end   =
+        cursor->offset          = offset;
+        cursor->preferred_x     = xi;
+    }
+}
+
 void State::paste(const char* string, size_t size)
 {
     if (!string)
@@ -211,6 +246,14 @@ void State::paste(const char* string, size_t size)
     }
 
     parse_lines(buffer.data(), lines);
+}
+
+void State::codepoint(uint32_t codepoint)
+{
+    if (!utf8nvalid(&codepoint, 4))
+    {
+        paste(reinterpret_cast<const char*>(&codepoint));
+    }
 }
 
 
@@ -248,6 +291,10 @@ static bool s_tests_done = []()
     assert(state.cursors.size() == 1);
     assert(state.buffer .back() == 0);
     assert(state.cursors[0].offset == 14);
+
+    state.codepoint('a');
+    state.codepoint('b');
+    state.codepoint('c');
 
     return true;
 }();
