@@ -99,7 +99,7 @@ static Position to_position(State& state, size_t offset)
     return position;
 }
 
-static size_t paste_at(Array<char>& buffer, Cursor& cursor, const char* string, size_t size)
+static size_t paste_at(State& state, Cursor& cursor, const char* string, size_t size)
 {
     const size_t selection = range_size(cursor.selection);
 
@@ -107,22 +107,22 @@ static size_t paste_at(Array<char>& buffer, Cursor& cursor, const char* string, 
     {
         const size_t src  = cursor.selection.end;
         const size_t dst  = cursor.selection.start + size;
-        const size_t span = buffer.size() - src;
+        const size_t span = state.buffer.size() - src;
 
         if (size > selection)
         {
-            buffer.resize(buffer.size() + size - selection);
+            state.buffer.resize(state.buffer.size() + size - selection);
         }
 
-        memmove(buffer.data() + dst, buffer.data() + src, span);
+        memmove(state.buffer.data() + dst, state.buffer.data() + src, span);
     }
 
-    memcpy(buffer.data() + cursor.selection.start, string, size);
+    memcpy(state.buffer.data() + cursor.selection.start, string, size);
 
     cursor.selection.start =
     cursor.selection.end   =
-    cursor.offset          = 
-    cursor.preferred_x     = cursor.selection.start + size;
+    cursor.offset          = cursor.selection.start + size;
+    cursor.preferred_x     = to_position(state, cursor.offset).x;
 
     return 0;
 }
@@ -219,6 +219,41 @@ static void sanitize_cursors(Array<Cursor>& cursors)
     }
 }
 
+static void move_cursor_horizontally(State& state, bool left)
+{
+    assert(state.buffer.size());
+
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor& cursor = state.cursors[i];
+
+        if (range_empty(cursor.selection))
+        {
+            if (left)
+            {
+                if (cursor.offset > 0)
+                {
+                    cursor.offset--;
+                }
+            }
+            else if (cursor.offset + 1 < state.buffer.size())
+            {
+                cursor.offset++;
+            }
+        }
+        else
+        {
+            cursor.offset = left ? cursor.selection.start : cursor.selection.end;
+        }
+
+        cursor.selection.start =
+        cursor.selection.end   = cursor.offset;
+        cursor.preferred_x     = to_position(state, cursor.offset).x;
+    }
+
+    sanitize_cursors(state.cursors);
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -300,7 +335,7 @@ void State::paste(const char* string, size_t size)
 
     for (size_t i = 0; i < cursors.size(); i++)
     {
-        if (const size_t shift = paste_at(buffer, cursors[i], string, size))
+        if (const size_t shift = paste_at(*this, cursors[i], string, size))
         {
             for (size_t j = i + 1; j < cursors.size(); j++)
             {
@@ -318,7 +353,10 @@ void State::action(Action action)
 {
     switch (action)
     {
-        // ...
+        case Action::MOVE_LEFT:
+        case Action::MOVE_RIGHT:
+            move_cursor_horizontally(*this, action == Action::MOVE_LEFT);
+            break;
 
         default:
             assert(false && "Not yet implemented.");
