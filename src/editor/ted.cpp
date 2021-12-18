@@ -314,6 +314,17 @@ void State::paste(const char* string, size_t size)
     parse_lines(buffer.data(), lines);
 }
 
+void State::action(Action action)
+{
+    switch (action)
+    {
+        // ...
+
+        default:
+            assert(false && "Not yet implemented.");
+    }
+}
+
 void State::codepoint(uint32_t codepoint)
 {
     if (!utf8nvalid(&codepoint, 4))
