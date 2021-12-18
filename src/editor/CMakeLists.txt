@@ -2,6 +2,8 @@ set(NAME editor)
 
 add_executable(${NAME}
     editor.cpp
+    ted.cpp
+    ted.h
 )
 
 target_include_directories(${NAME} PRIVATE
