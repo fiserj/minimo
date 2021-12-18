@@ -81,11 +81,11 @@ static size_t to_offset(State& state, size_t x, size_t y)
     return static_cast<const char*>(iterator) - state.buffer.data();
 }
 
-static Position to_position(State& state, size_t offset)
+static Position to_position(State& state, size_t offset, size_t start_line = 0)
 {
     Position position = {};
 
-    for (size_t i = 0; i < state.lines.size(); i++)
+    for (size_t i = start_line; i < state.lines.size(); i++)
     {
         if (range_contains(state.lines[i], offset))
         {
@@ -221,8 +221,6 @@ static void sanitize_cursors(Array<Cursor>& cursors)
 
 static void move_cursor_horizontally(State& state, bool left)
 {
-    assert(state.buffer.size());
-
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
         Cursor& cursor = state.cursors[i];
@@ -249,6 +247,53 @@ static void move_cursor_horizontally(State& state, bool left)
         cursor.selection.start =
         cursor.selection.end   = cursor.offset;
         cursor.preferred_x     = to_position(state, cursor.offset).x;
+    }
+
+    sanitize_cursors(state.cursors);
+}
+
+static void move_cursor_vertically(State& state, bool up)
+{
+    for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
+    {
+        Cursor& cursor = state.cursors[i];
+        size_t  cursor_line;
+
+        if (!range_empty(cursor.selection))
+        {
+            const size_t   offset   = up ? cursor.selection.start : cursor.selection.end;
+            const Position position = to_position(state, offset, start_line);
+
+            cursor.preferred_x = position.x;
+            cursor_line        =
+            start_line         = position.y;
+        }
+        else
+        {
+            cursor_line =
+            start_line  = to_position(state, cursor.offset, start_line).y;
+        }
+
+        if (up)
+        {
+            if (cursor_line > 0)
+            {
+                cursor_line--;
+            }
+        }
+        else if (cursor_line + 1 < state.lines.size())
+        {
+            cursor_line++;
+        }
+
+        const size_t length = line_length(state, cursor_line);
+        assert(length);
+
+        const size_t cursor_x = std::min(cursor.preferred_x, length - 1);
+
+        cursor.selection.start =
+        cursor.selection.end   =
+        cursor.offset          = to_offset(state, cursor_x, cursor_line);
     }
 
     sanitize_cursors(state.cursors);
@@ -356,6 +401,11 @@ void State::action(Action action)
         case Action::MOVE_LEFT:
         case Action::MOVE_RIGHT:
             move_cursor_horizontally(*this, action == Action::MOVE_LEFT);
+            break;
+
+        case Action::MOVE_UP:
+        case Action::MOVE_DOWN:
+            move_cursor_vertically(*this, action == Action::MOVE_UP);
             break;
 
         default:
