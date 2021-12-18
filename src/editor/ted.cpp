@@ -1,8 +1,9 @@
 #include "ted.h"
 
+#include <assert.h>  // assert
 #include <string.h>  // memcpy, memmove
 
-#include <algorithm> // min/max
+#include <algorithm> // min/max, sort
 
 #include <utf8.h>    // utf8*
 
@@ -152,10 +153,48 @@ static void parse_lines(const char* string, Array<Range>& out_lines)
     out_lines[out_lines.size() - 1].end = offset;
 }
 
-// static void sanitize_cursors(Array<Cursor>& cursors)
-// {
-//     assert(false && "TODO");
-// }
+static void sanitize_cursors(Array<Cursor>& cursors)
+{
+    if (cursors.size() < 2)
+    {
+        return;
+    }
+
+    std::sort(
+        cursors.data(),
+        cursors.data() + cursors.size(),
+        [](const Cursor& first, const Cursor& second)
+        {
+            return first.selection.start < second.selection.start;
+        }
+    );
+
+    size_t n = cursors.size();
+
+    for (size_t i = 1; i < n; i++)
+    {
+        Cursor& first  = cursors[i - 1];
+        Cursor& second = cursors[i];
+
+        if (first.selection.end >= second.selection.start)
+        {
+            assert(!range_empty(first .selection));
+            assert(!range_empty(second.selection));
+
+            for (size_t j = i + 1; i < n; i++)
+            {
+                cursors[j - 1] = cursors[j];
+            }
+
+            n--;
+        }
+    }
+
+    if (n != cursors.size())
+    {
+        cursors.resize(n);
+    }
+}
 
 
 // -----------------------------------------------------------------------------
