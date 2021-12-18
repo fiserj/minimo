@@ -3,6 +3,8 @@
 #include <stdint.h>  // uint32_t
 #include <stddef.h>  // size_t
 
+// `TED_ARRAY` has to implement following subset of `std::vector`'s API:
+// `clear`, `data`, `operator[]`, `push_back`, `reserve`, `resize`, `size`.
 #ifndef TED_ARRAY
 #   include <vector> // vector
 #   define TED_ARRAY std::vector

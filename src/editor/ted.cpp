@@ -141,7 +141,7 @@ static void parse_lines(const char* string, Array<Range>& out_lines)
     {
         if (codepoint == '\n')
         {
-            out_lines.back().end = offset;
+            out_lines[out_lines.size() - 1].end = offset;
             out_lines.push_back({ offset });
         }
 
@@ -149,7 +149,7 @@ static void parse_lines(const char* string, Array<Range>& out_lines)
         offset++;
     }
 
-    out_lines.back().end = offset;
+    out_lines[out_lines.size() - 1].end = offset;
 }
 
 // static void sanitize_cursors(Array<Cursor>& cursors)
