@@ -153,6 +153,36 @@ static void parse_lines(const char* string, Array<Range>& lines)
     lines[lines.size() - 1].end = offset;
 }
 
+static void remove_cursor(Array<Cursor>& cursors, size_t i)
+{
+    assert(cursors.size() > 1);
+
+    for (size_t j = i + 1; j < cursors.size(); j++)
+    {
+        cursors[j - 1] = cursors[j];
+    }
+
+    cursors.resize(cursors.size() - 1);
+}
+
+static bool remove_cursor_containing_offset(Array<Cursor>& cursors, size_t offset)
+{
+    for (size_t i = 0; i < cursors.size(); i++)
+    {
+        if (range_contains(cursors[i].selection, offset))
+        {
+            if (cursors.size() > 1)
+            {
+                remove_cursor(cursors, i);
+            }
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void sanitize_cursors(Array<Cursor>& cursors)
 {
     if (cursors.size() < 2)
@@ -169,9 +199,7 @@ static void sanitize_cursors(Array<Cursor>& cursors)
         }
     );
 
-    size_t n = cursors.size();
-
-    for (size_t i = 1; i < n; i++)
+    for (size_t i = 1; i < cursors.size(); i++)
     {
         Cursor& first  = cursors[i - 1];
         Cursor& second = cursors[i];
@@ -181,18 +209,13 @@ static void sanitize_cursors(Array<Cursor>& cursors)
             assert(!range_empty(first .selection));
             assert(!range_empty(second.selection));
 
-            for (size_t j = i + 1; i < n; i++)
+            for (size_t j = i + 1; i < cursors.size(); i++)
             {
                 cursors[j - 1] = cursors[j];
             }
 
-            n--;
+            remove_cursor(cursors, i);
         }
-    }
-
-    if (n != cursors.size())
-    {
-        cursors.resize(n);
     }
 }
 
@@ -237,12 +260,16 @@ void State::click(float x, float y, bool multi_mode)
 
     if (multi_mode)
     {
-        // ...
+        if (!remove_cursor_containing_offset(cursors, offset))
+        {
+            cursors.resize(cursors.size() + 1);
+            cursor = &cursors[cursors.size() - 1];
+        }
     }
     else
     {
         cursors.resize(1);
-        cursor = cursors.data();
+        cursor = &cursors[0];
     }
 
     if (cursor)
