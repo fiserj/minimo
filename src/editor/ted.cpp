@@ -127,12 +127,12 @@ static size_t paste_at(Array<char>& buffer, Cursor& cursor, const char* string, 
     return 0;
 }
 
-static void parse_lines(const char* string, Array<Range>& out_lines)
+static void parse_lines(const char* string, Array<Range>& lines)
 {
     assert(string);
 
-    out_lines.clear(); // Do really all major implementations keep the memory?
-    out_lines.push_back({});
+    lines.clear(); // Do really all major implementations keep the memory?
+    lines.push_back({});
 
     utf8_int32_t codepoint = 0;
     const void*  iterator  = utf8codepoint(string, &codepoint);
@@ -142,15 +142,15 @@ static void parse_lines(const char* string, Array<Range>& out_lines)
     {
         if (codepoint == '\n')
         {
-            out_lines[out_lines.size() - 1].end = offset;
-            out_lines.push_back({ offset });
+            lines[lines.size() - 1].end = offset;
+            lines.push_back({ offset });
         }
 
         iterator = utf8codepoint(iterator, &codepoint);
         offset++;
     }
 
-    out_lines[out_lines.size() - 1].end = offset;
+    lines[lines.size() - 1].end = offset;
 }
 
 static void sanitize_cursors(Array<Cursor>& cursors)
