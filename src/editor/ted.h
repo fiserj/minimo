@@ -57,7 +57,7 @@ struct State
 
     void click(float x, float y, bool multi_mode);
 
-    void drag(float x, float y, bool multi_mode);
+    void drag(float x, float y);
 
     void action(Action action);
 

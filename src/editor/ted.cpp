@@ -3,7 +3,7 @@
 #include <assert.h>  // assert
 #include <string.h>  // memcpy, memmove
 
-#include <algorithm> // min/max, sort
+#include <algorithm> // min/max, sort, swap
 
 #include <utf8.h>    // utf8*
 
@@ -35,28 +35,28 @@ static inline bool range_contains(const Range& range, size_t offset)
     return range.start <= offset && range.end + range_empty(range) > offset;
 }
 
-// static bool range_overlap(const Range& first, const Range& second)
-// {
-//     return
-//         (first.start >= second.start && first.end   <= second.end) ||
-//         (first.start >= second.start && first.start <= second.end) ||
-//         (first.end   >= second.start && first.end   <= second.end) ;
-// }
-
-static Range range_intersection(const Range& first, const Range& second)
+static bool range_overlap(const Range& first, const Range& second)
 {
-    Range range;
-    range.start = std::max(first.start, second.start);
-    range.end   = std::min(first.end  , second.end  );
-
-    if (range.start > range.end)
-    {
-        range.start = 0.0f;
-        range.end   = 0.0f;
-    }
-
-    return range;
+    return
+        (first.start >= second.start && first.end   <= second.end) ||
+        (first.start >= second.start && first.start <= second.end) ||
+        (first.end   >= second.start && first.end   <= second.end) ;
 }
+
+// static Range range_intersection(const Range& first, const Range& second)
+// {
+//     Range range;
+//     range.start = std::max(first.start, second.start);
+//     range.end   = std::min(first.end  , second.end  );
+
+//     if (range.start > range.end)
+//     {
+//         range.start = 0.0f;
+//         range.end   = 0.0f;
+//     }
+
+//     return range;
+// }
 
 static inline const char* line_string(const State& state, size_t line)
 {
@@ -97,6 +97,17 @@ static Position to_position(State& state, size_t offset, size_t start_line = 0)
     }
 
     return position;
+}
+
+static Position click_position(const State& state, float x, float y)
+{
+    x = std::max(x, 0.0f) / state.line_height;
+    y = std::max(y, 0.0f) / state.char_width;
+
+    const size_t yi = std::min(static_cast<size_t>(y), state.lines.size() - 1);
+    const size_t xi = std::min(static_cast<size_t>(x + 0.5f), line_length(state, yi) - 1);
+
+    return { xi, yi };
 }
 
 static size_t paste_at(State& state, Cursor& cursor, const char* string, size_t size)
@@ -219,7 +230,7 @@ static void sanitize_cursors(Array<Cursor>& cursors)
     }
 }
 
-static void move_cursor_horizontally(State& state, bool left)
+static void move_cursors_horizontally(State& state, bool left)
 {
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
@@ -252,7 +263,7 @@ static void move_cursor_horizontally(State& state, bool left)
     sanitize_cursors(state.cursors);
 }
 
-static void move_cursor_vertically(State& state, bool up)
+static void move_cursors_vertically(State& state, bool up)
 {
     for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
     {
@@ -329,14 +340,9 @@ void State::clear()
 
 void State::click(float x, float y, bool multi_mode)
 {
-    x = std::max(x, 0.0f);
-    y = std::max(y, 0.0f);
-
-    const size_t yi = std::min(static_cast<size_t>(y / line_height), lines.size() - 1);
-    const size_t xi = std::min(static_cast<size_t>(x / char_width + 0.5f), line_length(*this, yi) - 1);
-
-    const size_t offset = to_offset(*this, x, y);
-    Cursor*      cursor = nullptr;
+    const Position position = click_position(*this, x, y);
+    const size_t   offset   = to_offset(*this, position.x, position.y);
+    Cursor*        cursor   = nullptr;
 
     if (multi_mode)
     {
@@ -357,7 +363,46 @@ void State::click(float x, float y, bool multi_mode)
         cursor->selection.start =
         cursor->selection.end   =
         cursor->offset          = offset;
-        cursor->preferred_x     = xi;
+        cursor->preferred_x     = position.x;
+    }
+}
+
+void State::drag(float x, float y)
+{
+    // Lastly added cursor is considered the active one to drive the selection.
+    const size_t active = cursors.size() - 1;
+    size_t       count  = active;
+
+    const Position position = click_position(*this, x, y);
+    const size_t   offset   = to_offset(*this, position.x, position.y);
+
+    Cursor& cursor = cursors[active];
+    cursor.selection.end =
+    cursor.offset        = offset; // This means `end` may be smaller than `start`.
+
+    const Range selection =
+    {
+        std::min(cursor.selection.start, cursor.selection.end),
+        std::max(cursor.selection.start, cursor.selection.end),
+    };
+
+    for (size_t i = 0; i < count; i++)
+    {
+        if (range_overlap(selection, cursors[i].selection))
+        {
+            for (size_t j = i + 1; j < count; j++)
+            {
+                cursors[j - 1] = cursors[j];
+            }
+
+            count--;
+        }
+    }
+
+    if (count + 1 != cursors.size())
+    {
+        std::swap(cursors[count], cursors[active]);
+        cursors.resize(count + 1);
     }
 }
 
@@ -400,12 +445,12 @@ void State::action(Action action)
     {
         case Action::MOVE_LEFT:
         case Action::MOVE_RIGHT:
-            move_cursor_horizontally(*this, action == Action::MOVE_LEFT);
+            move_cursors_horizontally(*this, action == Action::MOVE_LEFT);
             break;
 
         case Action::MOVE_UP:
         case Action::MOVE_DOWN:
-            move_cursor_vertically(*this, action == Action::MOVE_UP);
+            move_cursors_vertically(*this, action == Action::MOVE_UP);
             break;
 
         default:
