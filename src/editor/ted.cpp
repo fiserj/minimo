@@ -76,6 +76,19 @@ static inline size_t line_length(const State& state, size_t line)
     return utf8nlen(line_string(state, line), range_size(state.lines[line]));
 }
 
+static size_t to_line(const Array<Range>& lines, size_t offset, size_t start_line = 0)
+{
+    for (size_t i = start_line; i < lines.size(); i++)
+    {
+        if (range_contains(lines[i], offset))
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
 static size_t to_offset(State& state, size_t x, size_t y)
 {
     utf8_int32_t codepoint = 0;
@@ -91,7 +104,7 @@ static size_t to_offset(State& state, size_t x, size_t y)
 
 static Position to_position(State& state, size_t offset, size_t start_line = 0)
 {
-    Position position = {};
+    Position position = { 0, 0 };
 
     for (size_t i = start_line; i < state.lines.size(); i++)
     {
@@ -208,21 +221,29 @@ static inline void fix_last_cursor(Array<Cursor>& cursors)
     range_fix(cursors[cursors.size() - 1].selection);
 }
 
-static void sanitize_cursors(Array<Cursor>& cursors)
+static inline void sort_cursors(Array<Cursor>& cursors)
+{
+    if (cursors.size() > 1)
+    {
+        std::sort(
+            cursors.data(),
+            cursors.data() + cursors.size(),
+            [](const Cursor& first, const Cursor& second)
+            {
+                return first.selection.start < second.selection.start;
+            }
+        );
+    }
+}
+
+static void fix_overlapping_cursors(Array<Cursor>& cursors)
 {
     if (cursors.size() < 2)
     {
         return;
     }
 
-    std::sort(
-        cursors.data(),
-        cursors.data() + cursors.size(),
-        [](const Cursor& first, const Cursor& second)
-        {
-            return first.selection.start < second.selection.start;
-        }
-    );
+    sort_cursors(cursors);
 
     for (size_t i = 1; i < cursors.size(); i++)
     {
@@ -274,7 +295,7 @@ static void move_cursors_horizontally(State& state, bool left)
         cursor.preferred_x     = to_position(state, cursor.offset).x;
     }
 
-    sanitize_cursors(state.cursors);
+    fix_overlapping_cursors(state.cursors);
 }
 
 static void move_cursors_vertically(State& state, bool up)
@@ -321,7 +342,7 @@ static void move_cursors_vertically(State& state, bool up)
         cursor.offset          = to_offset(state, cursor_x, cursor_line);
     }
 
-    sanitize_cursors(state.cursors);
+    fix_overlapping_cursors(state.cursors);
 }
 
 static void select_all(State& state)
@@ -333,6 +354,19 @@ static void select_all(State& state)
     cursor.selection.start = 0;
     cursor.selection.end   = 
     cursor.offset          = state.lines[state.lines.size() - 1].end;
+}
+
+static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, const Range& selection)
+{
+    assert(!range_empty(selection));
+
+    const size_t size   = range_size(selection);
+    const size_t offset = clipboard.buffer.size();
+
+    clipboard.buffer.resize(offset + size);
+    memcpy(clipboard.buffer.data() + offset, buffer.data() + selection.start, size);
+
+    clipboard.ranges.push_back({offset, offset + size });
 }
 
 
@@ -466,6 +500,34 @@ void State::codepoint(uint32_t codepoint)
     }
 }
 
+// TODO : Actually remove the selections.
+void State::cut(Clipboard& out_clipboard)
+{
+    out_clipboard.buffer.clear();
+    out_clipboard.ranges.clear();
+
+    fix_last_cursor(cursors);
+    sort_cursors(cursors);
+
+    size_t last_copied_line = -1;
+
+    for (size_t i = 0; i < cursors.size(); i++)
+    {
+        Range        selection = cursors[i].selection;
+        const size_t line      = to_line(lines, selection.end);
+
+        if (range_empty(selection) && line != last_copied_line)
+        {
+            selection = lines[line];
+        }
+
+        if (!range_empty(selection))
+        {
+            add_to_clipboard(out_clipboard, buffer, selection);
+            last_copied_line = line;
+        }
+    }
+}
 
 void State::paste(const char* string, size_t size)
 {
