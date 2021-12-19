@@ -28,6 +28,8 @@ enum struct Action
 
     MOVE_LINE_UP,
     MOVE_LINE_DOWN,
+
+    SELECT_ALL,
 };
 
 struct Range

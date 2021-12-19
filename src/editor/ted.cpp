@@ -310,6 +310,17 @@ static void move_cursors_vertically(State& state, bool up)
     sanitize_cursors(state.cursors);
 }
 
+static void select_all(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = 
+    cursor.offset          = state.lines[state.lines.size() - 1].end;
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -451,6 +462,10 @@ void State::action(Action action)
         case Action::MOVE_UP:
         case Action::MOVE_DOWN:
             move_cursors_vertically(*this, action == Action::MOVE_UP);
+            break;
+
+        case Action::SELECT_ALL:
+            select_all(*this);
             break;
 
         default:
