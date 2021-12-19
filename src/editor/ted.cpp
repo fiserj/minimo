@@ -366,6 +366,11 @@ static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, co
     clipboard.buffer.resize(offset + size);
     memcpy(clipboard.buffer.data() + offset, buffer.data() + selection.start, size);
 
+    if (selection.end == buffer.size())
+    {
+        clipboard.buffer[clipboard.buffer.size() - 1] = '\n';
+    }
+
     clipboard.ranges.push_back({offset, offset + size });
 }
 
@@ -382,7 +387,7 @@ static void copy_to_clipboard(State& state, Clipboard& clipboard, Array<Range>* 
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
         Range        selection = state.cursors[i].selection;
-        const size_t line      = to_line(state.lines, selection.end);
+        const size_t line      = to_line(state.lines, selection.end, i ? last_copied_line : 0);
 
         if (range_empty(selection) && line != last_copied_line)
         {
@@ -541,7 +546,8 @@ void State::copy(Clipboard& out_clipboard)
 void State::cut(Clipboard& out_clipboard)
 {
     // TODO : Try to eliminate this additional heap-allocated resource (will
-    //        need to store the absolute ranges first).
+    //        need to store the absolute ranges first, and adjust them to the
+    //        in-clipboard-buffer ones while deleting the selections.
     Array<Range> selections;
     copy_to_clipboard(*this, out_clipboard, &selections);
 
@@ -551,11 +557,11 @@ void State::cut(Clipboard& out_clipboard)
     size_t start   = selections[0].start;
     size_t end     = selections[0].end;
 
-    for (size_t i = 1; i < selections.size();)
+    for (size_t i = 1; i < selections.size(); i++)
     {
         while (i < selections.size() && range_contains({ start, end }, selections[i].start))
         {
-            end = std::max(end, selections[i].start);
+            end = std::max(end, selections[i].end);
             i++;
         }
 
@@ -608,6 +614,7 @@ void State::paste(const char* string, size_t size)
                 cursors[j].selection.start += shift;
                 cursors[j].selection.end   += shift;
                 cursors[j].offset          += shift;
+                // TODO : Preferred X.
             }
         }
     }
