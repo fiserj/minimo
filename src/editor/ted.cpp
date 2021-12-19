@@ -369,6 +369,39 @@ static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, co
     clipboard.ranges.push_back({offset, offset + size });
 }
 
+static void copy_to_clipboard(State& state, Clipboard& clipboard, Array<Range>* copied_selections = nullptr)
+{
+    clipboard.buffer.clear();
+    clipboard.ranges.clear();
+
+    fix_last_cursor(state.cursors);
+    sort_cursors(state.cursors);
+
+    size_t last_copied_line = -1;
+
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Range        selection = state.cursors[i].selection;
+        const size_t line      = to_line(state.lines, selection.end);
+
+        if (range_empty(selection) && line != last_copied_line)
+        {
+            selection = state.lines[line];
+        }
+
+        if (!range_empty(selection))
+        {
+            add_to_clipboard(clipboard, state.buffer, selection);
+            last_copied_line = line;
+
+            if (copied_selections)
+            {
+                copied_selections->push_back(selection);
+            }
+        }
+    }
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -500,33 +533,51 @@ void State::codepoint(uint32_t codepoint)
     }
 }
 
-// TODO : Actually remove the selections.
+void State::copy(Clipboard& out_clipboard)
+{
+    copy_to_clipboard(*this, out_clipboard);
+}
+
 void State::cut(Clipboard& out_clipboard)
 {
-    out_clipboard.buffer.clear();
-    out_clipboard.ranges.clear();
+    // TODO : Try to eliminate this additional heap-allocated resource (will
+    //        need to store the absolute ranges first).
+    Array<Range> selections;
+    copy_to_clipboard(*this, out_clipboard, &selections);
 
-    fix_last_cursor(cursors);
-    sort_cursors(cursors);
+    assert(selections.size());
 
-    size_t last_copied_line = -1;
+    size_t removed = 0;
+    size_t start   = selections[0].start;
+    size_t end     = selections[0].end;
 
-    for (size_t i = 0; i < cursors.size(); i++)
+    for (size_t i = 1; i < selections.size();)
     {
-        Range        selection = cursors[i].selection;
-        const size_t line      = to_line(lines, selection.end);
-
-        if (range_empty(selection) && line != last_copied_line)
+        while (i < selections.size() && range_contains({ start, end }, selections[i].start))
         {
-            selection = lines[line];
+            end = std::max(end, selections[i].start);
+            i++;
         }
 
-        if (!range_empty(selection))
+        char*        dst  = buffer.data() + start - removed;
+        const char*  src  = buffer.data() + end   - removed;
+        const size_t size = buffer.size() - start - removed;
+
+        memmove(dst, src, size);
+        removed += end - start;
+
+        if (i < selections.size())
         {
-            add_to_clipboard(out_clipboard, buffer, selection);
-            last_copied_line = line;
+            start = selections[i].start;
+            end   = selections[i].end;
         }
     }
+
+    buffer.resize(buffer.size() - removed);
+    assert(buffer.size());
+    assert(buffer[buffer.size() - 1] == 0);
+
+    parse_lines(buffer.data(), lines);
 }
 
 void State::paste(const char* string, size_t size)

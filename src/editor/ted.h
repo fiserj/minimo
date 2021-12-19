@@ -65,6 +65,8 @@ struct State
 
     void codepoint(uint32_t codepoint);
 
+    void copy(Clipboard& out_clipboard);
+
     void cut(Clipboard& out_clipboard);
 
     void paste(const Clipboard& clipboard);
