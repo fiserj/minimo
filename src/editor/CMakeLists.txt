@@ -25,6 +25,10 @@ set_target_properties(${NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
 
+target_compile_definitions(${NAME} PRIVATE
+    TED_TESTS
+)
+
 if(MSVC)
     target_compile_definitions(${NAME} PRIVATE
         _CRT_SECURE_NO_WARNINGS

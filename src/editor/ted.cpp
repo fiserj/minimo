@@ -627,45 +627,152 @@ void State::paste(const char* string, size_t size)
 // TESTS
 // -----------------------------------------------------------------------------
 
-#if 0
+#if defined(TED_TESTS) && !defined(NDEBUG)
 
-#include <assert.h>
+namespace tests
+{
+
+struct TestState : State
+{
+    TestState()
+    {
+        char_width  = 10.0f;
+        line_height = 20.0f;
+
+        check_invariants();
+
+        // https://en.wikipedia.org/wiki/Salamander
+        paste(
+            "Salamanders are a group of amphibians typically characterized by\n"
+            "their lizard-like appearance, with slender bodies, blunt snouts,\n"
+            "short limbs projecting at right angles to the body, and the presence\n"
+            "of a tail in both larvae and adults.\n"
+            "\n"
+            "All ten extant salamander families are grouped together under the\n"
+            "order Urodela.\n"
+            "\n"
+            "Salamander diversity is highest in the Northern Hemisphere and most\n"
+            "species are found in the Holarctic realm, with some species present\n"
+            "in the Neotropical realm."
+        );
+
+        check_invariants();
+
+        check_size(481);
+
+        check_line_count(11);
+
+        check_cursor_count(1);
+        check_cursor(0, { { 480, 480 }, 480, 0 }); // TODO : Preferred X.        
+    }
+
+    void check_invariants()
+    {
+        assert(buffer.size());
+        assert(buffer[buffer.size() - 1] == 0);
+
+        assert(lines.size());
+        assert(lines[0].start == 0);
+        assert(lines[lines.size() - 1].end == buffer.size());
+
+        assert(cursors.size());
+    }
+
+    void check_size(size_t expected)
+    {
+        assert(buffer.size() == expected);
+    }
+
+    void check_string(const char* expected)
+    {
+        assert(0 == utf8cmp(buffer.data(), expected));
+    }
+
+    void check_line_count(size_t expected)
+    {
+        assert(lines.size() == expected);
+    }
+
+    void check_cursor_count(size_t expected)
+    {
+        assert(cursors.size() == expected);
+    }
+
+    void check_cursor(size_t index, const Cursor& cursor)
+    {
+        assert(index < cursors.size());
+
+        assert(cursor.selection.start <= cursor.selection.end);
+
+        assert(cursors[index].selection.start == cursor.selection.start);
+        assert(cursors[index].selection.end   == cursor.selection.end  );
+        assert(cursors[index].offset          == cursor.offset         );
+        assert(cursors[index].preferred_x     == cursor.preferred_x    );
+    }
+};
+
+struct TestClipboard : Clipboard
+{
+    void check_size(size_t expected)
+    {
+        assert(ranges.size() == expected);
+    }
+
+    void check_string(size_t index, const char* expected)
+    {
+        assert(index < ranges.size());
+        assert(0 == utf8ncmp(
+            buffer.data() + ranges[index].start,
+            expected,
+            range_size(ranges[index])
+        ));
+    }
+};
+
+static void test_cut()
+{
+    TestState state;
+
+    state.cursors.clear();
+    state.cursors.push_back({ {  16,  38 } }); // "a group of amphibians ".
+    state.cursors.push_back({ {  70,  70 } }); // 2nd line, including `\n`.
+    state.cursors.push_back({ { 100, 107 } }); // "slender".
+    state.cursors.push_back({ { 110, 110 } }); // 2nd line again, this time skipped.
+
+    TestClipboard clipboard;
+    state.cut(clipboard);
+
+    clipboard.check_size(3);
+    clipboard.check_string(0, "a group of amphibians ");
+    clipboard.check_string(1, "their lizard-like appearance, with slender bodies, blunt snouts,\n");
+    clipboard.check_string(2, "slender");
+
+    state.check_line_count(10);
+    state.check_size(394);
+    state.check_string(
+        "Salamanders are typically characterized by\n"
+        "short limbs projecting at right angles to the body, and the presence\n"
+        "of a tail in both larvae and adults.\n"
+        "\n"
+        "All ten extant salamander families are grouped together under the\n"
+        "order Urodela.\n"
+        "\n"
+        "Salamander diversity is highest in the Northern Hemisphere and most\n"
+        "species are found in the Holarctic realm, with some species present\n"
+        "in the Neotropical realm."
+    );
+}
 
 static bool s_tests_done = []()
 {
-    State state;
-    assert(state.buffer .size() == 1);
-    assert(state.lines  .size() == 1);
-    assert(state.cursors.size() == 1);
-    assert(state.buffer .back() == 0);
-
-    state.paste("One\ntwo\nthree");
-    assert(state.buffer .size() == 14);
-    assert(state.lines  .size() == 3);
-    assert(state.cursors.size() == 1);
-    assert(state.buffer .back() == 0);
-    assert(state.cursors[0].offset == 13);
-
-    state.cursors[0].selection.start = 4;
-    state.cursors[0].selection.end   =
-    state.cursors[0].offset          =
-    state.cursors[0].preferred_x     = 7;
-
-    state.paste("four\nfive\n");
-    assert(state.buffer .size() == 21);
-    assert(state.lines  .size() == 5);
-    assert(state.cursors.size() == 1);
-    assert(state.buffer .back() == 0);
-    assert(state.cursors[0].offset == 14);
-
-    state.codepoint('a');
-    state.codepoint('b');
-    state.codepoint('c');
+    test_cut();
 
     return true;
 }();
 
-#endif // 0
+} // namespace tests
+
+#endif // defined(TED_TESTS) && !defined(NDEBUG)
 
 
 // -----------------------------------------------------------------------------
