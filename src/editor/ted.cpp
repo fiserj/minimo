@@ -20,6 +20,14 @@ struct Position
     size_t y;
 };
 
+static inline void range_fix(Range& range)
+{
+    if (range.end < range.start)
+    {
+        std::swap(range.start, range.end);
+    }
+}
+
 static inline bool range_empty(const Range& range)
 {
     return range.start == range.end;
@@ -194,6 +202,12 @@ static bool remove_cursor_containing_offset(Array<Cursor>& cursors, size_t offse
     return false;
 }
 
+// Needed since `drag` can produce cursor with selection having `end < start`.
+static inline void fix_last_cursor(Array<Cursor>& cursors)
+{
+    range_fix(cursors[cursors.size() - 1].selection);
+}
+
 static void sanitize_cursors(Array<Cursor>& cursors)
 {
     if (cursors.size() < 2)
@@ -351,6 +365,8 @@ void State::clear()
 
 void State::click(float x, float y, bool multi_mode)
 {
+    fix_last_cursor(cursors);
+
     const Position position = click_position(*this, x, y);
     const size_t   offset   = to_offset(*this, position.x, position.y);
     Cursor*        cursor   = nullptr;
@@ -434,6 +450,8 @@ void State::paste(const char* string, size_t size)
         }
     }
 
+    fix_last_cursor(cursors);
+
     for (size_t i = 0; i < cursors.size(); i++)
     {
         if (const size_t shift = paste_at(*this, cursors[i], string, size))
@@ -452,6 +470,8 @@ void State::paste(const char* string, size_t size)
 
 void State::action(Action action)
 {
+    fix_last_cursor(cursors);
+
     switch (action)
     {
         case Action::MOVE_LEFT:
