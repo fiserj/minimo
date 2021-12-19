@@ -433,6 +433,40 @@ void State::drag(float x, float y)
     }
 }
 
+void State::action(Action action)
+{
+    fix_last_cursor(cursors);
+
+    switch (action)
+    {
+        case Action::MOVE_LEFT:
+        case Action::MOVE_RIGHT:
+            move_cursors_horizontally(*this, action == Action::MOVE_LEFT);
+            break;
+
+        case Action::MOVE_UP:
+        case Action::MOVE_DOWN:
+            move_cursors_vertically(*this, action == Action::MOVE_UP);
+            break;
+
+        case Action::SELECT_ALL:
+            select_all(*this);
+            break;
+
+        default:
+            assert(false && "Not yet implemented.");
+    }
+}
+
+void State::codepoint(uint32_t codepoint)
+{
+    if (!utf8nvalid(&codepoint, 4))
+    {
+        paste(reinterpret_cast<const char*>(&codepoint));
+    }
+}
+
+
 void State::paste(const char* string, size_t size)
 {
     if (!string)
@@ -466,39 +500,6 @@ void State::paste(const char* string, size_t size)
     }
 
     parse_lines(buffer.data(), lines);
-}
-
-void State::action(Action action)
-{
-    fix_last_cursor(cursors);
-
-    switch (action)
-    {
-        case Action::MOVE_LEFT:
-        case Action::MOVE_RIGHT:
-            move_cursors_horizontally(*this, action == Action::MOVE_LEFT);
-            break;
-
-        case Action::MOVE_UP:
-        case Action::MOVE_DOWN:
-            move_cursors_vertically(*this, action == Action::MOVE_UP);
-            break;
-
-        case Action::SELECT_ALL:
-            select_all(*this);
-            break;
-
-        default:
-            assert(false && "Not yet implemented.");
-    }
-}
-
-void State::codepoint(uint32_t codepoint)
-{
-    if (!utf8nvalid(&codepoint, 4))
-    {
-        paste(reinterpret_cast<const char*>(&codepoint));
-    }
 }
 
 
