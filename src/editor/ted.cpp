@@ -387,17 +387,17 @@ static void copy_to_clipboard(State& state, Clipboard& clipboard, Array<Range>* 
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
         Range        selection = state.cursors[i].selection;
-        const size_t line      = to_line(state.lines, selection.end, i ? last_copied_line : 0);
+        const size_t line      = to_line(state.lines, selection.end, last_copied_line != -1 ? last_copied_line : 0);
 
         if (range_empty(selection) && line != last_copied_line)
         {
             selection = state.lines[line];
+            last_copied_line = line;
         }
 
         if (!range_empty(selection))
         {
             add_to_clipboard(clipboard, state.buffer, selection);
-            last_copied_line = line;
 
             if (copied_selections)
             {
@@ -567,7 +567,7 @@ void State::cut(Clipboard& out_clipboard)
 
         char*        dst  = buffer.data() + start - removed;
         const char*  src  = buffer.data() + end   - removed;
-        const size_t size = buffer.size() - start - removed;
+        const size_t size = buffer.size() - end;
 
         memmove(dst, src, size);
         removed += end - start;
@@ -738,25 +738,28 @@ static void test_cut()
     state.cursors.push_back({ {  70,  70 } }); // 2nd line, including `\n`.
     state.cursors.push_back({ { 100, 107 } }); // "slender".
     state.cursors.push_back({ { 110, 110 } }); // 2nd line again, this time skipped.
+    state.cursors.push_back({ { 299, 308 } }); // "the\norder" (spans two lines).
+    state.cursors.push_back({ { 315, 315 } }); // 7th line.
 
     TestClipboard clipboard;
     state.cut(clipboard);
 
-    clipboard.check_size(3);
+    state.check_invariants();
+
+    clipboard.check_size(5);
     clipboard.check_string(0, "a group of amphibians ");
     clipboard.check_string(1, "their lizard-like appearance, with slender bodies, blunt snouts,\n");
     clipboard.check_string(2, "slender");
+    clipboard.check_string(3, "the\norder");
 
-    state.check_line_count(10);
-    state.check_size(394);
+    state.check_line_count(8);
+    state.check_size(375);
     state.check_string(
         "Salamanders are typically characterized by\n"
         "short limbs projecting at right angles to the body, and the presence\n"
         "of a tail in both larvae and adults.\n"
         "\n"
-        "All ten extant salamander families are grouped together under the\n"
-        "order Urodela.\n"
-        "\n"
+        "All ten extant salamander families are grouped together under \n"
         "Salamander diversity is highest in the Northern Hemisphere and most\n"
         "species are found in the Holarctic realm, with some species present\n"
         "in the Neotropical realm."
