@@ -23,6 +23,9 @@ enum struct Action
     MOVE_UP,
     MOVE_DOWN,
 
+    DELETE_LEFT,
+    DELETE_RIGHT,
+
     GO_BACK,
     GO_FORWARD,
 

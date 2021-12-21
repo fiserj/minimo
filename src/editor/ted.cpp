@@ -487,6 +487,51 @@ static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool m
     }
 }
 
+static void delete_at_cursors(State& state, bool delete_left)
+{
+    size_t removed = 0;
+
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor& cursor = state.cursors[i];
+
+        if (range_empty(cursor.selection))
+        {
+            if (delete_left)
+            {
+                if (cursor.selection.start)
+                {
+                    cursor.selection.start--;
+                }
+            }
+            else if (cursor.selection.end + 1 < state.buffer.size())
+            {
+                cursor.selection.end++;
+            }
+        }
+
+        if (!range_empty(cursor.selection))
+        {
+            char*        dst  = state.buffer.data() + cursor.selection.start - removed;
+            const char*  src  = state.buffer.data() + cursor.selection.end   - removed;
+            const size_t size = state.buffer.size() - cursor.selection.end;
+
+            memmove(dst, src, size);
+            removed += range_size(cursor.selection);
+
+            cursor.selection.end =
+            cursor.offset        = cursor.selection.start;
+            cursor.preferred_x   = to_position(state, cursor.offset).x;
+        }
+    }
+
+    if (removed)
+    {
+        state.buffer.resize(state.buffer.size() - removed);
+        parse_lines(state.buffer.data(), state.lines);
+    }
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -599,6 +644,11 @@ void State::action(Action action)
         case Action::MOVE_UP:
         case Action::MOVE_DOWN:
             move_cursors_vertically(*this, action == Action::MOVE_UP);
+            break;
+
+        case Action::DELETE_LEFT:
+        case Action::DELETE_RIGHT:
+            delete_at_cursors(*this, action == Action::DELETE_LEFT);
             break;
 
         case Action::SELECT_ALL:
