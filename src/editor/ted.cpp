@@ -407,6 +407,48 @@ static void copy_to_clipboard(State& state, Clipboard& clipboard, Array<Range>* 
     }
 }
 
+static bool delete_ranges(Array<char>& buffer, const Array<Range>& ranges)
+{
+    if (!ranges.size())
+    {
+        return false;
+    }
+
+    size_t removed = 0;
+    size_t start   = ranges[0].start;
+    size_t end     = ranges[0].end;
+
+    for (size_t i = 1; i < ranges.size(); i++)
+    {
+        while (i < ranges.size() && range_contains({ start, end }, ranges[i].start))
+        {
+            end = std::max(end, ranges[i].end);
+            i++;
+        }
+
+        char*        dst  = buffer.data() + start - removed;
+        const char*  src  = buffer.data() + end   - removed;
+        const size_t size = buffer.size() - end;
+
+        memmove(dst, src, size);
+        removed += end - start;
+
+        if (i < ranges.size())
+        {
+            start = ranges[i].start;
+            end   = ranges[i].end;
+        }
+    }
+
+    buffer.resize(buffer.size() - removed);
+    assert(buffer.size());
+    assert(buffer[buffer.size() - 1] == 0);
+
+    // parse_lines(buffer.data(), lines);
+
+    return true;
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -553,37 +595,10 @@ void State::cut(Clipboard& out_clipboard)
 
     assert(selections.size());
 
-    size_t removed = 0;
-    size_t start   = selections[0].start;
-    size_t end     = selections[0].end;
-
-    for (size_t i = 1; i < selections.size(); i++)
+    if (delete_ranges(buffer, selections))
     {
-        while (i < selections.size() && range_contains({ start, end }, selections[i].start))
-        {
-            end = std::max(end, selections[i].end);
-            i++;
-        }
-
-        char*        dst  = buffer.data() + start - removed;
-        const char*  src  = buffer.data() + end   - removed;
-        const size_t size = buffer.size() - end;
-
-        memmove(dst, src, size);
-        removed += end - start;
-
-        if (i < selections.size())
-        {
-            start = selections[i].start;
-            end   = selections[i].end;
-        }
+        parse_lines(buffer.data(), lines);
     }
-
-    buffer.resize(buffer.size() - removed);
-    assert(buffer.size());
-    assert(buffer[buffer.size() - 1] == 0);
-
-    parse_lines(buffer.data(), lines);
 }
 
 void State::paste(const char* string, size_t size)
