@@ -374,35 +374,49 @@ static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, co
     clipboard.ranges.push_back({offset, offset + size });
 }
 
-static void copy_to_clipboard(State& state, Clipboard& clipboard, Array<Range>* copied_selections = nullptr)
+static void gather_cursor_ranges(const Array<Cursor>& cursors, const Array<Range>& lines, Array<Range>& ranges)
 {
-    clipboard.buffer.clear();
-    clipboard.ranges.clear();
-
-    fix_last_cursor(state.cursors);
-    sort_cursors(state.cursors);
+    ranges.clear();
 
     size_t last_copied_line = -1;
 
-    for (size_t i = 0; i < state.cursors.size(); i++)
+    for (size_t i = 0; i < cursors.size(); i++)
     {
-        Range        selection = state.cursors[i].selection;
-        const size_t line      = to_line(state.lines, selection.end, last_copied_line != -1 ? last_copied_line : 0);
+        assert(i == 0 || cursors[i - 1].selection.start < cursors[i].selection.start);
 
-        if (range_empty(selection) && line != last_copied_line)
+        Range        range = cursors[i].selection;
+        const size_t line  = to_line(lines, range.end, last_copied_line != -1 ? last_copied_line : 0);
+
+        if (range_empty(range) && line != last_copied_line)
         {
-            selection = state.lines[line];
+            range = lines[line];
             last_copied_line = line;
         }
 
-        if (!range_empty(selection))
+        if (!range_empty(range))
         {
-            add_to_clipboard(clipboard, state.buffer, selection);
+            ranges.push_back(range);
+        }
+    }
+}
 
-            if (copied_selections)
-            {
-                copied_selections->push_back(selection);
-            }
+static void copy_ranges(const Array<char>& src_buffer, const Array<Range>& ranges, Array<char>& dst_buffer)
+{
+    dst_buffer.clear();
+
+    for (size_t i = 0; i < ranges.size(); i++)
+    {
+        assert(!range_empty(ranges[i]));
+
+        const size_t size   = range_size(ranges[i]);
+        const size_t offset = dst_buffer.size();
+
+        dst_buffer.resize(offset + size);
+        memcpy(dst_buffer.data() + offset, src_buffer.data() + ranges[i].start, size);
+
+        if (ranges[i].end == src_buffer.size())
+        {
+            dst_buffer[dst_buffer.size() - 1] = '\n';
         }
     }
 }
@@ -444,9 +458,33 @@ static bool delete_ranges(Array<char>& buffer, const Array<Range>& ranges)
     assert(buffer.size());
     assert(buffer[buffer.size() - 1] == 0);
 
-    // parse_lines(buffer.data(), lines);
-
     return true;
+}
+
+static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool move)
+{
+    fix_last_cursor(state.cursors);
+    sort_cursors(state.cursors);
+
+    gather_cursor_ranges(state.cursors, state.lines, clipboard.ranges);
+    copy_ranges(state.buffer, clipboard.ranges, clipboard.buffer);
+
+    if (move)
+    {
+        delete_ranges(state.buffer, clipboard.ranges);
+        parse_lines(state.buffer.data(), state.lines);
+    }
+
+    // Since we're reusing the clipboard range array (to avoid additional heap
+    // alloations), we have to adjust the ranges to point into its char buffer.
+    for (size_t i = 0, offset = 0; i < clipboard.ranges.size(); i++)
+    {
+        const size_t size = range_size(clipboard.ranges[i]);
+
+        clipboard.ranges[i] = { offset, offset + size };
+
+        offset += size;
+    }
 }
 
 
@@ -582,23 +620,12 @@ void State::codepoint(uint32_t codepoint)
 
 void State::copy(Clipboard& out_clipboard)
 {
-    copy_to_clipboard(*this, out_clipboard);
+    copy_or_move_to_clipboard(*this, out_clipboard, false);
 }
 
 void State::cut(Clipboard& out_clipboard)
 {
-    // TODO : Try to eliminate this additional heap-allocated resource (will
-    //        need to store the absolute ranges first, and adjust them to the
-    //        in-clipboard-buffer ones while deleting the selections.
-    Array<Range> selections;
-    copy_to_clipboard(*this, out_clipboard, &selections);
-
-    assert(selections.size());
-
-    if (delete_ranges(buffer, selections))
-    {
-        parse_lines(buffer.data(), lines);
-    }
+    copy_or_move_to_clipboard(*this, out_clipboard, true);
 }
 
 void State::paste(const char* string, size_t size)
