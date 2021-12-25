@@ -159,83 +159,37 @@ static size_t paste_at(State& state, Cursor& cursor, const char* string, size_t 
     return 0;
 }
 
-static void paste_no_resize(const Array<char>& src_buffer, const Range& src_range, Array<char>& dst_buffer, Cursor& dst_cursor, size_t& dst_offset)
+static void paste_ex(const Clipboard& clipboard, size_t start, size_t count, size_t size, Array<char>& buffer, Cursor& cursor, size_t& offset)
 {
     memmove(
-        dst_buffer.data() + dst_cursor.selection.start + range_size(src_range) + dst_offset,
-        dst_buffer.data() + dst_cursor.selection.end + dst_offset,
-        dst_buffer.size() - dst_cursor.selection.end - dst_offset
+        buffer.data() + offset + cursor.selection.start + size,
+        buffer.data() + offset + cursor.selection.end,
+        buffer.size() - offset - cursor.selection.end
     );
 
-    memcpy(
-        dst_buffer.data() + dst_cursor.selection.start + dst_offset,
-        src_buffer.data() + src_range.start,
-        range_size(src_range)
-    );
-
-    const size_t size_diff = range_size(src_range) - range_size(dst_cursor.selection);
-
-    dst_cursor.selection.start = 
-    dst_cursor.selection.end   = 
-    dst_cursor.offset          = dst_cursor.selection.start + range_size(src_range) + dst_offset;
-
-    dst_offset += size_diff;
-}
-
-static void paste_multi(State& state, const Clipboard& clipboard)
-{
-    const bool different_count = clipboard.ranges.size() != state.cursors.size();
-
-    size_t added   = 0;
-    size_t removed = 0;
-
-    for (size_t i = 0; i < clipboard.ranges.size(); i++)
+    for (size_t i = start, j = cursor.selection.start + offset; i < start + count; i++)
     {
-        added += range_size(clipboard.ranges[i]);
+        memcpy(
+            buffer.data() + j,
+            clipboard.buffer.data() + clipboard.ranges[i].start,
+            range_size(clipboard.ranges[i])
+        );
 
-        if (different_count && i + 1 < clipboard.ranges.size())
+        j += range_size(clipboard.ranges[i]);
+
+        if (i > start && clipboard.buffer[clipboard.ranges[i].end - 1] != '\n')
         {
-            added++; // For new line character.
+            buffer[j++] = '\n';
         }
     }
 
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        removed += range_size(state.cursors[i].selection);
-    }
+    const size_t size_diff = size - range_size(cursor.selection);
 
-    if (state.cursors.size() != clipboard.ranges.size())
-    {
-        added *= state.cursors.size();
-    }
+    cursor.selection.start = 
+    cursor.selection.end   = 
+    cursor.offset          = cursor.selection.start + size + offset;
 
-    if (added > removed)
-    {
-        state.buffer.resize(state.buffer.size() + added - removed);
-    }
-
-    for (size_t i = 0, offset = 0; i < state.cursors.size(); i++)
-    {
-        if (!different_count)
-        {
-            paste_no_resize(
-                clipboard.buffer,
-                clipboard.ranges[i],
-                state.buffer,
-                state.cursors[i],
-                offset
-            );
-        }
-        else
-        {
-            // TODO : Single `memmove`, N `memcpy`s.
-
-            for (size_t j = 0; j < clipboard.ranges.size(); j++)
-            {
-                // ...
-            }
-        }
-    }
+    offset += size_diff;
 }
 
 static void parse_lines(const char* string, Array<Range>& lines)
@@ -262,6 +216,53 @@ static void parse_lines(const char* string, Array<Range>& lines)
     }
 
     lines[lines.size() - 1].end = offset;
+}
+
+static void paste_multi(State& state, const Clipboard& clipboard)
+{
+    const bool different_count = clipboard.ranges.size() != state.cursors.size();
+
+    size_t added   = 0;
+    size_t removed = 0;
+
+    for (size_t i = 0; i < clipboard.ranges.size(); i++)
+    {
+        added += range_size(clipboard.ranges[i]);
+
+        if (different_count && i + 1 < clipboard.ranges.size() && clipboard.buffer[clipboard.ranges[i].end - 1] != '\n')
+        {
+            added++; // For new line character.
+        }
+    }
+
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        removed += range_size(state.cursors[i].selection);
+    }
+
+    if (state.cursors.size() != clipboard.ranges.size())
+    {
+        added *= state.cursors.size();
+    }
+
+    if (added > removed)
+    {
+        state.buffer.resize(state.buffer.size() + added - removed);
+    }
+
+    for (size_t i = 0, offset = 0; i < state.cursors.size(); i++)
+    {
+        if (!different_count)
+        {
+            paste_ex(clipboard, i, 1, range_size(clipboard.ranges[i]), state.buffer, state.cursors[i], offset);
+        }
+        else
+        {
+            paste_ex(clipboard, 0, clipboard.ranges.size(), added, state.buffer, state.cursors[i], offset);
+        }
+    }
+
+    parse_lines(state.buffer.data(), state.lines);
 }
 
 static void remove_cursor(Array<Cursor>& cursors, size_t i)
