@@ -2,6 +2,8 @@ set(NAME editor)
 
 add_executable(${NAME}
     editor.cpp
+    ted.cpp
+    ted.h
 )
 
 target_include_directories(${NAME} PRIVATE
@@ -21,6 +23,10 @@ set_target_properties(${NAME} PROPERTIES
     CXX_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+)
+
+target_compile_definitions(${NAME} PRIVATE
+    TED_TESTS
 )
 
 if(MSVC)
