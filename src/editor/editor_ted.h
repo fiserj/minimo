@@ -128,7 +128,31 @@ struct TextEditor
             }
         }
 
-        scroll_offset = round_to_pixel(scroll_offset);
+        // Text and line numbers -----------------------------------------------
+        const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset));
+        const size_t line_count = static_cast<size_t>(bx::ceil(viewport.height() / state.line_height)) + 1;
+        const size_t last_line  = bx::min(first_line + line_count, state.lines.size());
+
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f,
+            bx::ceil((viewport.width() - line_number_width - scrollbar_width) / state.char_width)));
+
+        float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
+
+        for (size_t i = first_line; i < last_line; i++, y += state.line_height)
+        {
+            bx::snprintf(line_number, sizeof(line_number), line_format, i);
+
+            ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
+
+            ctx.text(
+                state.buffer.data() + state.lines[i].start,
+                state.buffer.data() + state.lines[i].end,
+                max_chars,
+                COLOR_EDITOR_TEXT,
+                viewport.x0 + line_number_width,
+                y
+            );
+        }
 
         // ...
 

@@ -820,9 +820,14 @@ struct Context
     }
 };
 
-static float round_to_pixel(float value)
+static inline float round_to_pixel(float value, float dpi)
 {
-    return bx::round(value * dpi()) / dpi();
+    return bx::round(value * dpi) / dpi;
+}
+
+static inline float round_to_pixel(float value)
+{
+    return round_to_pixel(value, dpi());
 }
 
 struct Editor
