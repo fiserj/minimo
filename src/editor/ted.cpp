@@ -177,7 +177,7 @@ static void paste_ex(const Clipboard& clipboard, size_t start, size_t count, siz
 
         j += range_size(clipboard.ranges[i]);
 
-        if (i > start && clipboard.buffer[clipboard.ranges[i].end - 1] != '\n')
+        if (i + 1 < start + count && clipboard.buffer[clipboard.ranges[i].end - 1] != '\n')
         {
             buffer[j++] = '\n';
         }
@@ -258,7 +258,7 @@ static void paste_multi(State& state, const Clipboard& clipboard)
         }
         else
         {
-            paste_ex(clipboard, 0, clipboard.ranges.size(), added, state.buffer, state.cursors[i], offset);
+            paste_ex(clipboard, 0, clipboard.ranges.size(), added / state.cursors.size(), state.buffer, state.cursors[i], offset);
         }
     }
 
@@ -950,7 +950,7 @@ static void test_cut()
     );
 }
 
-static void test_paste()
+static void test_paste_n_n()
 {
     TestState state;
 
@@ -980,10 +980,40 @@ static void test_paste()
     );
 }
 
+static void test_paste_m_n()
+{
+    TestState state;
+
+    state.clear();
+    state.paste(
+        ">>A<<\n"
+        ">><<\n"
+        ">>B<<"
+    );
+
+    state.cursors.clear();
+    state.cursors.push_back({ {  2,  3 },  3 });
+    state.cursors.push_back({ { 13, 14 }, 13 });
+
+    Clipboard clipboard;
+    clipboard.buffer = { '1', '2', '2' ,'3' , '3', '3' };
+    clipboard.ranges = { { 0, 1 }, { 1, 3 }, { 3, 6 } };
+
+    state.paste(clipboard);
+    state.check_invariants();
+
+    state.check_string(
+        ">>1\n22\n333<<\n"
+        ">><<\n"
+        ">>1\n22\n333<<"
+    );
+}
+
 static bool s_tests_done = []()
 {
     test_cut();
-    test_paste();
+    test_paste_n_n();
+    test_paste_m_n();
 
     return true;
 }();
