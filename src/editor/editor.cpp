@@ -40,8 +40,11 @@ using Vector = std::vector<T>;
 // INTERNAL INCLUDES
 // -----------------------------------------------------------------------------
 
+#include "ted.h"
+
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context, Editor
+#include "editor_ted.h"
 
 
 // ------------/_\--------------------------------------------------------------
@@ -50,7 +53,7 @@ using Vector = std::vector<T>;
 
 static gui::Context g_gui;
 
-static gui::Editor  g_editor;
+static TextEditor g_editor;
 
 
 // -----------------------------------------------------------------------------
