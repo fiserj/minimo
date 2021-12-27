@@ -40,7 +40,7 @@ using Vector = std::vector<T>;
 // INTERNAL INCLUDES
 // -----------------------------------------------------------------------------
 
-#include "ted.h"
+#include "ted.cpp"
 
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context, Editor

@@ -4,7 +4,6 @@ add_executable(${NAME}
     editor.cpp
     editor_font.h
     editor_ted.h
-    ted.cpp
     ted.h
 )
 

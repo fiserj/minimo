@@ -21,6 +21,7 @@ struct TextEditor
     {
         state.clear();
         state.paste(string);
+        state.cursors[0] = {};
     }
 
     void update(gui::Context& ctx, uint8_t id)
@@ -45,6 +46,11 @@ struct TextEditor
 
         // Input handling ------------------------------------------------------
         // TODO : Process keys, mouse clicks/drags, and clipboard handling.
+        
+        if      (key_down(KEY_LEFT )) { state.action(ted::Action::MOVE_LEFT ); }
+        else if (key_down(KEY_RIGHT)) { state.action(ted::Action::MOVE_RIGHT); }
+        else if (key_down(KEY_UP   )) { state.action(ted::Action::MOVE_UP   ); }
+        else if (key_down(KEY_DOWN )) { state.action(ted::Action::MOVE_DOWN ); }
 
         // Line number format --------------------------------------------------
         char  line_number[8];
@@ -152,6 +158,27 @@ struct TextEditor
                 viewport.x0 + line_number_width,
                 y
             );
+        }
+
+        // Selections and carets -----------------------------------------------
+        const ted::Range visible_range = { state.lines[first_line].start, state.lines[last_line].start };
+
+        if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)
+        {
+            for (size_t i = 0; i < state.cursors.size(); i++)
+            {
+                using namespace ted;
+
+                if (range_contains(visible_range, state.cursors[i].offset))
+                {
+                    const Position position = to_position(state, state.cursors[i].offset, first_line);
+
+                    const float x = viewport.x0 + line_number_width + state.char_width * position.x;
+                    const float y = viewport.y0 - bx::mod(scroll_offset, state.line_height) + state.line_height * (position.y - first_line);
+
+                    ctx.rect(COLOR_RED, { x - caret_width * 0.5f, y, x + caret_width * 0.5f, y + state.line_height });
+                }
+            }
         }
 
         // ...
