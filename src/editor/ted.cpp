@@ -92,18 +92,16 @@ static size_t to_line(const Array<Range>& lines, size_t offset, size_t start_lin
 static size_t to_offset(State& state, size_t x, size_t y)
 {
     utf8_int32_t codepoint;
-    const char*  iterator = line_string(state, y);
+    const void*  iterator = utf8codepoint(line_string(state, y), &codepoint);
+    size_t       offset   = state.lines[y].start;
 
-    if (*iterator != '\n')
+    for (; codepoint && codepoint != '\n' && x--; iterator = utf8codepoint(iterator, &codepoint))
     {
-        do
-        {
-            iterator = static_cast<const char*>(utf8codepoint(iterator, &codepoint));
-        }
-        while (codepoint && codepoint != '\n' && --x);
+        // TODO : This could be provided by a tweaked version of `utf8codepoint`, but low impact / priority.
+        offset += utf8codepointsize(codepoint);
     }
 
-    return iterator - state.buffer.data();
+    return offset;
 }
 
 static Position to_position(State& state, size_t offset, size_t start_line = 0)
@@ -126,8 +124,8 @@ static Position to_position(State& state, size_t offset, size_t start_line = 0)
 
 static Position click_position(const State& state, float x, float y)
 {
-    x = std::max(x, 0.0f) / state.line_height;
-    y = std::max(y, 0.0f) / state.char_width;
+    x = std::max(x, 0.0f) / state.char_width;
+    y = std::max(y, 0.0f) / state.line_height;
 
     const size_t yi = std::min(static_cast<size_t>(y), state.lines.size() - 1);
     const size_t xi = std::min(static_cast<size_t>(x + 0.5f), line_length(state, yi) - 1);
@@ -391,8 +389,7 @@ static void move_cursors_vertically(State& state, bool up)
 
         if (!range_empty(cursor.selection))
         {
-            const size_t   offset   = up ? cursor.selection.start : cursor.selection.end;
-            const Position position = to_position(state, offset, start_line);
+            const Position position = to_position(state, cursor.selection.start, start_line);
 
             cursor.preferred_x = position.x;
             cursor_line        =
