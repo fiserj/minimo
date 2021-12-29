@@ -91,15 +91,16 @@ static size_t to_line(const Array<Range>& lines, size_t offset, size_t start_lin
 
 static size_t to_offset(State& state, size_t x, size_t y)
 {
-    utf8_int32_t codepoint = 0;
-    const char*  iterator  = line_string(state, y);
+    utf8_int32_t codepoint;
+    const char*  iterator = line_string(state, y);
 
     if (*iterator != '\n')
     {
-        while (codepoint && codepoint != '\n' && x--)
+        do
         {
             iterator = static_cast<const char*>(utf8codepoint(iterator, &codepoint));
         }
+        while (codepoint && codepoint != '\n' && --x);
     }
 
     return iterator - state.buffer.data();
