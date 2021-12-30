@@ -126,16 +126,33 @@ struct TextEditor
             }
         }
 
-        // const float scroll_ofset_abs = round_to_pixel(scroll_offset * state.line_height, dpi);
-
         // Input handling ------------------------------------------------------
         // TODO : Process keys, mouse clicks/drags, and clipboard handling.
 
-        // TODO : Only process keys if viewport is active.
-        if      (key_down(KEY_LEFT )) { state.action(ted::Action::MOVE_LEFT ); }
-        else if (key_down(KEY_RIGHT)) { state.action(ted::Action::MOVE_RIGHT); }
-        else if (key_down(KEY_UP   )) { state.action(ted::Action::MOVE_UP   ); }
-        else if (key_down(KEY_DOWN )) { state.action(ted::Action::MOVE_DOWN ); }
+        const bool up    = key_down(KEY_UP   );
+        const bool down  = key_down(KEY_DOWN );
+        const bool left  = key_down(KEY_LEFT );
+        const bool right = key_down(KEY_RIGHT);
+
+        // TODO : Only process keys if viewport is active / focused.
+        if      (left ) { state.action(ted::Action::MOVE_LEFT ); }
+        else if (right) { state.action(ted::Action::MOVE_RIGHT); }
+        else if (up   ) { state.action(ted::Action::MOVE_UP   ); }
+        else if (down ) { state.action(ted::Action::MOVE_DOWN ); }
+
+        if (up || down)
+        {
+            const size_t cursor = up ? 0 : state.cursors.size() - 1;
+            const float  line   = static_cast<float>(ted::to_position(
+                state,
+                state.cursors[cursor].selection.start
+            ).y);
+
+            scroll_offset = bx::min(line, bx::max(0.0f, scroll_offset,
+                (line + 2) - viewport.height() / state.line_height));
+
+            blink_base_time = elapsed();
+        }
 
         if (viewport.is_hovered())
         {
