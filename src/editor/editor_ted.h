@@ -165,33 +165,11 @@ struct TextEditor
             }
         }
 
-        // Text and line numbers -----------------------------------------------
+        // Selections ----------------------------------------------------------
         const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset));
         const size_t line_count = static_cast<size_t>(bx::ceil(viewport.height() / state.line_height)) + 1;
         const size_t last_line  = bx::min(first_line + line_count, state.lines.size() - 1);
 
-        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f,
-            bx::ceil((viewport.width() - line_number_width - scrollbar_width) / state.char_width)));
-
-        float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
-
-        for (size_t i = first_line; i <= last_line; i++, y += state.line_height)
-        {
-            bx::snprintf(line_number, sizeof(line_number), line_format, i);
-
-            ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
-
-            ctx.text(
-                state.buffer.data() + state.lines[i].start,
-                state.buffer.data() + state.lines[i].end,
-                max_chars,
-                COLOR_EDITOR_TEXT,
-                viewport.x0 + line_number_width,
-                y
-            );
-        }
-
-        // Selections and carets -----------------------------------------------
         const ted::Range visible_range = { state.lines[first_line].start, state.lines[last_line].end };
 
         for (size_t i = 0, search_line = first_line; i < state.cursors.size(); i++)
@@ -234,6 +212,29 @@ struct TextEditor
             }
         }
 
+        // Text and line numbers -----------------------------------------------
+        const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f,
+            bx::ceil((viewport.width() - line_number_width - scrollbar_width) / state.char_width)));
+
+        float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
+
+        for (size_t i = first_line; i <= last_line; i++, y += state.line_height)
+        {
+            bx::snprintf(line_number, sizeof(line_number), line_format, i);
+
+            ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
+
+            ctx.text(
+                state.buffer.data() + state.lines[i].start,
+                state.buffer.data() + state.lines[i].end,
+                max_chars,
+                COLOR_EDITOR_TEXT,
+                viewport.x0 + line_number_width,
+                y
+            );
+        }
+
+        // Carets --------------------------------------------------------------
         if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)
         {
             for (size_t i = 0; i < state.cursors.size(); i++)
