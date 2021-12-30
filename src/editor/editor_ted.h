@@ -212,6 +212,8 @@ struct TextEditor
         }
 
         // Text and line numbers -----------------------------------------------
+        ctx.push_clip({ viewport.x0, viewport.y0, viewport.x1 - scrollbar_width, viewport.y1 });
+
         const uint32_t max_chars = static_cast<uint32_t>(bx::max(1.0f,
             bx::ceil((viewport.width() - line_number_width - scrollbar_width) / state.char_width)));
 
@@ -232,6 +234,8 @@ struct TextEditor
                 y
             );
         }
+
+        ctx.pop_clip();
 
         // Carets --------------------------------------------------------------
         if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)

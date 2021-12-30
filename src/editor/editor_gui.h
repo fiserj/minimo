@@ -338,7 +338,7 @@ struct ClipStack
     uint8_t top() const
     {
         ASSERT(size > 0);
-        return stack[size];
+        return stack[size - 1];
     }
 };
 
@@ -567,6 +567,16 @@ struct Context
     inline void pop_id()
     {
         current_stack.pop();
+    }
+
+    inline void push_clip(const Rect& rect)
+    {
+        uniforms.clip_stack.push(rect);
+    }
+
+    inline void pop_clip()
+    {
+        uniforms.clip_stack.pop();
     }
 
     inline bool none_active() const
