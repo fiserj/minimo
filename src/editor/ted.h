@@ -23,6 +23,11 @@ enum struct Action
     MOVE_UP,
     MOVE_DOWN,
 
+    SELECT_LEFT,
+    SELECT_RIGHT,
+    SELECT_UP,
+    SELECT_DOWN,
+
     DELETE_LEFT,
     DELETE_RIGHT,
 

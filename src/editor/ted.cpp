@@ -334,9 +334,6 @@ static void fix_overlapping_cursors(Array<Cursor>& cursors)
 
         if (first.selection.end >= second.selection.start)
         {
-            assert(!range_empty(first .selection));
-            assert(!range_empty(second.selection));
-
             for (size_t j = i + 1; i < cursors.size(); i++)
             {
                 cursors[j - 1] = cursors[j];
@@ -351,7 +348,7 @@ static void move_cursors_horizontally(State& state, bool left)
 {
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
-        Cursor& cursor = state.cursors[i];
+        Cursor cursor = state.cursors[i];
 
         if (range_empty(cursor.selection))
         {
@@ -375,6 +372,8 @@ static void move_cursors_horizontally(State& state, bool left)
         cursor.selection.start =
         cursor.selection.end   = cursor.offset;
         cursor.preferred_x     = to_position(state, cursor.offset).x;
+
+        state.cursors[i] = cursor;
     }
 
     fix_overlapping_cursors(state.cursors);
@@ -384,8 +383,8 @@ static void move_cursors_vertically(State& state, bool up)
 {
     for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
     {
-        Cursor& cursor = state.cursors[i];
-        size_t  cursor_line;
+        Cursor cursor = state.cursors[i];
+        size_t cursor_line;
 
         if (!range_empty(cursor.selection))
         {
@@ -421,6 +420,85 @@ static void move_cursors_vertically(State& state, bool up)
         cursor.selection.start =
         cursor.selection.end   =
         cursor.offset          = to_offset(state, cursor_x, cursor_line);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void select_cursors_horizontally(State& state, bool left)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor  cursor = state.cursors[i];
+        size_t& stop   = cursor.selection.start == cursor.offset ? cursor.selection.start : cursor.selection.end;
+
+        if (left)
+        {
+            if (stop > 0)
+            {
+                stop--;
+            }
+        }
+        else if (stop + 1 < state.buffer.size())
+        {
+            stop++;
+        }
+
+        cursor.offset      = stop;
+        cursor.preferred_x = to_position(state, cursor.offset).x;
+
+        range_fix(cursor.selection);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void select_cursors_vertically(State& state, bool up)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor   cursor   = state.cursors[i];
+        Position position = to_position(state, cursor.offset); // TODO : Figure out `start_line` logic.
+
+        if (up)
+        {
+            if (position.y > 0)
+            {
+                position.y--;
+            }
+            else
+            {
+                // TODO : Stick to the beginning of the text.
+            }
+        }
+        else if (position.y + 1 < state.lines.size())
+        {
+            position.y++;
+        }
+        else
+        {
+            // TODO : Stick to the end of the text.
+        }
+
+        position.x = std::min(cursor.preferred_x, line_length(state, position.y) - 1);
+
+        cursor.offset = to_offset(state, position.x, position.y);
+
+        if (cursor.offset < cursor.selection.start)
+        {
+            cursor.selection.end   = cursor.selection.start;
+            cursor.selection.start = cursor.offset;
+        }
+        else
+        {
+            cursor.selection.end = cursor.offset;
+        }
+
+        state.cursors[i] = cursor;
     }
 
     fix_overlapping_cursors(state.cursors);
@@ -725,6 +803,16 @@ void State::action(Action action)
         case Action::MOVE_UP:
         case Action::MOVE_DOWN:
             move_cursors_vertically(*this, action == Action::MOVE_UP);
+            break;
+
+        case Action::SELECT_LEFT:
+        case Action::SELECT_RIGHT:
+            select_cursors_horizontally(*this, action == Action::SELECT_LEFT);
+            break;
+
+        case Action::SELECT_UP:
+        case Action::SELECT_DOWN:
+            select_cursors_vertically(*this, action == Action::SELECT_UP);
             break;
 
         case Action::DELETE_LEFT:

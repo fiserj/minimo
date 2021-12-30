@@ -127,27 +127,33 @@ struct TextEditor
         }
 
         // Input handling ------------------------------------------------------
-        // TODO : Process keys, mouse clicks/drags, and clipboard handling.
+        // TODO : Only process keys if viewport is active / focused.
 
         const bool up    = key_down(KEY_UP   );
         const bool down  = key_down(KEY_DOWN );
         const bool left  = key_down(KEY_LEFT );
         const bool right = key_down(KEY_RIGHT);
 
-        const bool alt   = key_held(KEY_ALT_LEFT) || key_down(KEY_ALT_LEFT) || key_held(KEY_ALT_RIGHT) || key_down(KEY_ALT_RIGHT);
+#if BX_PLATFORM_OSX
+        const bool ctrl  = key_held(KEY_SUPER_LEFT  ) || key_down(KEY_SUPER_LEFT  ) || key_held(KEY_SUPER_RIGHT  ) || key_down(KEY_SUPER_RIGHT  );
+#else
+        const bool ctrl  = key_held(KEY_CONTROL_LEFT) || key_down(KEY_CONTROL_LEFT) || key_held(KEY_CONTROL_RIGHT) || key_down(KEY_CONTROL_RIGHT);
+#endif
+        const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
+        const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
 
-        // TODO : Only process keys if viewport is active / focused.
-        if      (left ) { state.action(ted::Action::MOVE_LEFT ); }
-        else if (right) { state.action(ted::Action::MOVE_RIGHT); }
-        else if (up   ) { state.action(ted::Action::MOVE_UP   ); }
-        else if (down ) { state.action(ted::Action::MOVE_DOWN ); }
+        // TODO : State machine (or at least a basic table)?
+        if      (left ) { state.action(!shift ? ted::Action::MOVE_LEFT  : ted::Action::SELECT_LEFT ); }
+        else if (right) { state.action(!shift ? ted::Action::MOVE_RIGHT : ted::Action::SELECT_RIGHT); }
+        else if (up   ) { state.action(!shift ? ted::Action::MOVE_UP    : ted::Action::SELECT_UP   ); }
+        else if (down ) { state.action(!shift ? ted::Action::MOVE_DOWN  : ted::Action::SELECT_DOWN ); }
 
         if (left || right || up || down)
         {
             const size_t cursor = up ? 0 : state.cursors.size() - 1;
             const float  line   = static_cast<float>(ted::to_position(
                 state,
-                state.cursors[cursor].selection.start
+                state.cursors[cursor].offset
             ).y);
 
             scroll_offset = bx::min(line, bx::max(0.0f, scroll_offset,
