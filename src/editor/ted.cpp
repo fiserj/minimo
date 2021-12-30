@@ -51,20 +51,20 @@ static bool range_overlap(const Range& first, const Range& second)
         (first.end   >= second.start && first.end   <= second.end) ;
 }
 
-// static Range range_intersection(const Range& first, const Range& second)
-// {
-//     Range range;
-//     range.start = std::max(first.start, second.start);
-//     range.end   = std::min(first.end  , second.end  );
+static Range range_intersection(const Range& first, const Range& second)
+{
+    Range range;
+    range.start = std::max(first.start, second.start);
+    range.end   = std::min(first.end  , second.end  );
 
-//     if (range.start > range.end)
-//     {
-//         range.start = 0.0f;
-//         range.end   = 0.0f;
-//     }
+    if (range.start > range.end)
+    {
+        range.start = 0.0f;
+        range.end   = 0.0f;
+    }
 
-//     return range;
-// }
+    return range;
+}
 
 static inline const char* line_string(const State& state, size_t line)
 {

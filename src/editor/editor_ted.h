@@ -194,6 +194,46 @@ struct TextEditor
         // Selections and carets -----------------------------------------------
         const ted::Range visible_range = { state.lines[first_line].start, state.lines[last_line].end };
 
+        for (size_t i = 0, search_line = first_line; i < state.cursors.size(); i++)
+        {
+            using namespace ted;
+
+            const Range visible_selection = range_intersection(state.cursors[i].selection, visible_range);
+
+            if (!range_empty(visible_selection))
+            {
+                Position position = to_position(state, visible_selection.start, search_line);
+
+                float  y     = round_to_pixel(viewport.y0 + (position.y - first_line - bx::fract(scroll_offset)) * state.line_height, dpi);
+                float  x0    = viewport.x0 + line_number_width + position.x * state.char_width;
+                size_t start = visible_selection.start;
+
+                for (;;)
+                {
+                    const size_t end    = bx::min(visible_selection.end, state.lines[position.y].end);
+                    const size_t length = utf8nlen(line_string(state, position.y), end - start);
+
+                    const float x1 = x0 + state.char_width * length;
+
+                    ctx.rect(COLOR_GREEN, { x0, y, x1, y + state.line_height });
+
+                    if (end == visible_selection.end)
+                    {
+                        break;
+                    }
+
+                    y    += state.line_height;
+                    x0    = viewport.x0 + line_number_width;
+                    start = end;
+
+                    position.x = 0;
+                    position.y ++;
+                }
+
+                search_line = position.y;
+            }
+        }
+
         if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)
         {
             for (size_t i = 0; i < state.cursors.size(); i++)
