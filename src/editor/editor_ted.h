@@ -134,13 +134,15 @@ struct TextEditor
         const bool left  = key_down(KEY_LEFT );
         const bool right = key_down(KEY_RIGHT);
 
+        const bool alt   = key_held(KEY_ALT_LEFT) || key_down(KEY_ALT_LEFT) || key_held(KEY_ALT_RIGHT) || key_down(KEY_ALT_RIGHT);
+
         // TODO : Only process keys if viewport is active / focused.
         if      (left ) { state.action(ted::Action::MOVE_LEFT ); }
         else if (right) { state.action(ted::Action::MOVE_RIGHT); }
         else if (up   ) { state.action(ted::Action::MOVE_UP   ); }
         else if (down ) { state.action(ted::Action::MOVE_DOWN ); }
 
-        if (up || down)
+        if (left || right || up || down)
         {
             const size_t cursor = up ? 0 : state.cursors.size() - 1;
             const float  line   = static_cast<float>(ted::to_position(
@@ -154,15 +156,12 @@ struct TextEditor
             blink_base_time = elapsed();
         }
 
-        if (viewport.is_hovered())
+        if (viewport.is_hovered() && mouse_down(MOUSE_LEFT))
         {
             const float x = mouse_x() - viewport.x0 - line_number_width;
             const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
 
-            if (mouse_down(MOUSE_LEFT))
-            {
-                state.click(x, y, false);
-            }
+            state.click(x, y, alt);
         }
 
         // Selections ----------------------------------------------------------
