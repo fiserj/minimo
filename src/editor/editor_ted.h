@@ -142,6 +142,9 @@ struct TextEditor
         const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
         const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
 
+        const bool lmb_down = mouse_down(MOUSE_LEFT);
+        const bool lmb_held = mouse_held(MOUSE_LEFT);
+
         // TODO : State machine (or at least a basic table)?
         if      (left ) { state.action(!shift ? ted::Action::MOVE_LEFT  : ted::Action::SELECT_LEFT ); }
         else if (right) { state.action(!shift ? ted::Action::MOVE_RIGHT : ted::Action::SELECT_RIGHT); }
@@ -162,12 +165,19 @@ struct TextEditor
             blink_base_time = elapsed();
         }
 
-        if (viewport.is_hovered() && mouse_down(MOUSE_LEFT))
+        if (viewport.is_hovered() && (lmb_down || lmb_held))
         {
             const float x = mouse_x() - viewport.x0 - line_number_width;
             const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
 
-            state.click(x, y, alt);
+            if (lmb_held || shift)
+            {
+                state.drag(x, y);
+            }
+            else
+            {
+                state.click(x, y, alt);
+            }
         }
 
         // Selections ----------------------------------------------------------
