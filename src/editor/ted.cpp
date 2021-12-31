@@ -310,12 +310,6 @@ static bool remove_cursor_containing_offset(Array<Cursor>& cursors, size_t offse
     return false;
 }
 
-// Needed since `drag` can produce cursor with selection having `end < start`.
-static inline void fix_last_cursor(Array<Cursor>& cursors)
-{
-    range_fix(cursors[cursors.size() - 1].selection);
-}
-
 static inline void sort_cursors(Array<Cursor>& cursors)
 {
     if (cursors.size() > 1)
@@ -639,7 +633,6 @@ static bool delete_ranges(Array<char>& buffer, const Array<Range>& ranges)
 
 static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool move)
 {
-    fix_last_cursor(state.cursors);
     sort_cursors(state.cursors);
 
     gather_cursor_ranges(state.cursors, state.lines, clipboard.ranges);
@@ -738,8 +731,6 @@ void State::clear()
 
 void State::click(float x, float y, bool multi_mode)
 {
-    fix_last_cursor(cursors);
-
     const Position position = click_position(*this, x, y);
     const size_t   offset   = to_offset(*this, position.x, position.y);
     Cursor*        cursor   = nullptr;
@@ -777,14 +768,21 @@ void State::drag(float x, float y)
     const size_t   offset   = to_offset(*this, position.x, position.y);
 
     Cursor& cursor = cursors[active];
-    cursor.selection.end =
-    cursor.offset        = offset; // This means `end` may be smaller than `start`.
 
-    const Range selection =
+    if (cursor.offset == cursor.selection.end)
     {
-        std::min(cursor.selection.start, cursor.selection.end),
-        std::max(cursor.selection.start, cursor.selection.end),
-    };
+        cursor.selection.end =
+        cursor.offset        = offset;
+    }
+    else
+    {
+        cursor.selection.start =
+        cursor.offset          = offset;
+    }
+
+    range_fix(cursor.selection);
+
+    const Range selection = cursor.selection;
 
     for (size_t i = 0; i < count; i++)
     {
@@ -808,8 +806,6 @@ void State::drag(float x, float y)
 
 void State::action(Action action)
 {
-    fix_last_cursor(cursors);
-
     switch (action)
     {
         case Action::MOVE_LEFT:
@@ -892,8 +888,6 @@ void State::paste(const char* string, size_t size)
             return;
         }
     }
-
-    fix_last_cursor(cursors);
 
     for (size_t i = 0; i < cursors.size(); i++)
     {
