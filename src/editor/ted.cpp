@@ -104,6 +104,19 @@ static size_t to_offset(State& state, size_t x, size_t y)
     return offset;
 }
 
+static size_t to_line(State& state, size_t offset, size_t start_line = 0)
+{
+    for (size_t i = start_line; i < state.lines.size(); i++)
+    {
+        if (range_contains(state.lines[i], offset))
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
 static Position to_position(State& state, size_t offset, size_t start_line = 0)
 {
     Position position = { 0, 0 };
@@ -461,42 +474,46 @@ static void select_cursors_vertically(State& state, bool up)
 {
     for (size_t i = 0; i < state.cursors.size(); i++)
     {
-        Cursor   cursor   = state.cursors[i];
-        Position position = to_position(state, cursor.offset); // TODO : Figure out `start_line` logic.
+        Cursor cursor = state.cursors[i];
+        size_t line   = to_line(state, cursor.offset); // TODO : Figure out `start_line` logic.
+
+        assert(cursor.offset == cursor.selection.start || cursor.offset == cursor.selection.end);
 
         if (up)
         {
-            if (position.y > 0)
+            if (line > 0)
             {
-                position.y--;
+                line--;
             }
             else
             {
                 // TODO : Stick to the beginning of the text.
             }
         }
-        else if (position.y + 1 < state.lines.size())
+        else if (line + 1 < state.lines.size())
         {
-            position.y++;
+            line++;
         }
         else
         {
             // TODO : Stick to the end of the text.
         }
 
-        position.x = std::min(cursor.preferred_x, line_length(state, position.y) - 1);
+        const size_t cursor_x = std::min(cursor.preferred_x, line_length(state, line) - 1);
+        const size_t offset   = to_offset(state, cursor_x, line);
 
-        cursor.offset = to_offset(state, position.x, position.y);
-
-        if (cursor.offset < cursor.selection.start)
+        if (cursor.offset == cursor.selection.end)
         {
-            cursor.selection.end   = cursor.selection.start;
-            cursor.selection.start = cursor.offset;
+            cursor.selection.end =
+            cursor.offset        = offset;
         }
         else
         {
-            cursor.selection.end = cursor.offset;
+            cursor.selection.start =
+            cursor.offset          = offset;
         }
+
+        range_fix(cursor.selection);
 
         state.cursors[i] = cursor;
     }
