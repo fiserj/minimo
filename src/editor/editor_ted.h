@@ -113,6 +113,52 @@ struct KeyBinding
     char mods = 0;
 };
 
+static const int s_mod_to_key[9][2] =
+{
+    {},
+    { KEY_ALT_LEFT    , KEY_ALT_RIGHT     },
+    { KEY_CONTROL_LEFT, KEY_CONTROL_RIGHT },
+    {},
+    { KEY_SHIFT_LEFT  , KEY_SHIFT_RIGHT   },
+    {},
+    {},
+    {},
+    { KEY_SUPER_LEFT  , KEY_SUPER_RIGHT   },
+};
+
+static inline bool is_mod_active(Modifier::Enum mod)
+{
+    return
+        key_held(s_mod_to_key[mod][0]) ||
+        key_held(s_mod_to_key[mod][1]) ||
+        key_down(s_mod_to_key[mod][0]) ||
+        key_down(s_mod_to_key[mod][1]) ;
+}
+
+static bool is_active(KeyBinding binding)
+{
+    // TODO : The inputs should probably be cached to save the function calls.
+    assert(binding.key);
+
+    if (!key_down(binding.key))
+    {
+        return false;
+    }
+
+    if (binding.mods > 0)
+    {
+        for (int i = 0, j = 1; i < 3; i++, j = 1 << i)
+        {
+            if ((binding.mods & j) && !is_mod_active(static_cast<Modifier::Enum>(j)))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 struct TextEditor
 {
     enum struct DisplayMode
@@ -125,6 +171,7 @@ struct TextEditor
     ted::State     state;
     ted::Clipboard clipboard;
     KeyBinding     bindings[Command::COUNT];
+    Command::Enum  commands[Command::COUNT];
     double         blink_base_time = 0.0;
     float          split_x         = 0.0f; // Screen coordinates.
     float          scroll_offset   = 0.0f; // Lines (!).
@@ -158,6 +205,26 @@ struct TextEditor
         bindings[Command::COPY            ] = { 'C'          , PLATFORM_MOD    };
         bindings[Command::CUT             ] = { 'X'          , PLATFORM_MOD    };
         bindings[Command::PASTE           ] = { 'V'          , PLATFORM_MOD    };
+
+        commands[ 0] = Command::COPY;
+        commands[ 1] = Command::CUT;
+        commands[ 2] = Command::PASTE;
+        commands[ 3] = Command::DELETE_LEFT;
+        commands[ 4] = Command::DELETE_RIGHT;
+        commands[ 5] = Command::CANCEL_SELECTION;
+        commands[ 6] = Command::SELECT_ALL;
+        commands[ 7] = Command::SELECT_LEFT;
+        commands[ 8] = Command::SELECT_RIGHT;
+        commands[ 9] = Command::SELECT_UP;
+        commands[10] = Command::SELECT_DOWN;
+        commands[11] = Command::GO_BACK;
+        commands[12] = Command::GO_FORWARD;
+        commands[13] = Command::MOVE_LINE_UP;
+        commands[14] = Command::MOVE_LINE_DOWN;
+        commands[15] = Command::MOVE_LEFT;
+        commands[16] = Command::MOVE_RIGHT;
+        commands[17] = Command::MOVE_UP;
+        commands[18] = Command::MOVE_DOWN;
     }
 
     void set_content(const char* string)
@@ -271,8 +338,32 @@ struct TextEditor
 
         // Input handling ------------------------------------------------------
         // TODO : Only process keys if viewport is active / focused.
-        // TODO : Better key handling (less "if-y" and handle keys held).
-        // TODO : Don't hardcode key shortcuts.
+        // TODO : Convert other `ted::State`'s methods into actions.
+
+        for (int i = 0; i < Command::COUNT; i++)
+        {
+            if (is_active(bindings[commands[i]]))
+            {
+                switch (commands[i])
+                {
+                case Command::COPY:
+                    state.copy(clipboard);
+                    break;
+
+                case Command::CUT:
+                    state.cut(clipboard);
+                    break;
+
+                case Command::PASTE:
+                    state.paste(clipboard);
+                    break;
+
+                default:
+                    state.action(static_cast<ted::Action>(commands[i]));
+                }
+                break;
+            }
+        }
 
         const bool up    = key_down(KEY_UP       );
         const bool down  = key_down(KEY_DOWN     );
@@ -292,31 +383,6 @@ struct TextEditor
 
         const bool lmb_down = mouse_down(MOUSE_LEFT);
         const bool lmb_held = mouse_held(MOUSE_LEFT);
-
-        // TODO : State machine (or at least a basic table)?
-        if      (left ) { state.action(!shift ? ted::Action::MOVE_LEFT  : ted::Action::SELECT_LEFT ); }
-        else if (right) { state.action(!shift ? ted::Action::MOVE_RIGHT : ted::Action::SELECT_RIGHT); }
-        else if (up   ) { state.action(!shift ? ted::Action::MOVE_UP    : ted::Action::SELECT_UP   ); }
-        else if (down ) { state.action(!shift ? ted::Action::MOVE_DOWN  : ted::Action::SELECT_DOWN ); }
-
-        if (key_down(KEY_ESCAPE))
-        {
-            state.action(ted::Action::CANCEL_SELECTION);
-        }
-
-        if (ctrl && key_down('A'))
-        {
-            state.action(ted::Action::SELECT_ALL);
-        }
-
-        if (back)
-        {
-            state.action(ted::Action::DELETE_LEFT);
-        }
-        else if (del)
-        {
-            state.action(ted::Action::DELETE_RIGHT);
-        }
 
         if (left || right || up || down || del || back)
         {
