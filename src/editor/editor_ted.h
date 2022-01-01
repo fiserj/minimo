@@ -1,5 +1,100 @@
 #pragma once
 
+struct Command
+{
+    enum Enum
+    {
+        // The first block has to be copy of `ted::Action`.
+        MOVE_LEFT,
+        MOVE_RIGHT,
+        MOVE_UP,
+        MOVE_DOWN,
+        SELECT_LEFT,
+        SELECT_RIGHT,
+        SELECT_UP,
+        SELECT_DOWN,
+        DELETE_LEFT,
+        DELETE_RIGHT,
+        GO_BACK,
+        GO_FORWARD,
+        MOVE_LINE_UP,
+        MOVE_LINE_DOWN,
+        CANCEL_SELECTION,
+        SELECT_ALL,
+
+        COPY,
+        CUT,
+        PASTE,
+
+        COUNT, // Don't use.
+    };
+};
+
+struct CommandBuffer
+{
+    std::vector<uint8_t> buffer;
+    size_t               head;
+
+    CommandBuffer()
+    {
+        clear();
+    }
+
+    void clear()
+    {
+        buffer.clear();
+        buffer.reserve(4096);
+
+        rewind();
+    }
+
+    void rewind()
+    {
+        head = 0;
+    }
+
+    void align(size_t alignment)
+    {
+        assert((alignment & (alignment - 1)) == 0);
+
+        const size_t mask = alignment - 1;
+        const size_t size = (buffer.size() + mask) & (~mask);
+
+        buffer.resize(size);
+    }
+
+    void write(const void* data, size_t size)
+    {
+        const size_t offset = buffer.size();
+
+        buffer.resize(offset + size);
+
+        bx::memCopy(&buffer[offset], data, size);
+    }
+
+    template <typename T>
+    void write(const T& value)
+    {
+        align(BX_ALIGNOF(T));
+        write(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
+    }
+
+    void read(void* data, uint32_t size)
+    {
+        assert(head + size <= buffer.size());
+
+        bx::memCopy(data, &buffer[head], size);
+
+        head += size;
+    }
+
+    template <typename T>
+    void read(T& value)
+    {
+        align(BX_ALIGNOF(T));
+        read(reinterpret_cast<uint8_t*>(&value), sizeof(T));
+    }
+};
 
 struct Modifier
 {
