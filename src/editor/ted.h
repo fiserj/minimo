@@ -18,28 +18,31 @@ using Array = TED_ARRAY<T>;
 
 enum struct Action
 {
+    CANCEL_SELECTION,
+    CLEAR,
+    CLICK,
+    CLICK_MULTI,
+    CODEPOINT,
+    COPY,
+    CUT,
+    DELETE_LEFT,
+    DELETE_RIGHT,
+    DRAG,
+    DRAG_MULTI,
+    GO_BACK,
+    GO_FORWARD,
+    MOVE_DOWN,
     MOVE_LEFT,
+    MOVE_LINE_DOWN,
+    MOVE_LINE_UP,
     MOVE_RIGHT,
     MOVE_UP,
-    MOVE_DOWN,
-
+    PASTE,
+    SELECT_ALL,
+    SELECT_DOWN,
     SELECT_LEFT,
     SELECT_RIGHT,
     SELECT_UP,
-    SELECT_DOWN,
-
-    DELETE_LEFT,
-    DELETE_RIGHT,
-
-    GO_BACK,
-    GO_FORWARD,
-
-    MOVE_LINE_UP,
-    MOVE_LINE_DOWN,
-
-    CANCEL_SELECTION,
-
-    SELECT_ALL,
 };
 
 struct Range
@@ -65,29 +68,27 @@ struct State
 {
     State();
 
-    void clear();
-
-    void click(float x, float y, bool multi_mode);
-
-    void drag(float x, float y);
-
+    // Use I/O members to set up data for actions that need them.
     void action(Action action);
 
-    void codepoint(uint32_t codepoint);
+    // Data storage.
+    Array<char>     buffer;
+    Array<Range>    lines;
+    Array<Cursor>   cursors;
 
-    void copy(Clipboard& out_clipboard);
+    // I/O.
+    Clipboard*      clipboard;
+    const char*     utf8_string;
+    size_t          utf8_string_bytes;
+    const uint32_t* utf8_codepoints;
+    size_t          utf8_codepoints_count;
+    float           char_width;
+    float           line_height;
+    float           mouse_x;
+    float           mouse_y;
 
-    void cut(Clipboard& out_clipboard);
-
-    void paste(const Clipboard& clipboard);
-
-    void paste(const char* string, size_t size = 0);
-
-    Array<char>   buffer;
-    Array<Range>  lines;
-    Array<Cursor> cursors;
-    float         char_width;
-    float         line_height;
+    // Behavior tweaks.
+    bool            clear_consumed_input;
 };
 
 } // namespace ted
