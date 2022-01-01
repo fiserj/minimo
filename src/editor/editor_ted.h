@@ -271,11 +271,16 @@ struct TextEditor
 
         // Input handling ------------------------------------------------------
         // TODO : Only process keys if viewport is active / focused.
+        // TODO : Better key handling (less "if-y" and handle keys held).
+        // TODO : Don't hardcode key shortcuts.
 
-        const bool up    = key_down(KEY_UP   );
-        const bool down  = key_down(KEY_DOWN );
-        const bool left  = key_down(KEY_LEFT );
-        const bool right = key_down(KEY_RIGHT);
+        const bool up    = key_down(KEY_UP       );
+        const bool down  = key_down(KEY_DOWN     );
+        const bool left  = key_down(KEY_LEFT     );
+        const bool right = key_down(KEY_RIGHT    );
+        const bool enter = key_down(KEY_ENTER    );
+        const bool back  = key_down(KEY_BACKSPACE);
+        const bool del   = key_down(KEY_DELETE   );
 
 #if BX_PLATFORM_OSX
         const bool ctrl  = key_held(KEY_SUPER_LEFT  ) || key_down(KEY_SUPER_LEFT  ) || key_held(KEY_SUPER_RIGHT  ) || key_down(KEY_SUPER_RIGHT  );
@@ -294,7 +299,26 @@ struct TextEditor
         else if (up   ) { state.action(!shift ? ted::Action::MOVE_UP    : ted::Action::SELECT_UP   ); }
         else if (down ) { state.action(!shift ? ted::Action::MOVE_DOWN  : ted::Action::SELECT_DOWN ); }
 
-        if (left || right || up || down)
+        if (key_down(KEY_ESCAPE))
+        {
+            state.action(ted::Action::CANCEL_SELECTION);
+        }
+
+        if (ctrl && key_down('A'))
+        {
+            state.action(ted::Action::SELECT_ALL);
+        }
+
+        if (back)
+        {
+            state.action(ted::Action::DELETE_LEFT);
+        }
+        else if (del)
+        {
+            state.action(ted::Action::DELETE_RIGHT);
+        }
+
+        if (left || right || up || down || del || back)
         {
             const size_t cursor = up ? 0 : state.cursors.size() - 1;
             const float  line   = static_cast<float>(ted::to_position(
