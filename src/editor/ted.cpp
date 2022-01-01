@@ -515,6 +515,16 @@ static void select_cursors_vertically(State& state, bool up)
     fix_overlapping_cursors(state.cursors);
 }
 
+static void cancel_selection(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = cursor.offset;
+}
+
 static void select_all(State& state)
 {
     state.cursors.resize(1);
@@ -523,7 +533,7 @@ static void select_all(State& state)
 
     cursor.selection.start = 0;
     cursor.selection.end   = 
-    cursor.offset          = state.lines[state.lines.size() - 1].end;
+    cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
 }
 
 static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, const Range& selection)
@@ -831,6 +841,10 @@ void State::action(Action action)
         case Action::DELETE_LEFT:
         case Action::DELETE_RIGHT:
             delete_at_cursors(*this, action == Action::DELETE_LEFT);
+            break;
+
+        case Action::CANCEL_SELECTION:
+            cancel_selection(*this);
             break;
 
         case Action::SELECT_ALL:

@@ -37,6 +37,8 @@ enum struct Action
     MOVE_LINE_UP,
     MOVE_LINE_DOWN,
 
+    CANCEL_SELECTION,
+
     SELECT_ALL,
 };
 
