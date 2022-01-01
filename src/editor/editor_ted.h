@@ -1,5 +1,23 @@
 #pragma once
 
+
+struct Modifier
+{
+    enum Enum
+    {
+        ALT     = 0x01,
+        CONTROL = 0x02,
+        SHIFT   = 0x04,
+        SUPER   = 0x08,
+    };
+};
+
+struct KeyBinding
+{
+    char key  = 0;
+    char mods = 0;
+};
+
 struct TextEditor
 {
     enum struct DisplayMode
@@ -11,11 +29,41 @@ struct TextEditor
 
     ted::State     state;
     ted::Clipboard clipboard;
+    KeyBinding     bindings[Command::COUNT];
     double         blink_base_time = 0.0;
     float          split_x         = 0.0f; // Screen coordinates.
     float          scroll_offset   = 0.0f; // Lines (!).
     float          handle_position = 0.0f;
     DisplayMode    display_mode    = DisplayMode::RIGHT;
+
+    TextEditor()
+    {
+#if BX_PLATFORM_OSX
+        constexpr char PLATFORM_MOD = Modifier::SUPER;
+#else
+        constexpr char PLATFORM_MOD = Modifier::CONTROL;
+#endif
+
+        bindings[Command::MOVE_LEFT       ] = { KEY_LEFT                       };
+        bindings[Command::MOVE_RIGHT      ] = { KEY_RIGHT                      };
+        bindings[Command::MOVE_UP         ] = { KEY_UP                         };
+        bindings[Command::MOVE_DOWN       ] = { KEY_DOWN                       };
+        bindings[Command::SELECT_LEFT     ] = { KEY_LEFT     , Modifier::SHIFT };
+        bindings[Command::SELECT_RIGHT    ] = { KEY_RIGHT    , Modifier::SHIFT };
+        bindings[Command::SELECT_UP       ] = { KEY_UP       , Modifier::SHIFT };
+        bindings[Command::SELECT_DOWN     ] = { KEY_DOWN     , Modifier::SHIFT };
+        bindings[Command::DELETE_LEFT     ] = { KEY_BACKSPACE                  };
+        bindings[Command::DELETE_RIGHT    ] = { KEY_DELETE                     };
+        bindings[Command::GO_BACK         ] = { KEY_LEFT     , Modifier::ALT   };
+        bindings[Command::GO_FORWARD      ] = { KEY_RIGHT    , Modifier::ALT   };
+        bindings[Command::MOVE_LINE_UP    ] = { KEY_UP       , Modifier::ALT   };
+        bindings[Command::MOVE_LINE_DOWN  ] = { KEY_DOWN     , Modifier::ALT   };
+        bindings[Command::CANCEL_SELECTION] = { KEY_ESCAPE                     };
+        bindings[Command::SELECT_ALL      ] = { 'A'          , PLATFORM_MOD    };
+        bindings[Command::COPY            ] = { 'C'          , PLATFORM_MOD    };
+        bindings[Command::CUT             ] = { 'X'          , PLATFORM_MOD    };
+        bindings[Command::PASTE           ] = { 'V'          , PLATFORM_MOD    };
+    }
 
     void set_content(const char* string)
     {
