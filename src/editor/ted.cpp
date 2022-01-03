@@ -652,6 +652,8 @@ static void action_select_vertically(State& state, bool up)
 
 static void action_delete(State& state, bool delete_left)
 {
+    sort_cursors(state.cursors);
+
     size_t removed = 0;
 
     for (size_t i = 0; i < state.cursors.size(); i++)
@@ -682,9 +684,10 @@ static void action_delete(State& state, bool delete_left)
             memmove(dst, src, size);
             removed += range_size(cursor.selection);
 
-            cursor.selection.end =
-            cursor.offset        = cursor.selection.start;
-            cursor.preferred_x   = to_position(state, cursor.offset).x;
+            cursor.selection.start =
+            cursor.selection.end   =
+            cursor.offset          = dst - state.buffer.data();
+            cursor.preferred_x     = to_position(state, cursor.offset).x;
         }
     }
 
