@@ -351,191 +351,6 @@ static void fix_overlapping_cursors(Array<Cursor>& cursors)
     }
 }
 
-static void move_cursors_horizontally(State& state, bool left)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-
-        if (range_empty(cursor.selection))
-        {
-            if (left)
-            {
-                if (cursor.offset > 0)
-                {
-                    cursor.offset--;
-                }
-            }
-            else if (cursor.offset + 1 < state.buffer.size())
-            {
-                cursor.offset++;
-            }
-        }
-        else
-        {
-            cursor.offset = left ? cursor.selection.start : cursor.selection.end;
-        }
-
-        cursor.selection.start =
-        cursor.selection.end   = cursor.offset;
-        cursor.preferred_x     = to_position(state, cursor.offset).x;
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void move_cursors_vertically(State& state, bool up)
-{
-    for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-        size_t cursor_line;
-
-        if (!range_empty(cursor.selection))
-        {
-            const Position position = to_position(state, cursor.selection.start, start_line);
-
-            cursor.preferred_x = position.x;
-            cursor_line        =
-            start_line         = position.y;
-        }
-        else
-        {
-            cursor_line =
-            start_line  = to_position(state, cursor.offset, start_line).y;
-        }
-
-        if (up)
-        {
-            if (cursor_line > 0)
-            {
-                cursor_line--;
-            }
-        }
-        else if (cursor_line + 1 < state.lines.size())
-        {
-            cursor_line++;
-        }
-
-        const size_t length = line_length(state, cursor_line);
-        assert(length);
-
-        const size_t cursor_x = std::min(cursor.preferred_x, length - 1);
-
-        cursor.selection.start =
-        cursor.selection.end   =
-        cursor.offset          = to_offset(state, cursor_x, cursor_line);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void select_cursors_horizontally(State& state, bool left)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor  cursor = state.cursors[i];
-        size_t& stop   = cursor.selection.start == cursor.offset ? cursor.selection.start : cursor.selection.end;
-
-        if (left)
-        {
-            if (stop > 0)
-            {
-                stop--;
-            }
-        }
-        else if (stop + 1 < state.buffer.size())
-        {
-            stop++;
-        }
-
-        cursor.offset      = stop;
-        cursor.preferred_x = to_position(state, cursor.offset).x;
-
-        range_fix(cursor.selection);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void select_cursors_vertically(State& state, bool up)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-        size_t line   = to_line(state, cursor.offset); // TODO : Figure out `start_line` logic.
-
-        assert(cursor.offset == cursor.selection.start || cursor.offset == cursor.selection.end);
-
-        if (up)
-        {
-            if (line > 0)
-            {
-                line--;
-            }
-            else
-            {
-                // TODO : Stick to the beginning of the text.
-            }
-        }
-        else if (line + 1 < state.lines.size())
-        {
-            line++;
-        }
-        else
-        {
-            // TODO : Stick to the end of the text.
-        }
-
-        const size_t cursor_x = std::min(cursor.preferred_x, line_length(state, line) - 1);
-        const size_t offset   = to_offset(state, cursor_x, line);
-
-        if (cursor.offset == cursor.selection.end)
-        {
-            cursor.selection.end =
-            cursor.offset        = offset;
-        }
-        else
-        {
-            cursor.selection.start =
-            cursor.offset          = offset;
-        }
-
-        range_fix(cursor.selection);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void cancel_selection(State& state)
-{
-    state.cursors.resize(1);
-
-    Cursor& cursor = state.cursors[0];
-
-    cursor.selection.start = 0;
-    cursor.selection.end   = cursor.offset;
-}
-
-static void select_all(State& state)
-{
-    state.cursors.resize(1);
-
-    Cursor& cursor = state.cursors[0];
-
-    cursor.selection.start = 0;
-    cursor.selection.end   = 
-    cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
-}
-
 static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, const Range& selection)
 {
     assert(!range_empty(selection));
@@ -666,7 +481,176 @@ static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool m
     }
 }
 
-static void delete_at_cursors(State& state, bool delete_left)
+
+// -----------------------------------------------------------------------------
+// STATE ACTIONS
+// -----------------------------------------------------------------------------
+
+static void action_move_horizontally(State& state, bool left)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+
+        if (range_empty(cursor.selection))
+        {
+            if (left)
+            {
+                if (cursor.offset > 0)
+                {
+                    cursor.offset--;
+                }
+            }
+            else if (cursor.offset + 1 < state.buffer.size())
+            {
+                cursor.offset++;
+            }
+        }
+        else
+        {
+            cursor.offset = left ? cursor.selection.start : cursor.selection.end;
+        }
+
+        cursor.selection.start =
+        cursor.selection.end   = cursor.offset;
+        cursor.preferred_x     = to_position(state, cursor.offset).x;
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_move_vertically(State& state, bool up)
+{
+    for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+        size_t cursor_line;
+
+        if (!range_empty(cursor.selection))
+        {
+            const Position position = to_position(state, cursor.selection.start, start_line);
+
+            cursor.preferred_x = position.x;
+            cursor_line        =
+            start_line         = position.y;
+        }
+        else
+        {
+            cursor_line =
+            start_line  = to_position(state, cursor.offset, start_line).y;
+        }
+
+        if (up)
+        {
+            if (cursor_line > 0)
+            {
+                cursor_line--;
+            }
+        }
+        else if (cursor_line + 1 < state.lines.size())
+        {
+            cursor_line++;
+        }
+
+        const size_t length = line_length(state, cursor_line);
+        assert(length);
+
+        const size_t cursor_x = std::min(cursor.preferred_x, length - 1);
+
+        cursor.selection.start =
+        cursor.selection.end   =
+        cursor.offset          = to_offset(state, cursor_x, cursor_line);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_select_horizontally(State& state, bool left)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor  cursor = state.cursors[i];
+        size_t& stop   = cursor.selection.start == cursor.offset ? cursor.selection.start : cursor.selection.end;
+
+        if (left)
+        {
+            if (stop > 0)
+            {
+                stop--;
+            }
+        }
+        else if (stop + 1 < state.buffer.size())
+        {
+            stop++;
+        }
+
+        cursor.offset      = stop;
+        cursor.preferred_x = to_position(state, cursor.offset).x;
+
+        range_fix(cursor.selection);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_select_vertically(State& state, bool up)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+        size_t line   = to_line(state, cursor.offset); // TODO : Figure out `start_line` logic.
+
+        assert(cursor.offset == cursor.selection.start || cursor.offset == cursor.selection.end);
+
+        if (up)
+        {
+            if (line > 0)
+            {
+                line--;
+            }
+            else
+            {
+                // TODO : Stick to the beginning of the text.
+            }
+        }
+        else if (line + 1 < state.lines.size())
+        {
+            line++;
+        }
+        else
+        {
+            // TODO : Stick to the end of the text.
+        }
+
+        const size_t cursor_x = std::min(cursor.preferred_x, line_length(state, line) - 1);
+        const size_t offset   = to_offset(state, cursor_x, line);
+
+        if (cursor.offset == cursor.selection.end)
+        {
+            cursor.selection.end =
+            cursor.offset        = offset;
+        }
+        else
+        {
+            cursor.selection.start =
+            cursor.offset          = offset;
+        }
+
+        range_fix(cursor.selection);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_delete(State& state, bool delete_left)
 {
     size_t removed = 0;
 
@@ -709,6 +693,27 @@ static void delete_at_cursors(State& state, bool delete_left)
         state.buffer.resize(state.buffer.size() - removed);
         parse_lines(state.buffer.data(), state.lines);
     }
+}
+
+static void action_cancel_selection(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = cursor.offset;
+}
+
+static void action_select_all(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = 
+    cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
 }
 
 
@@ -820,35 +825,35 @@ void State::action(Action action)
     {
         case Action::MOVE_LEFT:
         case Action::MOVE_RIGHT:
-            move_cursors_horizontally(*this, action == Action::MOVE_LEFT);
+            action_move_horizontally(*this, action == Action::MOVE_LEFT);
             break;
 
         case Action::MOVE_UP:
         case Action::MOVE_DOWN:
-            move_cursors_vertically(*this, action == Action::MOVE_UP);
+            action_move_vertically(*this, action == Action::MOVE_UP);
             break;
 
         case Action::SELECT_LEFT:
         case Action::SELECT_RIGHT:
-            select_cursors_horizontally(*this, action == Action::SELECT_LEFT);
+            action_select_horizontally(*this, action == Action::SELECT_LEFT);
             break;
 
         case Action::SELECT_UP:
         case Action::SELECT_DOWN:
-            select_cursors_vertically(*this, action == Action::SELECT_UP);
+            action_select_vertically(*this, action == Action::SELECT_UP);
             break;
 
         case Action::DELETE_LEFT:
         case Action::DELETE_RIGHT:
-            delete_at_cursors(*this, action == Action::DELETE_LEFT);
+            action_delete(*this, action == Action::DELETE_LEFT);
             break;
 
         case Action::CANCEL_SELECTION:
-            cancel_selection(*this);
+            action_cancel_selection(*this);
             break;
 
         case Action::SELECT_ALL:
-            select_all(*this);
+            action_select_all(*this);
             break;
 
         default:
