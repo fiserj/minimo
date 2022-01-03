@@ -147,7 +147,7 @@ static bool is_active(KeyBinding binding)
 
     if (binding.mods > 0)
     {
-        for (int i = 0, j = 1; i < 3; i++, j = 1 << i)
+        for (int i = 0, j = 1; i < 4; i++, j = 1 << i)
         {
             if ((binding.mods & j) && !is_mod_active(static_cast<Modifier::Enum>(j)))
             {
