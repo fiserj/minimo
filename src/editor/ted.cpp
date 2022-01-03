@@ -858,10 +858,10 @@ void State::action(Action action)
 
 void State::codepoint(uint32_t codepoint)
 {
-    if (!utf8nvalid(&codepoint, 4))
-    {
-        paste(reinterpret_cast<const char*>(&codepoint));
-    }
+    char        buffer[4] = { 0 };
+    const void* next      = utf8catcodepoint(buffer, static_cast<utf8_int32_t>(codepoint), 4);
+
+    paste(buffer, static_cast<const char*>(next) - buffer);
 }
 
 void State::copy(Clipboard& out_clipboard)
