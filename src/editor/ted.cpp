@@ -233,6 +233,40 @@ static void parse_lines(const char* string, Array<Range>& lines)
     lines[lines.size() - 1].end = offset;
 }
 
+static void paste_single(State& state, const char* string, size_t size)
+{
+    if (!string)
+    {
+        return;
+    }
+
+    if (!size)
+    {
+        size = utf8size_lazy(string);
+
+        if (!size)
+        {
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        if (const size_t shift = paste_at(state, state.cursors[i], string, size))
+        {
+            for (size_t j = i + 1; j < state.cursors.size(); j++)
+            {
+                state.cursors[j].selection.start += shift;
+                state.cursors[j].selection.end   += shift;
+                state.cursors[j].offset          += shift;
+                // TODO : Preferred X.
+            }
+        }
+    }
+
+    parse_lines(state.buffer.data(), state.lines);
+}
+
 static void paste_multi(State& state, const Clipboard& clipboard)
 {
     const bool different_count = clipboard.ranges.size() != state.cursors.size();
@@ -349,191 +383,6 @@ static void fix_overlapping_cursors(Array<Cursor>& cursors)
             remove_cursor(cursors, i);
         }
     }
-}
-
-static void move_cursors_horizontally(State& state, bool left)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-
-        if (range_empty(cursor.selection))
-        {
-            if (left)
-            {
-                if (cursor.offset > 0)
-                {
-                    cursor.offset--;
-                }
-            }
-            else if (cursor.offset + 1 < state.buffer.size())
-            {
-                cursor.offset++;
-            }
-        }
-        else
-        {
-            cursor.offset = left ? cursor.selection.start : cursor.selection.end;
-        }
-
-        cursor.selection.start =
-        cursor.selection.end   = cursor.offset;
-        cursor.preferred_x     = to_position(state, cursor.offset).x;
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void move_cursors_vertically(State& state, bool up)
-{
-    for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-        size_t cursor_line;
-
-        if (!range_empty(cursor.selection))
-        {
-            const Position position = to_position(state, cursor.selection.start, start_line);
-
-            cursor.preferred_x = position.x;
-            cursor_line        =
-            start_line         = position.y;
-        }
-        else
-        {
-            cursor_line =
-            start_line  = to_position(state, cursor.offset, start_line).y;
-        }
-
-        if (up)
-        {
-            if (cursor_line > 0)
-            {
-                cursor_line--;
-            }
-        }
-        else if (cursor_line + 1 < state.lines.size())
-        {
-            cursor_line++;
-        }
-
-        const size_t length = line_length(state, cursor_line);
-        assert(length);
-
-        const size_t cursor_x = std::min(cursor.preferred_x, length - 1);
-
-        cursor.selection.start =
-        cursor.selection.end   =
-        cursor.offset          = to_offset(state, cursor_x, cursor_line);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void select_cursors_horizontally(State& state, bool left)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor  cursor = state.cursors[i];
-        size_t& stop   = cursor.selection.start == cursor.offset ? cursor.selection.start : cursor.selection.end;
-
-        if (left)
-        {
-            if (stop > 0)
-            {
-                stop--;
-            }
-        }
-        else if (stop + 1 < state.buffer.size())
-        {
-            stop++;
-        }
-
-        cursor.offset      = stop;
-        cursor.preferred_x = to_position(state, cursor.offset).x;
-
-        range_fix(cursor.selection);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void select_cursors_vertically(State& state, bool up)
-{
-    for (size_t i = 0; i < state.cursors.size(); i++)
-    {
-        Cursor cursor = state.cursors[i];
-        size_t line   = to_line(state, cursor.offset); // TODO : Figure out `start_line` logic.
-
-        assert(cursor.offset == cursor.selection.start || cursor.offset == cursor.selection.end);
-
-        if (up)
-        {
-            if (line > 0)
-            {
-                line--;
-            }
-            else
-            {
-                // TODO : Stick to the beginning of the text.
-            }
-        }
-        else if (line + 1 < state.lines.size())
-        {
-            line++;
-        }
-        else
-        {
-            // TODO : Stick to the end of the text.
-        }
-
-        const size_t cursor_x = std::min(cursor.preferred_x, line_length(state, line) - 1);
-        const size_t offset   = to_offset(state, cursor_x, line);
-
-        if (cursor.offset == cursor.selection.end)
-        {
-            cursor.selection.end =
-            cursor.offset        = offset;
-        }
-        else
-        {
-            cursor.selection.start =
-            cursor.offset          = offset;
-        }
-
-        range_fix(cursor.selection);
-
-        state.cursors[i] = cursor;
-    }
-
-    fix_overlapping_cursors(state.cursors);
-}
-
-static void cancel_selection(State& state)
-{
-    state.cursors.resize(1);
-
-    Cursor& cursor = state.cursors[0];
-
-    cursor.selection.start = 0;
-    cursor.selection.end   = cursor.offset;
-}
-
-static void select_all(State& state)
-{
-    state.cursors.resize(1);
-
-    Cursor& cursor = state.cursors[0];
-
-    cursor.selection.start = 0;
-    cursor.selection.end   = 
-    cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
 }
 
 static void add_to_clipboard(Clipboard& clipboard, const Array<char>& buffer, const Range& selection)
@@ -666,7 +515,121 @@ static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool m
     }
 }
 
-static void delete_at_cursors(State& state, bool delete_left)
+
+// -----------------------------------------------------------------------------
+// STATE ACTIONS
+// -----------------------------------------------------------------------------
+
+static void action_cancel_selection(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = cursor.offset;
+}
+
+static void action_clear(State& state)
+{
+    state.buffer.clear();
+    state.buffer.reserve(4096);
+    state.buffer.push_back(0);
+
+    state.lines.clear();
+    state.lines.reserve(128);
+    state.lines.push_back({ 0, 1 });
+
+    state.cursors.clear();
+    state.cursors.reserve(16);
+    state.cursors.push_back({});
+
+    state.clipboard             = nullptr;
+    state.utf8_string           = nullptr;
+    state.utf8_string_bytes     = 0;
+    state.utf8_codepoints       = nullptr;
+    state.utf8_codepoints_count = 0;
+
+    state.char_width  = 0.0f;
+    state.line_height = 0.0f;
+    state.mouse_x     = 0.0f;
+    state.mouse_y     = 0.0f;
+}
+
+static void action_click(State& state, bool multi_mode)
+{
+    const Position position = click_position(state, state.mouse_x, state.mouse_y);
+    const size_t   offset   = to_offset(state, position.x, position.y);
+    Cursor*        cursor   = nullptr;
+
+    if (multi_mode)
+    {
+        if (!remove_cursor_containing_offset(state.cursors, offset))
+        {
+            state.cursors.resize(state.cursors.size() + 1);
+            cursor = &state.cursors[state.cursors.size() - 1];
+        }
+    }
+    else
+    {
+        state.cursors.resize(1);
+        cursor = &state.cursors[0];
+    }
+
+    if (cursor)
+    {
+        cursor->selection.start =
+        cursor->selection.end   =
+        cursor->offset          = offset;
+        cursor->preferred_x     = position.x;
+    }
+}
+
+static void action_codepoint(State& state)
+{
+    const utf8_int32_t* codepoint = reinterpret_cast<const utf8_int32_t*>(state.utf8_codepoints);
+    size_t              remaining = state.utf8_codepoints_count ? state.utf8_codepoints_count : SIZE_MAX;
+
+    char   string[32];
+    size_t size = 0;
+
+    for (; codepoint && remaining; codepoint++, remaining--)
+    {
+        if (!utf8nvalid(codepoint, 4))
+        {
+            size = static_cast<char*>(utf8catcodepoint(string + size, *codepoint, sizeof(string) - size)) - string;
+
+            if (size > sizeof(string) - 4)
+            {
+                paste_single(state, string, size);
+                size = 0;
+            }
+        }
+    }
+
+    if (size)
+    {
+        paste_single(state, string, size);
+    }
+}
+
+static void action_copy(State& state)
+{
+    if (state.clipboard)
+    {
+        copy_or_move_to_clipboard(state, *state.clipboard, false);
+    }
+}
+
+static void action_cut(State& state)
+{
+    if (state.clipboard)
+    {
+        copy_or_move_to_clipboard(state, *state.clipboard, true);
+    }
+}
+
+static void action_delete(State& state, bool delete_left)
 {
     size_t removed = 0;
 
@@ -711,73 +674,18 @@ static void delete_at_cursors(State& state, bool delete_left)
     }
 }
 
-
-// -----------------------------------------------------------------------------
-// PUBLIC API
-// -----------------------------------------------------------------------------
-
-State::State()
+static void action_drag(State& state, bool multi_mode)
 {
-    clear();
-}
+    // TODO : Utilize `multi_mode`.
 
-void State::clear()
-{
-    buffer.clear();
-    buffer.reserve(4096);
-    buffer.push_back(0);
-
-    lines.clear();
-    lines.reserve(128);
-    lines.push_back({ 0, 1 });
-
-    cursors.clear();
-    cursors.reserve(16);
-    cursors.push_back({});
-
-    char_width  = 0.0f;
-    line_height = 0.0f;
-}
-
-void State::click(float x, float y, bool multi_mode)
-{
-    const Position position = click_position(*this, x, y);
-    const size_t   offset   = to_offset(*this, position.x, position.y);
-    Cursor*        cursor   = nullptr;
-
-    if (multi_mode)
-    {
-        if (!remove_cursor_containing_offset(cursors, offset))
-        {
-            cursors.resize(cursors.size() + 1);
-            cursor = &cursors[cursors.size() - 1];
-        }
-    }
-    else
-    {
-        cursors.resize(1);
-        cursor = &cursors[0];
-    }
-
-    if (cursor)
-    {
-        cursor->selection.start =
-        cursor->selection.end   =
-        cursor->offset          = offset;
-        cursor->preferred_x     = position.x;
-    }
-}
-
-void State::drag(float x, float y)
-{
     // Lastly added cursor is considered the active one to drive the selection.
-    const size_t active = cursors.size() - 1;
+    const size_t active = state.cursors.size() - 1;
     size_t       count  = active;
 
-    const Position position = click_position(*this, x, y);
-    const size_t   offset   = to_offset(*this, position.x, position.y);
+    const Position position = click_position(state, state.mouse_x, state.mouse_y);
+    const size_t   offset   = to_offset(state, position.x, position.y);
 
-    Cursor& cursor = cursors[active];
+    Cursor& cursor = state.cursors[active];
 
     if (cursor.offset == cursor.selection.end)
     {
@@ -796,128 +704,334 @@ void State::drag(float x, float y)
 
     for (size_t i = 0; i < count; i++)
     {
-        if (range_overlap(selection, cursors[i].selection))
+        if (range_overlap(selection, state.cursors[i].selection))
         {
             for (size_t j = i + 1; j < count; j++)
             {
-                cursors[j - 1] = cursors[j];
+                state.cursors[j - 1] = state.cursors[j];
             }
 
             count--;
         }
     }
 
-    if (count + 1 != cursors.size())
+    if (count + 1 != state.cursors.size())
     {
-        std::swap(cursors[count], cursors[active]);
-        cursors.resize(count + 1);
+        std::swap(state.cursors[count], state.cursors[active]);
+        state.cursors.resize(count + 1);
     }
+}
+
+static void action_move_horizontally(State& state, bool left)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+
+        if (range_empty(cursor.selection))
+        {
+            if (left)
+            {
+                if (cursor.offset > 0)
+                {
+                    cursor.offset--;
+                }
+            }
+            else if (cursor.offset + 1 < state.buffer.size())
+            {
+                cursor.offset++;
+            }
+        }
+        else
+        {
+            cursor.offset = left ? cursor.selection.start : cursor.selection.end;
+        }
+
+        cursor.selection.start =
+        cursor.selection.end   = cursor.offset;
+        cursor.preferred_x     = to_position(state, cursor.offset).x;
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_move_vertically(State& state, bool up)
+{
+    for (size_t i = 0, start_line = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+        size_t cursor_line;
+
+        if (!range_empty(cursor.selection))
+        {
+            const Position position = to_position(state, cursor.selection.start, start_line);
+
+            cursor.preferred_x = position.x;
+            cursor_line        =
+            start_line         = position.y;
+        }
+        else
+        {
+            cursor_line =
+            start_line  = to_position(state, cursor.offset, start_line).y;
+        }
+
+        if (up)
+        {
+            if (cursor_line > 0)
+            {
+                cursor_line--;
+            }
+        }
+        else if (cursor_line + 1 < state.lines.size())
+        {
+            cursor_line++;
+        }
+
+        const size_t length = line_length(state, cursor_line);
+        assert(length);
+
+        const size_t cursor_x = std::min(cursor.preferred_x, length - 1);
+
+        cursor.selection.start =
+        cursor.selection.end   =
+        cursor.offset          = to_offset(state, cursor_x, cursor_line);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_select_all(State& state)
+{
+    state.cursors.resize(1);
+
+    Cursor& cursor = state.cursors[0];
+
+    cursor.selection.start = 0;
+    cursor.selection.end   = 
+    cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
+}
+
+static void action_select_horizontally(State& state, bool left)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor  cursor = state.cursors[i];
+        size_t& stop   = cursor.selection.start == cursor.offset ? cursor.selection.start : cursor.selection.end;
+
+        if (left)
+        {
+            if (stop > 0)
+            {
+                stop--;
+            }
+        }
+        else if (stop + 1 < state.buffer.size())
+        {
+            stop++;
+        }
+
+        cursor.offset      = stop;
+        cursor.preferred_x = to_position(state, cursor.offset).x;
+
+        range_fix(cursor.selection);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_select_vertically(State& state, bool up)
+{
+    for (size_t i = 0; i < state.cursors.size(); i++)
+    {
+        Cursor cursor = state.cursors[i];
+        size_t line   = to_line(state, cursor.offset); // TODO : Figure out `start_line` logic.
+
+        assert(cursor.offset == cursor.selection.start || cursor.offset == cursor.selection.end);
+
+        if (up)
+        {
+            if (line > 0)
+            {
+                line--;
+            }
+            else
+            {
+                // TODO : Stick to the beginning of the text.
+            }
+        }
+        else if (line + 1 < state.lines.size())
+        {
+            line++;
+        }
+        else
+        {
+            // TODO : Stick to the end of the text.
+        }
+
+        const size_t cursor_x = std::min(cursor.preferred_x, line_length(state, line) - 1);
+        const size_t offset   = to_offset(state, cursor_x, line);
+
+        if (cursor.offset == cursor.selection.end)
+        {
+            cursor.selection.end =
+            cursor.offset        = offset;
+        }
+        else
+        {
+            cursor.selection.start =
+            cursor.offset          = offset;
+        }
+
+        range_fix(cursor.selection);
+
+        state.cursors[i] = cursor;
+    }
+
+    fix_overlapping_cursors(state.cursors);
+}
+
+static void action_paste(State& state)
+{
+    if (state.clipboard)
+    {
+        if (state.clipboard->ranges.size() == 1)
+        {
+            const char*  string = state.clipboard->buffer.data() + state.clipboard->ranges[0].start;
+            const size_t size   = range_size(state.clipboard->ranges[0]);
+
+            paste_single(state, string, size);
+        }
+        else if (state.clipboard->ranges.size())
+        {
+            paste_multi(state, *state.clipboard);
+        }
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API
+// -----------------------------------------------------------------------------
+
+State::State()
+{
+    action(Action::CLEAR);
+
+    clear_consumed_input = true;
 }
 
 void State::action(Action action)
 {
     switch (action)
     {
-        case Action::MOVE_LEFT:
-        case Action::MOVE_RIGHT:
-            move_cursors_horizontally(*this, action == Action::MOVE_LEFT);
+        case Action::CANCEL_SELECTION:
+            action_cancel_selection(*this);
             break;
 
-        case Action::MOVE_UP:
-        case Action::MOVE_DOWN:
-            move_cursors_vertically(*this, action == Action::MOVE_UP);
+        case Action::CLEAR:
+            action_clear(*this);
             break;
 
-        case Action::SELECT_LEFT:
-        case Action::SELECT_RIGHT:
-            select_cursors_horizontally(*this, action == Action::SELECT_LEFT);
+        case Action::CLICK:
+            action_click(*this, false);
             break;
 
-        case Action::SELECT_UP:
-        case Action::SELECT_DOWN:
-            select_cursors_vertically(*this, action == Action::SELECT_UP);
+        case Action::CLICK_MULTI:
+            action_click(*this, true);
+            break;
+
+        case Action::CODEPOINT:
+            action_codepoint(*this);
+            break;
+
+        case Action::COPY:
+            action_copy(*this);
+            break;
+
+        case Action::CUT:
+            action_cut(*this);
             break;
 
         case Action::DELETE_LEFT:
-        case Action::DELETE_RIGHT:
-            delete_at_cursors(*this, action == Action::DELETE_LEFT);
+            action_delete(*this, true);
             break;
 
-        case Action::CANCEL_SELECTION:
-            cancel_selection(*this);
+        case Action::DELETE_RIGHT:
+            action_delete(*this, false);
+            break;
+
+        case Action::DRAG:
+            action_drag(*this, false);
+            break;
+
+        case Action::DRAG_MULTI:
+            action_drag(*this, true);
+            break;
+
+        case Action::GO_BACK:
+        case Action::GO_FORWARD:
+            // TODO
+            break;
+
+        case Action::MOVE_DOWN:
+            action_move_vertically(*this, true);
+            break;
+
+        case Action::MOVE_LEFT:
+            action_move_horizontally(*this, true);
+            break;
+
+        case Action::MOVE_LINE_DOWN:
+        case Action::MOVE_LINE_UP:
+            // TODO
+            break;
+
+        case Action::MOVE_RIGHT:
+            action_move_horizontally(*this, false);
+            break;
+
+        case Action::MOVE_UP:
+            action_move_vertically(*this, true);
             break;
 
         case Action::SELECT_ALL:
-            select_all(*this);
+            action_select_all(*this);
+            break;
+
+        case Action::SELECT_DOWN:
+            action_select_vertically(*this, false);
+            break;
+
+        case Action::SELECT_LEFT:
+            action_select_horizontally(*this, true);
+            break;
+
+        case Action::SELECT_RIGHT:
+            action_select_horizontally(*this, false);
+            break;
+
+        case Action::SELECT_UP:
+            action_select_vertically(*this, true);
             break;
 
         default:
-            assert(false && "Not yet implemented.");
+            assert(false && "Invalid action.");
     }
-}
 
-void State::codepoint(uint32_t codepoint)
-{
-    if (!utf8nvalid(&codepoint, 4))
+    if (clear_consumed_input)
     {
-        paste(reinterpret_cast<const char*>(&codepoint));
+        utf8_string           = nullptr;
+        utf8_string_bytes     = 0;
+        utf8_codepoints       = nullptr;
+        utf8_codepoints_count = 0;
     }
-}
-
-void State::copy(Clipboard& out_clipboard)
-{
-    copy_or_move_to_clipboard(*this, out_clipboard, false);
-}
-
-void State::cut(Clipboard& out_clipboard)
-{
-    copy_or_move_to_clipboard(*this, out_clipboard, true);
-}
-
-void State::paste(const Clipboard& clipboard)
-{
-    if (clipboard.ranges.size() == 1)
-    {
-        paste(clipboard.buffer.data() + clipboard.ranges[0].start, range_size(clipboard.ranges[0]));
-    }
-    else if (clipboard.ranges.size())
-    {
-        paste_multi(*this, clipboard);
-    }
-}
-
-void State::paste(const char* string, size_t size)
-{
-    if (!string)
-    {
-        return;
-    }
-
-    if (!size)
-    {
-        size = utf8size_lazy(string);
-
-        if (!size)
-        {
-            return;
-        }
-    }
-
-    for (size_t i = 0; i < cursors.size(); i++)
-    {
-        if (const size_t shift = paste_at(*this, cursors[i], string, size))
-        {
-            for (size_t j = i + 1; j < cursors.size(); j++)
-            {
-                cursors[j].selection.start += shift;
-                cursors[j].selection.end   += shift;
-                cursors[j].offset          += shift;
-                // TODO : Preferred X.
-            }
-        }
-    }
-
-    parse_lines(buffer.data(), lines);
 }
 
 
@@ -940,7 +1054,8 @@ struct TestState : State
         check_invariants();
 
         // https://en.wikipedia.org/wiki/Salamander
-        paste(
+        action(
+            Action::PASTE,
             "Salamanders are a group of amphibians typically characterized by\n"
             "their lizard-like appearance, with slender bodies, blunt snouts,\n"
             "short limbs projecting at right angles to the body, and the presence\n"

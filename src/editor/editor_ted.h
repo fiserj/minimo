@@ -229,8 +229,11 @@ struct TextEditor
 
     void set_content(const char* string)
     {
-        state.clear();
-        state.paste(string);
+        state.action(Action::CLEAR);
+
+        state.utf8_string = string;
+        state.action(Action::PASTE);
+
         state.cursors[0] = {};
     }
 
