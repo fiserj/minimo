@@ -38,8 +38,12 @@ enum struct Action
     MOVE_LINE_DOWN,
 
     CANCEL_SELECTION,
-
     SELECT_ALL,
+
+    NEW_LINE,
+
+    TAB,
+
 };
 
 struct Range
@@ -88,6 +92,7 @@ struct State
     Array<Cursor> cursors;
     float         char_width;
     float         line_height;
+    size_t        tab_size;
 };
 
 } // namespace ted

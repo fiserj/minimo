@@ -89,7 +89,7 @@ static size_t to_line(const Array<Range>& lines, size_t offset, size_t start_lin
     return 0;
 }
 
-static size_t to_offset(State& state, size_t x, size_t y)
+static size_t to_offset(const State& state, size_t x, size_t y)
 {
     utf8_int32_t codepoint;
     const void*  iterator = utf8codepoint(line_string(state, y), &codepoint);
@@ -104,7 +104,7 @@ static size_t to_offset(State& state, size_t x, size_t y)
     return offset;
 }
 
-static size_t to_line(State& state, size_t offset, size_t start_line = 0)
+static size_t to_line(const State& state, size_t offset, size_t start_line = 0)
 {
     for (size_t i = start_line; i < state.lines.size(); i++)
     {
@@ -117,7 +117,7 @@ static size_t to_line(State& state, size_t offset, size_t start_line = 0)
     return 0;
 }
 
-static Position to_position(State& state, size_t offset, size_t start_line = 0)
+static Position to_position(const State& state, size_t offset, size_t start_line = 0)
 {
     Position position = { 0, 0 };
 
@@ -135,6 +135,13 @@ static Position to_position(State& state, size_t offset, size_t start_line = 0)
     return position;
 }
 
+static inline size_t to_column(const State& state, size_t offset, size_t line)
+{
+    assert(range_contains(state.lines[line], offset));
+
+    return utf8nlen(line_string(state, line), offset - state.lines[line].start);
+}
+
 static Position click_position(const State& state, float x, float y)
 {
     x = std::max(x, 0.0f) / state.char_width;
@@ -146,32 +153,42 @@ static Position click_position(const State& state, float x, float y)
     return { xi, yi };
 }
 
-static size_t paste_at(State& state, Cursor& cursor, const char* string, size_t size)
+static size_t resize_selection(Array<char>& buffer, const Range& selection, size_t new_size)
 {
-    const size_t selection = range_size(cursor.selection);
+    const size_t old_size = range_size(selection);
 
-    if (size != selection)
+    if (new_size != old_size)
     {
-        const size_t src  = cursor.selection.end;
-        const size_t dst  = cursor.selection.start + size;
-        const size_t span = state.buffer.size() - src;
+        const size_t src  = selection.end;
+        const size_t dst  = selection.start + new_size;
+        const size_t span = buffer.size() - src;
 
-        if (size > selection)
+        if (new_size > old_size)
         {
-            state.buffer.resize(state.buffer.size() + size - selection);
+            buffer.resize(buffer.size() + new_size - old_size);
         }
 
-        memmove(state.buffer.data() + dst, state.buffer.data() + src, span);
+        memmove(buffer.data() + dst, buffer.data() + src, span);
     }
 
-    memcpy(state.buffer.data() + cursor.selection.start, string, size);
+    return new_size - old_size;
+}
+
+static size_t paste_string(State& state, Cursor& cursor, const char* string, size_t size, size_t times = 1)
+{
+    const size_t diff = resize_selection(state.buffer, cursor.selection, size * times);
+    char*        dst  = state.buffer.data() + cursor.selection.start;
+
+    for (size_t i = 0; i < times; i++, dst += size)
+    {
+        memcpy(dst, string, size);
+    }
 
     cursor.selection.start =
     cursor.selection.end   =
-    cursor.offset          = cursor.selection.start + size;
-    cursor.preferred_x     = to_position(state, cursor.offset).x;
+    cursor.offset          = cursor.selection.start + size * times;
 
-    return 0;
+    return diff;
 }
 
 static void paste_ex(const Clipboard& clipboard, size_t start, size_t count, size_t size, Array<char>& buffer, Cursor& cursor, size_t& offset)
@@ -205,6 +222,19 @@ static void paste_ex(const Clipboard& clipboard, size_t start, size_t count, siz
     cursor.offset          = cursor.selection.start + size + offset;
 
     offset += size_diff;
+}
+
+static inline void update_preferred_x(State& state)
+{
+    for (size_t i = 0, line = 0; i < state.cursors.size(); i++)
+    {
+        const Position position = to_position(state, state.cursors[i].selection.start, line);
+        assert(position.y >= line);
+
+        state.cursors[i].preferred_x = position.x;
+
+        line = position.y;
+    }
 }
 
 static void parse_lines(const char* string, Array<Range>& lines)
@@ -719,6 +749,44 @@ static void action_select_all(State& state)
     cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
 }
 
+static void action_tab(State& state)
+{
+    // TODO : Consider reducing the number of allocations (would require two passes).
+
+    sort_cursors(state.cursors);
+
+    for (size_t i = 0, line = 0, offset = 0; i < state.cursors.size(); i++)
+    {
+        Cursor& cursor = state.cursors[i];
+
+        if (i)
+        {
+            cursor.selection.start += offset;
+            cursor.selection.end   += offset;
+            cursor.offset          += offset;
+        }
+
+        line = to_line(state, cursor.selection.start, line);
+
+        // TODO : Line without last character that is `\n`.
+        if (range_empty(cursor.selection) || cursor.selection.end < state.lines[line].end)
+        {
+            const size_t x = to_column(state, cursor.selection.start, line);
+            const size_t n = state.tab_size - (x % state.tab_size);
+
+            paste_string(state, cursor, " ", 1, n);
+
+            offset += n;
+        }
+        else
+        {
+            // TODO: Add offset to the beginning of each line intersecting the selection.
+        }
+    }
+
+    parse_lines(state.buffer.data(), state.lines);
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -727,6 +795,8 @@ static void action_select_all(State& state)
 State::State()
 {
     clear();
+
+    tab_size = 4;
 }
 
 void State::clear()
@@ -859,6 +929,14 @@ void State::action(Action action)
             action_select_all(*this);
             break;
 
+        case Action::NEW_LINE:
+            paste("\n", 1);
+            break;
+
+        case Action::TAB:
+            action_tab(*this);
+            break;
+
         default:
             assert(false && "Not yet implemented.");
     }
@@ -911,21 +989,18 @@ void State::paste(const char* string, size_t size)
         }
     }
 
-    for (size_t i = 0; i < cursors.size(); i++)
+    for (size_t i = 0, offset = 0; i < cursors.size(); i++)
     {
-        if (const size_t shift = paste_at(*this, cursors[i], string, size))
-        {
-            for (size_t j = i + 1; j < cursors.size(); j++)
-            {
-                cursors[j].selection.start += shift;
-                cursors[j].selection.end   += shift;
-                cursors[j].offset          += shift;
-                // TODO : Preferred X.
-            }
-        }
+        cursors[i].selection.start += offset;
+        cursors[i].selection.start += offset;
+        cursors[i].selection.start += offset;
+
+        offset += paste_string(*this, cursors[i], string, size);
     }
 
     parse_lines(buffer.data(), lines);
+
+    update_preferred_x(*this);
 }
 
 
@@ -969,7 +1044,7 @@ struct TestState : State
         check_line_count(11);
 
         check_cursor_count(1);
-        check_cursor(0, { { 480, 480 }, 480, 0 }); // TODO : Preferred X.        
+        check_cursor(0, { { 480, 480 }, 480, 25 });
     }
 
     void check_invariants()

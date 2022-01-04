@@ -21,6 +21,8 @@ struct Command
         MOVE_LINE_DOWN,
         CANCEL_SELECTION,
         SELECT_ALL,
+        NEW_LINE,
+        TAB,
 
         COPY,
         CUT,
@@ -202,6 +204,8 @@ struct TextEditor
         bindings[Command::MOVE_LINE_DOWN  ] = { KEY_DOWN     , Modifier::ALT   };
         bindings[Command::CANCEL_SELECTION] = { KEY_ESCAPE                     };
         bindings[Command::SELECT_ALL      ] = { 'A'          , PLATFORM_MOD    };
+        bindings[Command::NEW_LINE        ] = { KEY_ENTER                      };
+        bindings[Command::TAB             ] = { KEY_TAB                        };
         bindings[Command::COPY            ] = { 'C'          , PLATFORM_MOD    };
         bindings[Command::CUT             ] = { 'X'          , PLATFORM_MOD    };
         bindings[Command::PASTE           ] = { 'V'          , PLATFORM_MOD    };
@@ -211,20 +215,22 @@ struct TextEditor
         commands[ 2] = Command::PASTE;
         commands[ 3] = Command::DELETE_LEFT;
         commands[ 4] = Command::DELETE_RIGHT;
-        commands[ 5] = Command::CANCEL_SELECTION;
-        commands[ 6] = Command::SELECT_ALL;
-        commands[ 7] = Command::SELECT_LEFT;
-        commands[ 8] = Command::SELECT_RIGHT;
-        commands[ 9] = Command::SELECT_UP;
-        commands[10] = Command::SELECT_DOWN;
-        commands[11] = Command::GO_BACK;
-        commands[12] = Command::GO_FORWARD;
-        commands[13] = Command::MOVE_LINE_UP;
-        commands[14] = Command::MOVE_LINE_DOWN;
-        commands[15] = Command::MOVE_LEFT;
-        commands[16] = Command::MOVE_RIGHT;
-        commands[17] = Command::MOVE_UP;
-        commands[18] = Command::MOVE_DOWN;
+        commands[ 5] = Command::NEW_LINE;
+        commands[ 6] = Command::TAB;
+        commands[ 7] = Command::CANCEL_SELECTION;
+        commands[ 8] = Command::SELECT_ALL;
+        commands[ 9] = Command::SELECT_LEFT;
+        commands[10] = Command::SELECT_RIGHT;
+        commands[11] = Command::SELECT_UP;
+        commands[12] = Command::SELECT_DOWN;
+        commands[13] = Command::GO_BACK;
+        commands[14] = Command::GO_FORWARD;
+        commands[15] = Command::MOVE_LINE_UP;
+        commands[16] = Command::MOVE_LINE_DOWN;
+        commands[17] = Command::MOVE_LEFT;
+        commands[18] = Command::MOVE_RIGHT;
+        commands[19] = Command::MOVE_UP;
+        commands[20] = Command::MOVE_DOWN;
     }
 
     void set_content(const char* string)
@@ -340,6 +346,11 @@ struct TextEditor
         // TODO : Only process keys if viewport is active / focused.
         // TODO : Convert other `ted::State`'s methods into actions.
 
+        while (uint32_t value = codepoint())
+        {
+            state.codepoint(value);
+        }
+
         for (int i = 0; i < Command::COUNT; i++)
         {
             if (is_active(bindings[commands[i]]))
@@ -369,15 +380,9 @@ struct TextEditor
         const bool down  = key_down(KEY_DOWN     );
         const bool left  = key_down(KEY_LEFT     );
         const bool right = key_down(KEY_RIGHT    );
-        const bool enter = key_down(KEY_ENTER    );
         const bool back  = key_down(KEY_BACKSPACE);
         const bool del   = key_down(KEY_DELETE   );
 
-#if BX_PLATFORM_OSX
-        const bool ctrl  = key_held(KEY_SUPER_LEFT  ) || key_down(KEY_SUPER_LEFT  ) || key_held(KEY_SUPER_RIGHT  ) || key_down(KEY_SUPER_RIGHT  );
-#else
-        const bool ctrl  = key_held(KEY_CONTROL_LEFT) || key_down(KEY_CONTROL_LEFT) || key_held(KEY_CONTROL_RIGHT) || key_down(KEY_CONTROL_RIGHT);
-#endif
         const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
         const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
 
