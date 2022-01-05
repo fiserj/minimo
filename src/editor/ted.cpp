@@ -968,6 +968,8 @@ void State::paste(const Clipboard& clipboard)
     }
     else if (clipboard.ranges.size())
     {
+        sort_cursors(cursors);
+
         paste_multi(*this, clipboard);
     }
 }
@@ -989,11 +991,13 @@ void State::paste(const char* string, size_t size)
         }
     }
 
+    sort_cursors(cursors);
+
     for (size_t i = 0, offset = 0; i < cursors.size(); i++)
     {
         cursors[i].selection.start += offset;
-        cursors[i].selection.start += offset;
-        cursors[i].selection.start += offset;
+        cursors[i].selection.end   += offset;
+        cursors[i].offset          += offset;
 
         offset += paste_string(*this, cursors[i], string, size);
     }
