@@ -309,14 +309,15 @@ struct TextEditor
         }
 
         // Scrollbar -----------------------------------------------------------
-        const float max_scroll  = bx::max(0.0f, state.lines.size() - 1.0f);
+        const float max_scroll       = bx::max(0.0f, state.lines.size() - 1.0f);
+        bool        scrollbar_active = false;
 
         if (state.lines.size() > 0)
         {
             const float handle_size = bx::max(viewport.height() * viewport.height() /
                 (max_scroll  * state.line_height + viewport.height()), min_handle_size);
 
-            ctx.scrollbar(
+            scrollbar_active = ctx.scrollbar(
                 ID,
                 { viewport.x1 - scrollbar_width, viewport.y0, viewport.x1, viewport.y1 },
                 handle_position,
@@ -348,73 +349,77 @@ struct TextEditor
 
         bool focus_line = false;
 
-        while (uint32_t value = codepoint())
+        if (!scrollbar_active)
         {
-            state.codepoint(value);
-
-            focus_line = true;
-        }
-
-        for (int i = 0; i < Command::COUNT; i++)
-        {
-            if (is_active(bindings[commands[i]]))
+            while (uint32_t value = codepoint())
             {
-                switch (commands[i])
+                state.codepoint(value);
+
+                focus_line = true;
+            }
+
+            for (int i = 0; i < Command::COUNT; i++)
+            {
+                if (is_active(bindings[commands[i]]))
                 {
-                case Command::COPY:
-                    state.copy(clipboard);
-                    break;
+                    switch (commands[i])
+                    {
+                    case Command::COPY:
+                        state.copy(clipboard);
+                        break;
 
-                case Command::CUT:
-                    state.cut(clipboard);
-                    break;
+                    case Command::CUT:
+                        state.cut(clipboard);
+                        break;
 
-                case Command::PASTE:
-                    state.paste(clipboard);
-                    break;
+                    case Command::PASTE:
+                        state.paste(clipboard);
+                        break;
 
-                default:
-                    state.action(static_cast<ted::Action>(commands[i]));
+                    default:
+                        state.action(static_cast<ted::Action>(commands[i]));
+                    }
+
+                    focus_line = true;
+
+                    break;
                 }
-                break;
             }
 
-            focus_line = true;
-        }
+            const bool up    = key_down(KEY_UP          );
+            const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
+            const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
 
-        const bool up    = key_down(KEY_UP          );
-        const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
-        const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
+            const bool lmb_down = mouse_down(MOUSE_LEFT);
+            const bool lmb_held = mouse_held(MOUSE_LEFT);
 
-        const bool lmb_down = mouse_down(MOUSE_LEFT);
-        const bool lmb_held = mouse_held(MOUSE_LEFT);
-
-        if (focus_line)
-        {
-            const size_t cursor = up ? 0 : state.cursors.size() - 1;
-            const float  line   = static_cast<float>(ted::to_position(
-                state,
-                state.cursors[cursor].offset
-            ).y);
-
-            scroll_offset = bx::min(line, bx::max(0.0f, scroll_offset,
-                (line + 2) - viewport.height() / state.line_height));
-
-            blink_base_time = elapsed();
-        }
-
-        if (viewport.is_hovered() && (lmb_down || lmb_held))
-        {
-            const float x = mouse_x() - viewport.x0 - line_number_width;
-            const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
-
-            if (lmb_held || shift)
+            if (focus_line)
             {
-                state.drag(x, y);
+                const size_t cursor = up ? 0 : state.cursors.size() - 1;
+                const float  line   = static_cast<float>(ted::to_position(
+                    state,
+                    state.cursors[cursor].offset
+                ).y);
+
+                scroll_offset = bx::min(line, bx::max(0.0f, scroll_offset,
+                    (line + 2) - viewport.height() / state.line_height));
+
+                blink_base_time = elapsed();
             }
-            else
+
+            if (viewport.is_hovered() && (lmb_down || lmb_held))
             {
-                state.click(x, y, alt);
+                const float x = mouse_x() - viewport.x0 - line_number_width;
+                const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
+
+                if (lmb_held || shift)
+                {
+                    state.drag(x, y);
+                }
+                else
+                {
+                    state.click(x, y, alt);
+                }
             }
         }
 
