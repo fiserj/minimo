@@ -3775,11 +3775,12 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
 template <int MAX_INPUTS, typename T>
 struct InputState
 {
-    enum : uint8_t
+    enum Flag : uint8_t
     {
-        DOWN = 0x01,
-        UP   = 0x02,
-        HELD = 0x04,
+        DOWN     = 0x01,
+        UP       = 0x02,
+        HELD     = 0x04,
+        REPEATED = 0x08,
     };
 
     static constexpr int INPUT_COUNT            = MAX_INPUTS;
@@ -3813,13 +3814,13 @@ struct InputState
         return -1.0f;
     }
 
-    void update_input_state(int input, bool down, float timestamp = 0.0f)
+    void update_input_state(int input, Flag flag, float timestamp = 0.0f)
     {
         if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
         {
-            states[input] |= down ? DOWN : UP;
+            states[input] |= flag;
 
-            if (down)
+            if (flag == DOWN)
             {
                 timestamps[input] = timestamp;
             }
@@ -3837,6 +3838,10 @@ struct InputState
             else if (states[i] & DOWN)
             {
                 states[i] = HELD;
+            }
+            else
+            {
+                states[i] &= ~REPEATED;
             }
         }
     }
@@ -3866,13 +3871,13 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
         return 0;
     }
 
-    void update_input_state(int input, bool down, float timestamp = 0.0f)
+    void update_input_state(int input, Flag flag, float timestamp = 0.0f)
     {
         if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
         {
-            states[input] |= down ? DOWN : UP;
+            states[input] |= flag;
 
-            if (down)
+            if (flag == DOWN)
             {
                 if (timestamp - timestamps[input] <= REPEATED_CLICK_DELAY)
                 {
@@ -4536,19 +4541,23 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, true, static_cast<float>(g_ctx.total_time.elapsed()));
+                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, static_cast<float>(g_ctx.total_time.elapsed()));
                 break;
-            
+
+            case GLEQ_KEY_REPEATED:
+                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::REPEATED);
+                break;
+
             case GLEQ_KEY_RELEASED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, false);
+                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::UP);
                 break;
 
             case GLEQ_BUTTON_PRESSED:
-                g_ctx.mouse.update_input_state(event.mouse.button, true, static_cast<float>(g_ctx.total_time.elapsed()));
+                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, static_cast<float>(g_ctx.total_time.elapsed()));
                 break;
 
             case GLEQ_BUTTON_RELEASED:
-                g_ctx.mouse.update_input_state(event.mouse.button, false);
+                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::UP);
                 break;
 
             case GLEQ_CURSOR_MOVED:
@@ -4870,6 +4879,11 @@ float scroll_y(void)
 int key_down(int key)
 {
     return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::DOWN);
+}
+
+int key_repeated(int key)
+{
+    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::REPEATED);
 }
 
 int key_held(int key)

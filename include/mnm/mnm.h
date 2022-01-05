@@ -262,6 +262,12 @@ float scroll_y(void);
 ///
 int key_down(int key);
 
+/// Checks whether a particular key was repeatedly down in the current frame.
+///
+/// @returns Non-zero if key was repeatedly down.
+///
+int key_repeated(int key);
+
 /// Checks whether a particular key was held down at least in current
 /// and previous frame.
 ///
