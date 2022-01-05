@@ -24,6 +24,10 @@ struct Command
         NEW_LINE,
         TAB,
 
+        CLICK,
+        CLICK_MULTI,
+        CLICK_WITH_SHIFT,
+        DRAG,
         COPY,
         CUT,
         PASTE,
@@ -109,6 +113,12 @@ struct Modifier
     };
 };
 
+enum : char
+{
+    LMB_DOWN = -1,
+    LMB_HELD = -2,
+};
+
 struct KeyBinding
 {
     char key  = 0;
@@ -137,28 +147,35 @@ static inline bool is_mod_active(Modifier::Enum mod)
         key_down(s_mod_to_key[mod][1]) ;
 }
 
+// TODO : The inputs should probably be cached to save the function calls.
 static bool is_active(KeyBinding binding)
 {
-    // TODO : The inputs should probably be cached to save the function calls.
-    assert(binding.key);
+    bool active;
 
-    if (!(key_down(binding.key) || key_repeated(binding.key)))
+    switch (binding.key)
     {
-        return false;
+    case LMB_DOWN:
+        active = mouse_down(MOUSE_LEFT);
+        break;
+
+    case LMB_HELD:
+        active = mouse_held(MOUSE_LEFT);
+        break;
+
+    default:
+        active = key_down(binding.key) || key_repeated(binding.key);
     }
 
-    if (binding.mods > 0)
+    if (active && binding.mods > 0)
     {
-        for (int i = 0, j = 1; i < 4; i++, j = 1 << i)
+        for (int i = 0, j = 1; i < 4 && active; i++, j = 1 << i)
         {
-            if ((binding.mods & j) && !is_mod_active(static_cast<Modifier::Enum>(j)))
-            {
-                return false;
-            }
+            // TODO : We should also check that no unspecified modifier is active.
+            active = !(binding.mods & j) || is_mod_active(static_cast<Modifier::Enum>(j));
         }
     }
 
-    return true;
+    return active;
 }
 
 struct TextEditor
@@ -206,31 +223,39 @@ struct TextEditor
         bindings[Command::SELECT_ALL      ] = { 'A'          , PLATFORM_MOD    };
         bindings[Command::NEW_LINE        ] = { KEY_ENTER                      };
         bindings[Command::TAB             ] = { KEY_TAB                        };
+        bindings[Command::CLICK           ] = { LMB_DOWN                       };
+        bindings[Command::CLICK_MULTI     ] = { LMB_DOWN     , Modifier::ALT   };
+        bindings[Command::CLICK_WITH_SHIFT] = { LMB_DOWN     , Modifier::SHIFT };
+        bindings[Command::DRAG            ] = { LMB_HELD                       };
         bindings[Command::COPY            ] = { 'C'          , PLATFORM_MOD    };
         bindings[Command::CUT             ] = { 'X'          , PLATFORM_MOD    };
         bindings[Command::PASTE           ] = { 'V'          , PLATFORM_MOD    };
 
-        commands[ 0] = Command::COPY;
-        commands[ 1] = Command::CUT;
-        commands[ 2] = Command::PASTE;
-        commands[ 3] = Command::DELETE_LEFT;
-        commands[ 4] = Command::DELETE_RIGHT;
-        commands[ 5] = Command::NEW_LINE;
-        commands[ 6] = Command::TAB;
-        commands[ 7] = Command::CANCEL_SELECTION;
-        commands[ 8] = Command::SELECT_ALL;
-        commands[ 9] = Command::SELECT_LEFT;
-        commands[10] = Command::SELECT_RIGHT;
-        commands[11] = Command::SELECT_UP;
-        commands[12] = Command::SELECT_DOWN;
-        commands[13] = Command::GO_BACK;
-        commands[14] = Command::GO_FORWARD;
-        commands[15] = Command::MOVE_LINE_UP;
-        commands[16] = Command::MOVE_LINE_DOWN;
-        commands[17] = Command::MOVE_LEFT;
-        commands[18] = Command::MOVE_RIGHT;
-        commands[19] = Command::MOVE_UP;
-        commands[20] = Command::MOVE_DOWN;
+        commands[ 0] = Command::DRAG;
+        commands[ 1] = Command::CLICK_WITH_SHIFT;
+        commands[ 2] = Command::CLICK_MULTI;
+        commands[ 3] = Command::CLICK;
+        commands[ 4] = Command::COPY;
+        commands[ 5] = Command::CUT;
+        commands[ 6] = Command::PASTE;
+        commands[ 7] = Command::DELETE_LEFT;
+        commands[ 8] = Command::DELETE_RIGHT;
+        commands[ 9] = Command::NEW_LINE;
+        commands[10] = Command::TAB;
+        commands[11] = Command::CANCEL_SELECTION;
+        commands[12] = Command::SELECT_ALL;
+        commands[13] = Command::SELECT_LEFT;
+        commands[14] = Command::SELECT_RIGHT;
+        commands[15] = Command::SELECT_UP;
+        commands[16] = Command::SELECT_DOWN;
+        commands[17] = Command::GO_BACK;
+        commands[18] = Command::GO_FORWARD;
+        commands[19] = Command::MOVE_LINE_UP;
+        commands[20] = Command::MOVE_LINE_DOWN;
+        commands[21] = Command::MOVE_LEFT;
+        commands[22] = Command::MOVE_RIGHT;
+        commands[23] = Command::MOVE_UP;
+        commands[24] = Command::MOVE_DOWN;
     }
 
     void set_content(const char* string)
@@ -335,7 +360,6 @@ struct TextEditor
                 scroll_offset = bx::clamp(scroll_offset - scroll_y() * scrolling_speed / state.line_height, 0.0f, max_scroll);
             }
 
-            // TODO : Exclude scrollbar and line number areas.
             if ((mouse_x() >= viewport.x0 + line_number_width) &&
                 (mouse_x() <  viewport.x1 - scrollbar_width))
             {
@@ -345,17 +369,19 @@ struct TextEditor
 
         // Input handling ------------------------------------------------------
         // TODO : Only process keys if viewport is active / focused.
-        // TODO : Convert other `ted::State`'s methods into actions.
-
-        bool focus_line = false;
 
         if (!scrollbar_active)
         {
+            const float x = mouse_x() - viewport.x0 - line_number_width;
+            const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
+
+            bool jump_to_cursor = false;
+
             while (uint32_t value = codepoint())
             {
                 state.codepoint(value);
 
-                focus_line = true;
+                jump_to_cursor = true;
             }
 
             for (int i = 0; i < Command::COUNT; i++)
@@ -376,26 +402,32 @@ struct TextEditor
                         state.paste(clipboard);
                         break;
 
+                    case Command::CLICK:
+                        state.click(x, y, false);
+                        break;
+
+                    case Command::CLICK_MULTI:
+                        state.click(x, y, true);
+                        break;
+
+                    case Command::CLICK_WITH_SHIFT:
+                    case Command::DRAG:
+                        state.drag(x, y);
+                        break;
+
                     default:
                         state.action(static_cast<ted::Action>(commands[i]));
                     }
 
-                    focus_line = true;
+                    jump_to_cursor = true;
 
                     break;
                 }
             }
 
-            const bool up    = key_down(KEY_UP          );
-            const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
-            const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
-
-            const bool lmb_down = mouse_down(MOUSE_LEFT);
-            const bool lmb_held = mouse_held(MOUSE_LEFT);
-
-            if (focus_line)
+            if (jump_to_cursor)
             {
-                const size_t cursor = up ? 0 : state.cursors.size() - 1;
+                const size_t cursor = key_down(KEY_DOWN) ? state.cursors.size() - 1 : 0;
                 const float  line   = static_cast<float>(ted::to_position(
                     state,
                     state.cursors[cursor].offset
@@ -405,21 +437,6 @@ struct TextEditor
                     (line + 2) - viewport.height() / state.line_height));
 
                 blink_base_time = elapsed();
-            }
-
-            if (viewport.is_hovered() && (lmb_down || lmb_held))
-            {
-                const float x = mouse_x() - viewport.x0 - line_number_width;
-                const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
-
-                if (lmb_held || shift)
-                {
-                    state.drag(x, y);
-                }
-                else
-                {
-                    state.click(x, y, alt);
-                }
             }
         }
 
