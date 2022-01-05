@@ -142,7 +142,7 @@ static bool is_active(KeyBinding binding)
     // TODO : The inputs should probably be cached to save the function calls.
     assert(binding.key);
 
-    if (!key_down(binding.key))
+    if (!(key_down(binding.key) || key_repeated(binding.key)))
     {
         return false;
     }
@@ -346,9 +346,13 @@ struct TextEditor
         // TODO : Only process keys if viewport is active / focused.
         // TODO : Convert other `ted::State`'s methods into actions.
 
+        bool focus_line = false;
+
         while (uint32_t value = codepoint())
         {
             state.codepoint(value);
+
+            focus_line = true;
         }
 
         for (int i = 0; i < Command::COUNT; i++)
@@ -374,22 +378,18 @@ struct TextEditor
                 }
                 break;
             }
+
+            focus_line = true;
         }
 
-        const bool up    = key_down(KEY_UP       );
-        const bool down  = key_down(KEY_DOWN     );
-        const bool left  = key_down(KEY_LEFT     );
-        const bool right = key_down(KEY_RIGHT    );
-        const bool back  = key_down(KEY_BACKSPACE);
-        const bool del   = key_down(KEY_DELETE   );
-
+        const bool up    = key_down(KEY_UP          );
         const bool shift = key_held(KEY_SHIFT_LEFT  ) || key_down(KEY_SHIFT_LEFT  ) || key_held(KEY_SHIFT_RIGHT  ) || key_down(KEY_SHIFT_RIGHT  );
         const bool alt   = key_held(KEY_ALT_LEFT    ) || key_down(KEY_ALT_LEFT    ) || key_held(KEY_ALT_RIGHT    ) || key_down(KEY_ALT_RIGHT    );
 
         const bool lmb_down = mouse_down(MOUSE_LEFT);
         const bool lmb_held = mouse_held(MOUSE_LEFT);
 
-        if (left || right || up || down || del || back)
+        if (focus_line)
         {
             const size_t cursor = up ? 0 : state.cursors.size() - 1;
             const float  line   = static_cast<float>(ted::to_position(
