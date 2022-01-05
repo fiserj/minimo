@@ -801,16 +801,16 @@ State::State()
 
 void State::clear()
 {
+    buffer.resize(4096);
     buffer.clear();
-    buffer.reserve(4096);
     buffer.push_back(0);
 
+    lines.resize(128);
     lines.clear();
-    lines.reserve(128);
     lines.push_back({ 0, 1 });
 
+    cursors.resize(16);
     cursors.clear();
-    cursors.reserve(16);
     cursors.push_back({});
 
     char_width  = 0.0f;
