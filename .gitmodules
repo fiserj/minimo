@@ -28,3 +28,6 @@
 [submodule "third_party/utf8.h"]
 	path = third_party/utf8.h
 	url = https://github.com/sheredom/utf8.h.git
+[submodule "third_party/tinycc"]
+	path = third_party/tinycc
+	url = https://github.com/TinyCC/tinycc

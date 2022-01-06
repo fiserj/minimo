@@ -15,6 +15,7 @@ target_include_directories(${NAME} PRIVATE
 target_link_libraries(${NAME} PRIVATE
     ${PROJECT_NAME}
     bgfx
+    tinycc
     utf8
 )
 
@@ -28,6 +29,8 @@ set_target_properties(${NAME} PROPERTIES
 
 target_compile_definitions(${NAME} PRIVATE
     TED_TESTS
+    MNM_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/include"
+    TCC_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/third_party/tinycc/include"
 )
 
 if(MSVC)
