@@ -45,6 +45,7 @@ using Vector = std::vector<T>;
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context, Editor
 #include "editor_ted.h"
+#include "editor_tcc.h"
 
 
 // ------------/_\--------------------------------------------------------------
