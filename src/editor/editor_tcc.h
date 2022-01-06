@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libtcc.h> // tcc_*
+#include <tinycc/libtcc.h> // tcc_*
 
 
 // TODO : The headers should just be embedded into the binary.
