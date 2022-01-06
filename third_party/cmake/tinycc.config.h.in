@@ -2,6 +2,13 @@
 
 #define TCC_VERSION "0.9.27"
 #define TCC_TARGET_X86_64
+#define TCC_IS_NATIVE
+
+#ifndef NDEBUG
+#   define CONFIG_TCC_BCHECK 1
+#endif
+
+// #define CONFIG_TCC_PREDEFS 1
 
 #if defined(__clang__)
 #   pragma clang diagnostic ignored "-Wdeprecated-declarations"

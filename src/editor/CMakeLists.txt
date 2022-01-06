@@ -30,6 +30,7 @@ set_target_properties(${NAME} PROPERTIES
 target_compile_definitions(${NAME} PRIVATE
     TED_TESTS
     MNM_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/include"
+    TCC_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/third_party/tinycc/include"
 )
 
 if(MSVC)
