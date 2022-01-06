@@ -1,0 +1,19 @@
+#pragma once
+
+#define TCC_VERSION "0.9.27"
+#define TCC_TARGET_X86_64
+
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#   pragma clang diagnostic ignored "-Wstring-plus-int"
+#elif defined(__GNUC__)
+// TODO : Determine correct warning suppression pragmas.
+// #   pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+// #   pragma GCC diagnostic ignored "-Wstring-plus-int"
+#elif defined(_MSC_VER)
+// TODO : Determine correct warning suppression pragmas.
+#endif
+
+#ifdef _WIN32
+#   define TCC_TARGET_PE
+#endif
