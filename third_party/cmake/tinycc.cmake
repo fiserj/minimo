@@ -31,6 +31,12 @@ target_include_directories(tinycc
         ${PROJECT_BINARY_DIR}/tinycc-config
 )
 
+set_target_properties(tinycc PROPERTIES
+    C_STANDARD 99
+    C_EXTENSIONS OFF
+    C_STANDARD_REQUIRED ON
+)
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tinycc.config.h.in"
     "${PROJECT_BINARY_DIR}/tinycc-config/config.h"
