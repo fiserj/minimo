@@ -147,6 +147,10 @@ static const ScriptFunc s_script_funcs[] =
 // SCRIPT SOURCE UPDATE
 // -----------------------------------------------------------------------------
 
+static const float  s_tcc__mzerosf = -0.0f;
+
+static const double s_tcc__mzerodf = -0.0;
+
 static ScriptContext* get_script_context(const char* source)
 {
     if (g_script_ctx.state)
@@ -171,6 +175,9 @@ static ScriptContext* get_script_context(const char* source)
 
     (void)tcc_add_include_path(g_script_ctx.state, MNM_INCLUDE_PATH);
     (void)tcc_add_include_path(g_script_ctx.state, TCC_INCLUDE_PATH);
+
+    (void)tcc_add_symbol(g_script_ctx.state, "__mzerosf", &s_tcc__mzerosf);
+    (void)tcc_add_symbol(g_script_ctx.state, "__mzerodf", &s_tcc__mzerodf);
 
     for (int i = 0; i < BX_COUNTOF(s_script_funcs); i++)
     {
