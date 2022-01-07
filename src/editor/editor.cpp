@@ -60,6 +60,48 @@ static ScriptContext* ctx = nullptr;
 
 
 // -----------------------------------------------------------------------------
+// HELPERS
+// -----------------------------------------------------------------------------
+
+// TODO : This should be handled by the editor itself.
+static gui::Rect script_viewport(const TextEditor& editor)
+{
+    constexpr float divider_thickness =  4.0f;
+
+    gui::Rect viewport = {};
+
+    switch (editor.display_mode)
+    {
+    case TextEditor::DisplayMode::RIGHT:
+        viewport = { 0.0f, 0.0f, editor.split_x, height() };
+        break;
+    case TextEditor::DisplayMode::LEFT:
+        viewport = { editor.split_x + divider_thickness, 0.0f, width(), height() };
+        break;
+    case TextEditor::DisplayMode::OVERLAY:
+        viewport = { 0.0f, 0.0f, width(), height() };
+        break;
+    default:
+        ASSERT(false);
+    }
+
+    const float dpi = ::dpi();
+
+    viewport.x0 *= dpi;
+    viewport.y0 *= dpi;
+    viewport.x1 *= dpi;
+    viewport.y1 *= dpi;
+
+    ASSERT(viewport.x0 == static_cast<int>(viewport.x0));
+    ASSERT(viewport.y0 == static_cast<int>(viewport.y0));
+    ASSERT(viewport.x1 == static_cast<int>(viewport.x1));
+    ASSERT(viewport.y1 == static_cast<int>(viewport.y1));
+
+    return viewport;
+}
+
+
+// -----------------------------------------------------------------------------
 // MINIMO CALLBACKS
 // -----------------------------------------------------------------------------
 
@@ -105,7 +147,10 @@ static void setup()
 
     if (ctx && ctx->callbacks.setup)
     {
+        // TODO : Size should already be injected by now.
+
         pass(0);
+
         ctx->callbacks.setup();
     }
 }
@@ -117,19 +162,31 @@ static void update()
         quit();
     }
 
-    if (ctx && ctx->callbacks.update)
     {
-        pass(0);
-        ctx->callbacks.update();
+        pass(g_gui.resources.pass_gui);
+
+        g_gui.begin_frame();
+
+        g_editor.update(g_gui, ID);
+
+        g_gui.end_frame();
     }
 
-    pass(g_gui.resources.pass_gui);
+    if (ctx && ctx->callbacks.update)
+    {
+        ctx->viewport = script_viewport(g_editor);
 
-    g_gui.begin_frame();
+        pass(0);
 
-    g_editor.update(g_gui, ID);
+        viewport(
+            static_cast<int>(ctx->viewport.x0),
+            static_cast<int>(ctx->viewport.y0),
+            static_cast<int>(ctx->viewport.width ()),
+            static_cast<int>(ctx->viewport.height())
+        );
 
-    g_gui.end_frame();
+        ctx->callbacks.update();
+    }
 }
 
 

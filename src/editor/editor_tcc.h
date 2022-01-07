@@ -28,7 +28,7 @@ struct ScriptContext
 {
     TCCState*       state;
     ScriptCallbacks callbacks;
-    float           size[2];
+    gui::Rect       viewport;
     bool            wants_input;
     bool            quit_requested;
     char            last_error[512];
@@ -81,14 +81,19 @@ static void title_intercepted(const char* title)
     ::title(buf);
 }
 
-static float width_intercepted(void)
+static int pixel_width_intercepted(void)
 {
-    return g_script_ctx.size[0];
+    return static_cast<int>(g_script_ctx.viewport.width());
 }
 
-static float height_intercepted(void)
+static int pixel_height_intercepted(void)
 {
-    return g_script_ctx.size[1];
+    return static_cast<int>(g_script_ctx.viewport.height());
+}
+
+static float aspect_intercepted(void)
+{
+    return static_cast<float>(pixel_width_intercepted()) / static_cast<float>(pixel_height_intercepted());
 }
 
 static void quit_intercepted(void)
@@ -99,6 +104,12 @@ static void quit_intercepted(void)
 static int key_down_intercepted(int key)
 {
     return g_script_ctx.wants_input ? key_down(key) : 0;
+}
+
+static void viewport_intercepted(int x, int y, int width, int height)
+{
+    // TODO : We'll have to cache and handle the symbolic constants ourselves (also for textures).
+    viewport(x, y, width, height);
 }
 
 
@@ -120,13 +131,14 @@ static const ScriptFunc s_script_funcs[] =
 {
     SCRIPT_FUNC_INTERCEPTED(mnm_run),
 
-    SCRIPT_FUNC_INTERCEPTED(height),
+    SCRIPT_FUNC_INTERCEPTED(aspect),
     SCRIPT_FUNC_INTERCEPTED(key_down),
+    SCRIPT_FUNC_INTERCEPTED(pixel_height),
+    SCRIPT_FUNC_INTERCEPTED(pixel_width),
     SCRIPT_FUNC_INTERCEPTED(quit),
     SCRIPT_FUNC_INTERCEPTED(title),
-    SCRIPT_FUNC_INTERCEPTED(width),
+    SCRIPT_FUNC_INTERCEPTED(viewport),
 
-    SCRIPT_FUNC(aspect),
     SCRIPT_FUNC(begin_mesh),
     SCRIPT_FUNC(clear_color),
     SCRIPT_FUNC(clear_depth),

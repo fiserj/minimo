@@ -306,7 +306,7 @@ struct TextEditor
             viewport = { split_x + divider_thickness, 0.0f, width, height };
             break;
         case DisplayMode::LEFT:
-            viewport = { 0.0f, 0.0f, split_x, height};
+            viewport = { 0.0f, 0.0f, split_x, height };
             break;
         case DisplayMode::OVERLAY:
             viewport = { 0.0f, 0.0f, width, height };
