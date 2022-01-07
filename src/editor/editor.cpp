@@ -56,6 +56,8 @@ static gui::Context g_gui;
 
 static TextEditor g_editor;
 
+static ScriptContext* ctx = nullptr;
+
 
 // -----------------------------------------------------------------------------
 // MINIMO CALLBACKS
@@ -83,8 +85,8 @@ static void setup()
 
     pass(res.pass_gui);
 
-    clear_color(0x303030ff);
-    clear_depth(1.0f);
+//     clear_color(0x303030ff);
+//     clear_depth(1.0f);
 
     create_font(res.font_atlas, g_font_data);
 
@@ -97,7 +99,15 @@ static void setup()
 
     create_uniform(res.uniform_text_info, UNIFORM_VEC4, gui::Uniforms::COUNT, "u_atlas_info");
 
-    g_editor.set_content(load_string("../src/test/instancing.c")); // [TEST]
+    g_editor.set_content(load_string("../src/test/hello_triangle.c")); // [TEST]
+
+    ctx = get_script_context(load_string("../src/test/hello_triangle.c")); // [TEST]
+
+    if (ctx && ctx->callbacks.setup)
+    {
+        pass(0);
+        ctx->callbacks.setup();
+    }
 }
 
 static void update()
@@ -106,6 +116,14 @@ static void update()
     {
         quit();
     }
+
+    if (ctx && ctx->callbacks.update)
+    {
+        pass(0);
+        ctx->callbacks.update();
+    }
+
+    pass(g_gui.resources.pass_gui);
 
     g_gui.begin_frame();
 

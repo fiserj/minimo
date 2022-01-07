@@ -20,7 +20,7 @@ struct ScriptCallbacks
 {
     void (* init   )(void);
     void (* setup  )(void);
-    void (* draw   )(void);
+    void (* update )(void);
     void (* cleanup)(void);
 };
 
@@ -61,11 +61,11 @@ static ScriptContextScope g_script_ctx_scope(g_script_ctx);
 // INTERCEPTED MiNiMo API CALLS
 // -----------------------------------------------------------------------------
 
-static int mnm_run_intercepted(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+static int mnm_run_intercepted(void (* init)(void), void (* setup)(void), void (* update)(void), void (* cleanup)(void))
 {
     g_script_ctx.callbacks.init    = init;
     g_script_ctx.callbacks.setup   = setup;
-    g_script_ctx.callbacks.draw    = draw;
+    g_script_ctx.callbacks.update  = update;
     g_script_ctx.callbacks.cleanup = cleanup;
 
     return 0;
@@ -128,6 +128,8 @@ static const ScriptFunc s_script_funcs[] =
 
     SCRIPT_FUNC(aspect),
     SCRIPT_FUNC(begin_mesh),
+    SCRIPT_FUNC(clear_color),
+    SCRIPT_FUNC(clear_depth),
     SCRIPT_FUNC(color),
     SCRIPT_FUNC(elapsed),
     SCRIPT_FUNC(end_mesh),
