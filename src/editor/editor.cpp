@@ -141,9 +141,11 @@ static void setup()
 
     create_uniform(res.uniform_text_info, UNIFORM_VEC4, gui::Uniforms::COUNT, "u_atlas_info");
 
-    g_editor.set_content(load_string("../src/test/hello_triangle.c")); // [TEST]
+    const char* test_file = load_string("../src/test/static_geometry.c");
 
-    ctx = get_script_context(load_string("../src/test/hello_triangle.c")); // [TEST]
+    g_editor.set_content(test_file); // [TEST]
+
+    ctx = get_script_context(test_file); // [TEST]
 
     if (ctx && ctx->callbacks.setup)
     {

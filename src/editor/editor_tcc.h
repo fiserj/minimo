@@ -146,14 +146,21 @@ static const ScriptFunc s_script_funcs[] =
     SCRIPT_FUNC(elapsed),
     SCRIPT_FUNC(end_mesh),
     SCRIPT_FUNC(identity),
+    SCRIPT_FUNC(look_at),
     SCRIPT_FUNC(mesh),
     SCRIPT_FUNC(ortho),
+    SCRIPT_FUNC(perspective),
+    SCRIPT_FUNC(pop),
     SCRIPT_FUNC(projection),
+    SCRIPT_FUNC(push),
     SCRIPT_FUNC(rotate),
     SCRIPT_FUNC(rotate_x),
     SCRIPT_FUNC(rotate_y),
     SCRIPT_FUNC(rotate_z),
+    SCRIPT_FUNC(scale),
+    SCRIPT_FUNC(translate),
     SCRIPT_FUNC(vertex),
+    SCRIPT_FUNC(view),
 };
 
 
