@@ -286,6 +286,8 @@ struct TextEditor
         state.line_height = ctx.glyph_cache.glyph_screen_height();
 
         // Screen divider ------------------------------------------------------
+        bool gui_active = false;
+
         if (split_x == 0.0f)
         {
             split_x = width * 0.5f;
@@ -293,7 +295,7 @@ struct TextEditor
 
         if (display_mode != DisplayMode::OVERLAY)
         {
-            ctx.vdivider(ID, split_x, 0.0f, height, divider_thickness);
+            gui_active = ctx.vdivider(ID, split_x, 0.0f, height, divider_thickness);
         }
 
         split_x = round_to_pixel(split_x, dpi);
@@ -334,15 +336,14 @@ struct TextEditor
         }
 
         // Scrollbar -----------------------------------------------------------
-        const float max_scroll       = bx::max(0.0f, state.lines.size() - 1.0f);
-        bool        scrollbar_active = false;
+        const float max_scroll = bx::max(0.0f, state.lines.size() - 1.0f);
 
         if (state.lines.size() > 0)
         {
             const float handle_size = bx::max(viewport.height() * viewport.height() /
                 (max_scroll  * state.line_height + viewport.height()), min_handle_size);
 
-            scrollbar_active = ctx.scrollbar(
+            gui_active = ctx.scrollbar(
                 ID,
                 { viewport.x1 - scrollbar_width, viewport.y0, viewport.x1, viewport.y1 },
                 handle_position,
@@ -350,7 +351,7 @@ struct TextEditor
                 scroll_offset,
                 0.0f,
                 max_scroll
-            );
+            ) || gui_active;
         }
 
         if (viewport.is_hovered() && ctx.none_active())
@@ -369,8 +370,7 @@ struct TextEditor
 
         // Input handling ------------------------------------------------------
         // TODO : Only process keys if viewport is active / focused.
-
-        if (!scrollbar_active)
+        if (!gui_active)
         {
             const float x = mouse_x() - viewport.x0 - line_number_width;
             const float y = mouse_y() - viewport.y0 + state.line_height * scroll_offset;
