@@ -7,8 +7,10 @@
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
 #include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY, memCopy, min/max
+#include <bx/hash.h>              // hash, HashCrc32
 #include <bx/math.h>              // ceil, floor, mod
 #include <bx/string.h>            // snprintf, strLen
+#include <bx/timer.h>             // getHPCounter, getHPFrequency
 
 #include <utf8.h>                 // utf8codepoint, utf8nlen, utf8size_lazy
 
@@ -56,8 +58,6 @@ static gui::Context g_gui;
 
 static TextEditor g_editor;
 
-static ScriptContext* ctx = nullptr;
-
 
 // -----------------------------------------------------------------------------
 // HELPERS
@@ -100,6 +100,44 @@ static gui::Rect script_viewport(const TextEditor& editor)
     return viewport;
 }
 
+struct ChangeWatch
+{
+    double   freq = 1.0 / bx::getHPFrequency();
+    double   wait = 0.5;
+    int64_t  time = 0;
+    uint32_t hash = 0;
+
+    void init(const char* data, size_t size)
+    {
+        hash = bx::hash<bx::HashCrc32>(data, static_cast<uint32_t>(size));
+        time = bx::getHPCounter();
+    }
+
+    bool update(const char* data, size_t size)
+    {
+        const int64_t now     = bx::getHPCounter();
+        const double  elapsed = (now - time) * freq;
+        bool          updated = false;
+
+        if (elapsed >= wait)
+        {
+            const uint32_t check = bx::hash<bx::HashCrc32>(data, static_cast<uint32_t>(size));
+
+            if (check != hash)
+            {
+                hash    = check;
+                updated = true;
+            }
+
+            time = now;
+        }
+
+        return updated;
+    }
+};
+
+static ChangeWatch g_watch;
+
 
 // -----------------------------------------------------------------------------
 // MINIMO CALLBACKS
@@ -141,19 +179,23 @@ static void setup()
 
     create_uniform(res.uniform_text_info, UNIFORM_VEC4, gui::Uniforms::COUNT, "u_atlas_info");
 
-    const char* test_file = load_string("../src/test/static_geometry.c");
+    char* test_file = load_string("../src/test/static_geometry.c");
 
     g_editor.set_content(test_file); // [TEST]
 
-    ctx = update_script_context(test_file); // [TEST]
+    g_watch.init(g_editor.state.buffer.data(), g_editor.state.buffer.size());
 
-    if (ctx && ctx->callbacks.setup)
+    update_script_context(test_file); // [TEST]
+
+    unload(test_file);
+
+    if (g_script_ctx.callbacks.setup)
     {
         // TODO : Size should already be injected by now.
 
         pass(0);
 
-        ctx->callbacks.setup();
+        g_script_ctx.callbacks.setup();
     }
 }
 
@@ -174,8 +216,10 @@ static void update()
         g_gui.end_frame();
     }
 
-    if (ctx && ctx->callbacks.update)
+    if (g_script_ctx.callbacks.update)
     {
+        ScriptContext*ctx = &g_script_ctx;
+
         ctx->viewport = script_viewport(g_editor);
 
         pass(0);
@@ -186,6 +230,14 @@ static void update()
             static_cast<int>(ctx->viewport.width ()),
             static_cast<int>(ctx->viewport.height())
         );
+
+        if (g_watch.update(g_editor.state.buffer.data(), g_editor.state.buffer.size()))
+        {
+            if (update_script_context(g_editor.state.buffer.data()) && g_script_ctx.callbacks.setup)
+            {
+                ctx->callbacks.setup();
+            }
+        }
 
         ctx->callbacks.update();
     }

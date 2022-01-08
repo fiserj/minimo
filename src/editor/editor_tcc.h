@@ -230,8 +230,10 @@ static ScriptCallbacks get_script_callbacks(TCCState* tcc_state)
     return {};
 }
 
-static ScriptContext* update_script_context(const char* source)
+static bool update_script_context(const char* source)
 {
+    bool success = false;
+
     if (TCCState* tcc_state = create_tcc_state(source))
     {
         ScriptCallbacks callbacks = get_script_callbacks(tcc_state);
@@ -243,6 +245,8 @@ static ScriptContext* update_script_context(const char* source)
             g_script_ctx.callbacks      = callbacks;
             g_script_ctx.quit_requested = false;
             g_script_ctx.last_error[0]  = 0;
+
+            success = true;
         }
         else
         {
@@ -255,7 +259,7 @@ static ScriptContext* update_script_context(const char* source)
         }
     }
 
-    return &g_script_ctx;
+    return success;
 }
 
 
