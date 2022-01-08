@@ -26,35 +26,32 @@ struct ScriptCallbacks
 
 struct ScriptContext
 {
-    TCCState*       state;
-    ScriptCallbacks callbacks;
-    gui::Rect       viewport;
-    bool            wants_input;
-    bool            quit_requested;
-    char            last_error[512];
-};
+    TCCState*       tcc_state       = nullptr;
+    ScriptCallbacks callbacks       = {};
+    gui::Rect       viewport        = {};
+    bool            wants_input     = false;
+    bool            quit_requested  = false;
+    char            last_error[512] = { 0 };
 
-struct ScriptContextScope
-{
-    ScriptContext& ctx;
-
-    ScriptContextScope(ScriptContext& ctx)
-        : ctx(ctx)
+    ~ScriptContext()
     {
-    }
-
-    ~ScriptContextScope()
-    {
-        if (ctx.state)
+        if (tcc_state)
         {
-            tcc_delete(ctx.state);
+            tcc_delete(tcc_state);
+            tcc_state = nullptr;
         }
     }
+
+    ScriptContext() = default;
+
+    ScriptContext(const ScriptContext&) = delete;
+
+    ScriptContext& operator=(const ScriptContext&) = delete;
 };
 
-static ScriptContext g_script_ctx = {};
+static ScriptCallbacks g_tmp_callbacks;
 
-static ScriptContextScope g_script_ctx_scope(g_script_ctx);
+static ScriptContext g_script_ctx;
 
 
 // -----------------------------------------------------------------------------
@@ -63,10 +60,10 @@ static ScriptContextScope g_script_ctx_scope(g_script_ctx);
 
 static int mnm_run_intercepted(void (* init)(void), void (* setup)(void), void (* update)(void), void (* cleanup)(void))
 {
-    g_script_ctx.callbacks.init    = init;
-    g_script_ctx.callbacks.setup   = setup;
-    g_script_ctx.callbacks.update  = update;
-    g_script_ctx.callbacks.cleanup = cleanup;
+    g_tmp_callbacks.init    = init;
+    g_tmp_callbacks.setup   = setup;
+    g_tmp_callbacks.update  = update;
+    g_tmp_callbacks.cleanup = cleanup;
 
     return 0;
 }
@@ -172,71 +169,90 @@ static const float  s_tcc__mzerosf = -0.0f;
 
 static const double s_tcc__mzerodf = -0.0;
 
-static ScriptContext* get_script_context(const char* source)
+static TCCState* create_tcc_state(const char* source)
 {
-    if (g_script_ctx.state)
-    {
-        tcc_delete(g_script_ctx.state);
-        g_script_ctx.state = nullptr;
-    }
+    ASSERT(source);
 
-    g_script_ctx.state = tcc_new();
+    TCCState* state = tcc_new();
 
-    if (!g_script_ctx.state)
+    if (!state)
     {
+        strcpy(g_script_ctx.last_error, "Could not create new 'TCCState'.");
         return nullptr;
     }
 
-    tcc_set_error_func(g_script_ctx.state, nullptr, [](void*, const char* message)
+    tcc_set_error_func(state, nullptr, [](void*, const char* message)
     {
         strncpy(g_script_ctx.last_error, message, sizeof(g_script_ctx.last_error));
     });
 
-    tcc_set_options(g_script_ctx.state, "-nostdinc -nostdlib");
+    tcc_set_options(state, "-nostdinc -nostdlib");
 
-    (void)tcc_add_include_path(g_script_ctx.state, MNM_INCLUDE_PATH);
-    (void)tcc_add_include_path(g_script_ctx.state, TCC_INCLUDE_PATH);
+    (void)tcc_add_include_path(state, MNM_INCLUDE_PATH);
+    (void)tcc_add_include_path(state, TCC_INCLUDE_PATH);
 
-    (void)tcc_add_symbol(g_script_ctx.state, "__mzerosf", &s_tcc__mzerosf);
-    (void)tcc_add_symbol(g_script_ctx.state, "__mzerodf", &s_tcc__mzerodf);
+    (void)tcc_add_symbol(state, "__mzerosf", &s_tcc__mzerosf);
+    (void)tcc_add_symbol(state, "__mzerodf", &s_tcc__mzerodf);
 
     for (int i = 0; i < BX_COUNTOF(s_script_funcs); i++)
     {
-        if (0 > tcc_add_symbol(g_script_ctx.state, s_script_funcs[i].name, s_script_funcs[i].func))
+        if (0 > tcc_add_symbol(state, s_script_funcs[i].name, s_script_funcs[i].func))
         {
-            ASSERT(false && "Could not add symbol.");
+            tcc_delete(state);
             return nullptr;
         }
     }
 
-    if (0 > tcc_set_output_type(g_script_ctx.state, TCC_OUTPUT_MEMORY))
+    if (0 > tcc_set_output_type(state, TCC_OUTPUT_MEMORY) ||
+        0 > tcc_compile_string (state, source) ||
+        0 > tcc_relocate       (state, TCC_RELOCATE_AUTO))
     {
-        ASSERT(false && "Could not set script output type.");
+        tcc_delete(state);
         return nullptr;
     }
 
-    if (0 > tcc_compile_string(g_script_ctx.state, source))
-    {
-        ASSERT(false && "Could not compile source code.");
-        return nullptr;
-    }
+    return state;
+}
 
-    if (0 > tcc_relocate(g_script_ctx.state, TCC_RELOCATE_AUTO))
-    {
-        ASSERT(false && "Could not relocate code.");
-        return nullptr;
-    }
-
-    if (auto main_func = reinterpret_cast<int (*)(int, char**)>(tcc_get_symbol(g_script_ctx.state, "main")))
+static ScriptCallbacks get_script_callbacks(TCCState* tcc_state)
+{
+    if (auto main_func = reinterpret_cast<int (*)(int, char**)>(tcc_get_symbol(tcc_state, "main")))
     {
         // TODO ? Maybe pass the arguments given to the editor?
         const char* argv[] = { "MiNiMoEd" };
         main_func(1, const_cast<char**>(argv));
+
+        return g_tmp_callbacks;
     }
-    else
+
+    strcpy(g_script_ctx.last_error, "Could not find 'main' symbol.");
+
+    return {};
+}
+
+static ScriptContext* update_script_context(const char* source)
+{
+    if (TCCState* tcc_state = create_tcc_state(source))
     {
-        ASSERT(false && "Could not find 'main' symbol.");
-        return nullptr;
+        ScriptCallbacks callbacks = get_script_callbacks(tcc_state);
+
+        if (callbacks.update)
+        {
+            std::swap(g_script_ctx.tcc_state, tcc_state);
+
+            g_script_ctx.callbacks      = callbacks;
+            g_script_ctx.quit_requested = false;
+            g_script_ctx.last_error[0]  = 0;
+        }
+        else
+        {
+            strcpy(g_script_ctx.last_error, "Could not determine script's 'update' function.");
+        }
+
+        if (tcc_state)
+        {
+            tcc_delete(tcc_state);
+        }
     }
 
     return &g_script_ctx;

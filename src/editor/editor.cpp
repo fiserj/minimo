@@ -145,7 +145,7 @@ static void setup()
 
     g_editor.set_content(test_file); // [TEST]
 
-    ctx = get_script_context(test_file); // [TEST]
+    ctx = update_script_context(test_file); // [TEST]
 
     if (ctx && ctx->callbacks.setup)
     {
