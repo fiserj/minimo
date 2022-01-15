@@ -315,6 +315,10 @@ struct TextEditor
             break;
         }
 
+        const float bar_height = round_to_pixel(8.0f + state.line_height, dpi);
+
+        viewport.y1 -= bar_height;
+
         ctx.rect(COLOR_BLACK, viewport);
 
         // Line number format --------------------------------------------------
@@ -530,6 +534,20 @@ struct TextEditor
                     ctx.rect(COLOR_RED, { x - caret_width * 0.5f, y, x + caret_width * 0.5f, y + state.line_height });
                 }
             }
+        }
+
+        // Status bar ----------------------------------------------------------
+        {
+            const gui::Rect bar_rect = { viewport.x0, viewport.y1, viewport.x1, height };
+
+            ctx.push_clip(bar_rect);
+            ctx.rect(COLOR_RED, bar_rect);
+
+            const float x = round_to_pixel(bar_rect.x0 + state.char_width, dpi);
+            const float y = round_to_pixel(bar_rect.y0 + (bar_height - state.line_height) * 0.5f, dpi);
+
+            ctx.text("Status Bar ...", COLOR_EDITOR_TEXT, x, y);
+            ctx.pop_clip();
         }
 
         // ...
