@@ -7,7 +7,7 @@
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
 #include <bx/bx.h>                // BX_COUNTOF, BX_LIKELY, memCopy, min/max
-#include <bx/hash.h>              // hash, HashCrc32
+#include <bx/hash.h>              // hash, HashAdler32
 #include <bx/math.h>              // ceil, floor, mod
 #include <bx/string.h>            // snprintf, strLen
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
@@ -102,17 +102,26 @@ static gui::Rect script_viewport(const TextEditor& editor)
 
 struct ChangeWatch
 {
+    using HashT = bx::HashAdler32; // Or `bx::HashCrc32`, need to profile.
+
     double   freq = 1.0 / bx::getHPFrequency();
     double   wait = 0.5;
     int64_t  time = 0;
     uint32_t hash = 0;
+    uint32_t last = 0;
 
     void init(const char* data, size_t size)
     {
-        hash = bx::hash<bx::HashCrc32>(data, static_cast<uint32_t>(size));
+        hash = bx::hash<HashT>(data, static_cast<uint32_t>(size));
         time = bx::getHPCounter();
     }
 
+    // `true` is returned when content changed, but stayed the same for two
+    // consecutive update calls. Done to allow for evaluation after a chunk of
+    // text is being finished.
+    //
+    // But ideally, `update` should just be not called every frame, but only
+    // with certain delay from last codepoint event.
     bool update(const char* data, size_t size)
     {
         const int64_t now     = bx::getHPCounter();
@@ -121,12 +130,20 @@ struct ChangeWatch
 
         if (elapsed >= wait)
         {
-            const uint32_t check = bx::hash<bx::HashCrc32>(data, static_cast<uint32_t>(size));
+            const uint32_t check = bx::hash<HashT>(data, static_cast<uint32_t>(size));
 
             if (check != hash)
             {
-                hash    = check;
-                updated = true;
+                if (check == last)
+                {
+                    hash    = check;
+                    last    = 0;
+                    updated = true;
+                }
+                else
+                {
+                    last = check;
+                }
             }
 
             time = now;
