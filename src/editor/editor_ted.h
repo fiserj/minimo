@@ -104,7 +104,7 @@ struct CommandBuffer
 
 struct Modifier
 {
-    enum Enum
+    enum Enum : char
     {
         ALT     = 0x01,
         CONTROL = 0x02,
@@ -191,11 +191,12 @@ struct TextEditor
     ted::Clipboard clipboard;
     KeyBinding     bindings[Command::COUNT];
     Command::Enum  commands[Command::COUNT];
-    double         blink_base_time = 0.0;
-    float          split_x         = 0.0f; // Screen coordinates.
-    float          scroll_offset   = 0.0f; // Lines (!).
-    float          handle_position = 0.0f;
-    DisplayMode    display_mode    = DisplayMode::RIGHT;
+    double         blink_base_time  = 0.0;
+    float          split_x          = 0.0f; // Screen coordinates.
+    float          scroll_offset    = 0.0f; // Lines (!).
+    float          handle_position  = 0.0f;
+    DisplayMode    display_mode     = DisplayMode::RIGHT;
+    bool           viewport_clicked = false;
 
     TextEditor()
     {
@@ -373,7 +374,12 @@ struct TextEditor
         }
 
         // Input handling ------------------------------------------------------
-        // TODO : Only process keys if viewport is active / focused.
+        // TODO : Only process events if viewport is active / focused.
+        if (mouse_down(MOUSE_LEFT))
+        {
+            viewport_clicked = viewport.is_hovered();
+        }
+
         if (!gui_active)
         {
             const float x = mouse_x() - viewport.x0 - line_number_width;
@@ -407,16 +413,25 @@ struct TextEditor
                         break;
 
                     case Command::CLICK:
-                        state.click(x, y, false);
+                        if (viewport_clicked)
+                        {
+                            state.click(x, y, false);
+                        }
                         break;
 
                     case Command::CLICK_MULTI:
-                        state.click(x, y, true);
+                        if (viewport_clicked)
+                        {
+                            state.click(x, y, true);
+                        }
                         break;
 
                     case Command::CLICK_WITH_SHIFT:
                     case Command::DRAG:
-                        state.drag(x, y);
+                        if (viewport_clicked)
+                        {
+                            state.drag(x, y);
+                        }
                         break;
 
                     default:
