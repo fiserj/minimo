@@ -175,6 +175,21 @@ struct GlyphCache
         return glyph_height / dpi();
     }
 
+    uint32_t codepoint_index(int codepoint) const
+    {
+        if (codepoint >= 32 && codepoint <= 126)
+        {
+            // TODO : Subtract 31 when 0 points to replacement character.
+            return static_cast<uint32_t>(codepoint - 32);
+        }
+
+        // TODO : Utilize hashmap for the rest of the stored characters.
+        // ...
+
+        // TODO : This should point to replacement character.
+        return 0;
+    }
+
     void rebuild(float cap_height, const Resources& res)
     {
         ASSERT(cap_height > 0.0f);
@@ -185,7 +200,8 @@ struct GlyphCache
             res.font_atlas,
             cap_height * dpi()
         );
-        glyph_range(0x20, 0x7e);
+        glyph_range(0x0020, 0x007e); // Printable ASCII.
+        glyph_range(0xfffd, 0xfffd); // Replacement character.
         end_atlas();
 
         text_size(res.texture_tmp_atlas, "X", 0, 1.0f, &glyph_width, &glyph_height);
@@ -726,11 +742,7 @@ struct Context
 
         for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
         {
-            // TODO : The codepoint-to-index should be handled by the glyph cache.
-            if (codepoint >= 32 && codepoint <= 126)
-            {
-                draw_list.add_glyph(codepoint - 32);
-            }
+            draw_list.add_glyph(glyph_cache.codepoint_index(codepoint));
         }
 
         draw_list.end_string();
@@ -748,11 +760,7 @@ struct Context
 
             for (void* it = utf8codepoint(start, &codepoint); it != end && i < max_chars; it = utf8codepoint(it, &codepoint), i++)
             {
-                // TODO : The codepoint-to-index should be handled by the glyph cache.
-                if (codepoint >= 32 && codepoint <= 126)
-                {
-                    draw_list.add_glyph(codepoint - 32);
-                }
+                draw_list.add_glyph(glyph_cache.codepoint_index(codepoint));
             }
 
             draw_list.end_string();
