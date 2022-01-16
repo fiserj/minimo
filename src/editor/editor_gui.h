@@ -179,15 +179,14 @@ struct GlyphCache
     {
         if (codepoint >= 32 && codepoint <= 126)
         {
-            // TODO : Subtract 31 when 0 points to replacement character.
             return static_cast<uint32_t>(codepoint - 32);
         }
 
         // TODO : Utilize hashmap for the rest of the stored characters.
         // ...
 
-        // TODO : This should point to replacement character.
-        return 0;
+        // Replacement character.
+        return 95;
     }
 
     void rebuild(float cap_height, const Resources& res)
@@ -215,11 +214,38 @@ struct GlyphCache
             glyph_cols = (int)(texture_size / glyph_width );
             const int rows = (int)(texture_size / glyph_height);
 
-            if (glyph_cols * rows >= 95)
+            if (glyph_cols * rows >= 96) // TODO : Check against the dynamic glyph count.
             {
                 break;
             }
         }
+
+        struct GlyphWriter
+        {
+            GlyphCache& cache;
+            int         index = 0;
+
+            void write_glyph_range(utf8_int32_t start, utf8_int32_t end)
+            {
+                char buffer[5] = { 0 };
+
+                for (utf8_int32_t codepoint = start; codepoint <= end; codepoint++)
+                {
+                    const int x = index % cache.glyph_cols;
+                    const int y = index / cache.glyph_cols;
+
+                    index++;
+
+                    identity();
+                    translate(x * cache.glyph_width, (y + 0.25f) * cache.glyph_height, 0.0f);
+
+                    const void* end = utf8catcodepoint(buffer, codepoint, sizeof(buffer));
+                    ASSERT(end);
+
+                    text(buffer, static_cast<const char*>(end));
+                }
+            }
+        };
 
         begin_text(
             res.mesh_tmp_text,
@@ -229,17 +255,13 @@ struct GlyphCache
         {
             color(0xffffffff);
 
-            for (int i = 0; i < 95; i++)
-            {
-                const int x = i % glyph_cols;
-                const int y = i / glyph_cols;
+            GlyphWriter writer = { *this };
 
-                identity();
-                translate(x * glyph_width, (y + 0.25f) * glyph_height, 0.0f);
+            writer.write_glyph_range(0x0020, 0x007e);
+            ASSERT(writer.index == 95);
 
-                char letter[2] = { (char)(i + 32), 0 };
-                text(letter, 0);
-            }
+            writer.write_glyph_range(0xfffd, 0xfffd);
+            ASSERT(writer.index == 96);
         }
         end_text();
 
