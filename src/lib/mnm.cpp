@@ -2662,7 +2662,7 @@ public:
 
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
             {
                 if (!m_codepoints.count(codepoint))
                 {
@@ -2823,7 +2823,7 @@ public:
 
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -2885,7 +2885,7 @@ public:
         // Pass 1: Gather info about text, signal missing glyphs.
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *string))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -3078,7 +3078,7 @@ private:
 
         for (; end ? start < end : *start; start++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *start))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(start)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
