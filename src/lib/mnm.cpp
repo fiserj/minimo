@@ -1781,8 +1781,8 @@ private:
 
         if (!m_transient_exhausted)
         {
-            if (!add_transient_buffer(recorder.position_buffer(), layouts[VERTEX_POSITION         ], mesh.positions.transient_index) ||
-                !add_transient_buffer(recorder.attrib_buffer  (), layouts[mesh_attribs(mesh.flags)], mesh.attribs  .transient_index)
+            if (!add_transient_buffer(recorder.position_buffer(), layouts[VERTEX_POSITION], mesh.positions.transient_index) ||
+                !add_transient_buffer(recorder.attrib_buffer  (), layouts[mesh.flags     ], mesh.attribs  .transient_index)
             )
             {
                 m_transient_exhausted = true;
