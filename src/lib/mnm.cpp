@@ -2583,7 +2583,7 @@ public:
 
     inline bool is_monospaced() const { return m_flags & ATLAS_MONOSPACED; }
 
-    inline bool does_not_reuire_thread_safety() const { return m_flags & ATLAS_NOT_THREAD_SAFE; }
+    inline bool does_not_require_thread_safety() const { return m_flags & ATLAS_NOT_THREAD_SAFE; }
 
     void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
     {
@@ -3053,7 +3053,7 @@ private:
 
     inline const char* record_quads(const char* start, const char* end, const QuadPackFunc& pack_func, const Mat4& transform, MeshRecorder& recorder)
     {
-        if (!is_updatable() || !does_not_reuire_thread_safety())
+        if (!is_updatable() || does_not_require_thread_safety())
         {
             return record_quads_without_lock(start, end, pack_func, transform, recorder);
         }
