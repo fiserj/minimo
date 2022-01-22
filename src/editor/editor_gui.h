@@ -195,7 +195,7 @@ struct GlyphCache
 
         begin_atlas(
             res.texture_tmp_atlas,
-            ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE, // TODO : `ATLAS_ALLOW_UPDATE` seems to be broken again.
+            ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE | ATLAS_ALLOW_UPDATE,
             res.font_atlas,
             cap_height * dpi()
         );
