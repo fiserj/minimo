@@ -39,6 +39,7 @@ enum struct Action
 
     CANCEL_SELECTION,
     SELECT_ALL,
+    SELECT_WORD,
 
     NEW_LINE,
 
@@ -90,6 +91,7 @@ struct State
     Array<char>   buffer;
     Array<Range>  lines;
     Array<Cursor> cursors;
+    const char*   word_separators;
     float         char_width;
     float         line_height;
     size_t        tab_size;

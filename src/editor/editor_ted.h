@@ -21,6 +21,7 @@ struct Command
         MOVE_LINE_DOWN,
         CANCEL_SELECTION,
         SELECT_ALL,
+        SELECT_WORD,
         NEW_LINE,
         TAB,
 
@@ -115,8 +116,9 @@ struct Modifier
 
 enum : char
 {
-    LMB_DOWN = -1,
-    LMB_HELD = -2,
+    LMB_DOWN     = -1,
+    LMB_HELD     = -2,
+    LMB_CLICK_2X = -3,
 };
 
 struct KeyBinding
@@ -160,6 +162,10 @@ static bool is_active(KeyBinding binding)
 
     case LMB_HELD:
         active = mouse_held(MOUSE_LEFT);
+        break;
+
+    case LMB_CLICK_2X:
+        active = (2 == mouse_clicked(MOUSE_LEFT));
         break;
 
     default:
@@ -222,6 +228,7 @@ struct TextEditor
         bindings[Command::MOVE_LINE_DOWN  ] = { KEY_DOWN     , Modifier::ALT   };
         bindings[Command::CANCEL_SELECTION] = { KEY_ESCAPE                     };
         bindings[Command::SELECT_ALL      ] = { 'A'          , PLATFORM_MOD    };
+        bindings[Command::SELECT_WORD     ] = { LMB_CLICK_2X                   };
         bindings[Command::NEW_LINE        ] = { KEY_ENTER                      };
         bindings[Command::TAB             ] = { KEY_TAB                        };
         bindings[Command::CLICK           ] = { LMB_DOWN                       };
@@ -234,29 +241,30 @@ struct TextEditor
 
         commands[ 0] = Command::DRAG;
         commands[ 1] = Command::CLICK_WITH_SHIFT;
-        commands[ 2] = Command::CLICK_MULTI;
-        commands[ 3] = Command::CLICK;
-        commands[ 4] = Command::COPY;
-        commands[ 5] = Command::CUT;
-        commands[ 6] = Command::PASTE;
-        commands[ 7] = Command::DELETE_LEFT;
-        commands[ 8] = Command::DELETE_RIGHT;
-        commands[ 9] = Command::NEW_LINE;
-        commands[10] = Command::TAB;
-        commands[11] = Command::CANCEL_SELECTION;
-        commands[12] = Command::SELECT_ALL;
-        commands[13] = Command::SELECT_LEFT;
-        commands[14] = Command::SELECT_RIGHT;
-        commands[15] = Command::SELECT_UP;
-        commands[16] = Command::SELECT_DOWN;
-        commands[17] = Command::GO_BACK;
-        commands[18] = Command::GO_FORWARD;
-        commands[19] = Command::MOVE_LINE_UP;
-        commands[20] = Command::MOVE_LINE_DOWN;
-        commands[21] = Command::MOVE_LEFT;
-        commands[22] = Command::MOVE_RIGHT;
-        commands[23] = Command::MOVE_UP;
-        commands[24] = Command::MOVE_DOWN;
+        commands[ 2] = Command::SELECT_WORD;
+        commands[ 3] = Command::CLICK_MULTI;
+        commands[ 4] = Command::CLICK;
+        commands[ 5] = Command::COPY;
+        commands[ 6] = Command::CUT;
+        commands[ 7] = Command::PASTE;
+        commands[ 8] = Command::DELETE_LEFT;
+        commands[ 9] = Command::DELETE_RIGHT;
+        commands[10] = Command::NEW_LINE;
+        commands[11] = Command::TAB;
+        commands[12] = Command::CANCEL_SELECTION;
+        commands[13] = Command::SELECT_ALL;
+        commands[14] = Command::SELECT_LEFT;
+        commands[15] = Command::SELECT_RIGHT;
+        commands[16] = Command::SELECT_UP;
+        commands[17] = Command::SELECT_DOWN;
+        commands[18] = Command::GO_BACK;
+        commands[19] = Command::GO_FORWARD;
+        commands[20] = Command::MOVE_LINE_UP;
+        commands[21] = Command::MOVE_LINE_DOWN;
+        commands[22] = Command::MOVE_LEFT;
+        commands[23] = Command::MOVE_RIGHT;
+        commands[24] = Command::MOVE_UP;
+        commands[25] = Command::MOVE_DOWN;
     }
 
     void set_content(const char* string)

@@ -749,6 +749,63 @@ static void action_select_all(State& state)
     cursor.offset          = state.lines[state.lines.size() - 1].end - 1;
 }
 
+static bool is_word_separator(utf8_int32_t codepoint, const char* ascii_separators)
+{
+    for (; *ascii_separators; ascii_separators++)
+    {
+        if (codepoint == *ascii_separators)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void action_select_word(State& state)
+{
+    // NOTE : This should be called right after `click`, so the last cursor in
+    //        the array should be the lastly added one.
+    Cursor& cursor = state.cursors[state.cursors.size() - 1];
+
+    if (!range_empty(cursor.selection))
+    {
+        return;
+    }
+
+    const Range line = state.lines[to_line(state, cursor.offset)];
+
+    if (range_size(line) == 1)
+    {
+        assert(state.buffer[line.start] == '\n');
+        return;
+    }
+
+    utf8_int32_t codepoint;
+    const char*  start    = state.buffer.data() + cursor.offset;
+    const void*  iterator = utf8codepoint(start, &codepoint);
+    const bool   category = is_word_separator(codepoint, state.word_separators);
+
+    // TODO : Handle when cursor is at the end of a line.
+
+    while (codepoint && codepoint != '\n' && category == is_word_separator(codepoint, state.word_separators))
+    {
+        cursor.selection.end += utf8codepointsize(codepoint);
+        iterator = utf8codepoint(iterator, &codepoint);
+    }
+
+    iterator = utf8rcodepoint(start   , &codepoint);
+    iterator = utf8rcodepoint(iterator, &codepoint);
+
+    while (codepoint && cursor.selection.start > line.start && category == is_word_separator(codepoint, state.word_separators))
+    {
+        cursor.selection.start -= utf8codepointsize(codepoint);
+        iterator = utf8rcodepoint(iterator, &codepoint);
+    }
+
+    cursor.offset = cursor.selection.end;
+}
+
 static void action_tab(State& state)
 {
     // TODO : Consider reducing the number of allocations (would require two passes).
@@ -796,7 +853,8 @@ State::State()
 {
     clear();
 
-    tab_size = 4;
+    word_separators = " `~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?";
+    tab_size        = 4;
 }
 
 void State::clear()
@@ -927,6 +985,10 @@ void State::action(Action action)
 
         case Action::SELECT_ALL:
             action_select_all(*this);
+            break;
+
+        case Action::SELECT_WORD:
+            action_select_word(*this);
             break;
 
         case Action::NEW_LINE:
