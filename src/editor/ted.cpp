@@ -786,8 +786,6 @@ static void action_select_word(State& state)
     const void*  iterator = utf8codepoint(start, &codepoint);
     const bool   category = is_word_separator(codepoint, state.word_separators);
 
-    // TODO : Handle when cursor is at the end of a line.
-
     while (codepoint && codepoint != '\n' && category == is_word_separator(codepoint, state.word_separators))
     {
         cursor.selection.end += utf8codepointsize(codepoint);
@@ -904,6 +902,8 @@ void State::click(float x, float y, bool multi_mode)
     }
 }
 
+// TODO : Consider adding support for different modes of dragging, similar to
+//        VS Code (char / word / line), in conjunction with `Action::SELECT_*`
 void State::drag(float x, float y)
 {
     // Lastly added cursor is considered the active one to drive the selection.

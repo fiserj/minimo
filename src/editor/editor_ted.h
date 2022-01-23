@@ -161,7 +161,7 @@ static bool is_active(KeyBinding binding)
         break;
 
     case LMB_HELD:
-        active = mouse_held(MOUSE_LEFT);
+        active = mouse_held(MOUSE_LEFT) && (mouse_dx() || mouse_dy());
         break;
 
     case LMB_CLICK_2X:
