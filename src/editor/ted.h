@@ -40,6 +40,7 @@ enum struct Action
     CANCEL_SELECTION,
     SELECT_ALL,
     SELECT_WORD,
+    SELECT_LINE,
 
     NEW_LINE,
 

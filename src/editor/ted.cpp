@@ -804,6 +804,16 @@ static void action_select_word(State& state)
     cursor.offset = cursor.selection.end;
 }
 
+static void action_select_line(State& state)
+{
+    // NOTE : This should be called right after `click`, so the last cursor in
+    //        the array should be the lastly added one.
+    Cursor& cursor = state.cursors[state.cursors.size() - 1];
+
+    cursor.selection = state.lines[to_line(state, cursor.offset)];
+    cursor.offset    = cursor.selection.end;
+}
+
 static void action_tab(State& state)
 {
     // TODO : Consider reducing the number of allocations (would require two passes).
@@ -989,6 +999,10 @@ void State::action(Action action)
 
         case Action::SELECT_WORD:
             action_select_word(*this);
+            break;
+
+        case Action::SELECT_LINE:
+            action_select_line(*this);
             break;
 
         case Action::NEW_LINE:
