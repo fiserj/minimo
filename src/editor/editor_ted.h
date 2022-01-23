@@ -25,6 +25,9 @@ struct Command
         SELECT_LINE,
         NEW_LINE,
         TAB,
+        CLEAR_HISTORY,
+        UNDO,
+        REDO,
 
         CLICK,
         CLICK_MULTI,
@@ -38,71 +41,71 @@ struct Command
     };
 };
 
-struct CommandBuffer
-{
-    std::vector<uint8_t> buffer;
-    size_t               head;
+// struct CommandBuffer
+// {
+//     std::vector<uint8_t> buffer;
+//     size_t               head;
 
-    CommandBuffer()
-    {
-        clear();
-    }
+//     CommandBuffer()
+//     {
+//         clear();
+//     }
 
-    void clear()
-    {
-        buffer.clear();
-        buffer.reserve(4096);
+//     void clear()
+//     {
+//         buffer.clear();
+//         buffer.reserve(4096);
 
-        rewind();
-    }
+//         rewind();
+//     }
 
-    void rewind()
-    {
-        head = 0;
-    }
+//     void rewind()
+//     {
+//         head = 0;
+//     }
 
-    void align(size_t alignment)
-    {
-        assert((alignment & (alignment - 1)) == 0);
+//     void align(size_t alignment)
+//     {
+//         assert((alignment & (alignment - 1)) == 0);
 
-        const size_t mask = alignment - 1;
-        const size_t size = (buffer.size() + mask) & (~mask);
+//         const size_t mask = alignment - 1;
+//         const size_t size = (buffer.size() + mask) & (~mask);
 
-        buffer.resize(size);
-    }
+//         buffer.resize(size);
+//     }
 
-    void write(const void* data, size_t size)
-    {
-        const size_t offset = buffer.size();
+//     void write(const void* data, size_t size)
+//     {
+//         const size_t offset = buffer.size();
 
-        buffer.resize(offset + size);
+//         buffer.resize(offset + size);
 
-        bx::memCopy(&buffer[offset], data, size);
-    }
+//         bx::memCopy(&buffer[offset], data, size);
+//     }
 
-    template <typename T>
-    void write(const T& value)
-    {
-        align(BX_ALIGNOF(T));
-        write(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
-    }
+//     template <typename T>
+//     void write(const T& value)
+//     {
+//         align(BX_ALIGNOF(T));
+//         write(reinterpret_cast<const uint8_t*>(&value), sizeof(T));
+//     }
 
-    void read(void* data, uint32_t size)
-    {
-        assert(head + size <= buffer.size());
+//     void read(void* data, uint32_t size)
+//     {
+//         assert(head + size <= buffer.size());
 
-        bx::memCopy(data, &buffer[head], size);
+//         bx::memCopy(data, &buffer[head], size);
 
-        head += size;
-    }
+//         head += size;
+//     }
 
-    template <typename T>
-    void read(T& value)
-    {
-        align(BX_ALIGNOF(T));
-        read(reinterpret_cast<uint8_t*>(&value), sizeof(T));
-    }
-};
+//     template <typename T>
+//     void read(T& value)
+//     {
+//         align(BX_ALIGNOF(T));
+//         read(reinterpret_cast<uint8_t*>(&value), sizeof(T));
+//     }
+// };
 
 struct Modifier
 {
@@ -245,6 +248,7 @@ struct TextEditor
         bindings[Command::COPY            ] = { 'C'          , PLATFORM_MOD    };
         bindings[Command::CUT             ] = { 'X'          , PLATFORM_MOD    };
         bindings[Command::PASTE           ] = { 'V'          , PLATFORM_MOD    };
+        bindings[Command::UNDO            ] = { 'Z'          , PLATFORM_MOD    };
 
         commands[ 0] = Command::DRAG;
         commands[ 1] = Command::CLICK_WITH_SHIFT;
@@ -273,6 +277,7 @@ struct TextEditor
         commands[24] = Command::MOVE_RIGHT;
         commands[25] = Command::MOVE_UP;
         commands[26] = Command::MOVE_DOWN;
+        commands[27] = Command::UNDO;
     }
 
     void set_content(const char* string)
@@ -280,6 +285,7 @@ struct TextEditor
         state.clear();
         state.paste(string);
         state.cursors[0] = {};
+        state.action(ted::Action::CLEAR_HISTORY);
     }
 
     void update(gui::Context& ctx, uint8_t id)

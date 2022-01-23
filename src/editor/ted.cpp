@@ -513,6 +513,131 @@ static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool m
 
 
 // -----------------------------------------------------------------------------
+// UNDO/REDO
+// -----------------------------------------------------------------------------
+
+struct HistoryBuffer
+{
+    Array<uint8_t>& buffer;
+
+    enum Operation : uint8_t
+    {
+        NONE,
+        CODEPOINT,
+    };
+
+    struct Header
+    {
+        size_t    last_operation_index    = SIZE_MAX;
+        Operation last_operation_type     = NONE;
+        bool      last_codepoint_is_space = false;
+    };
+
+    HistoryBuffer(Array<uint8_t>& buffer)
+        : buffer(buffer)
+    {
+        if (buffer.empty())
+        {
+            write(Header());
+        }
+    }
+
+    inline Header& get_header()
+    {
+        return *reinterpret_cast<Header*>(buffer.data());
+    }
+
+    void undo(State& state)
+    {
+        Header& header = get_header();
+
+        if (header.last_operation_index == SIZE_MAX)
+        {
+            return;
+        }
+
+
+    }
+
+    void align(size_t alignment)
+    {
+        assert((alignment & (alignment - 1)) == 0);
+
+        const size_t mask = alignment - 1;
+        const size_t size = (buffer.size() + mask) & (~mask);
+
+        buffer.resize(size);
+    }
+
+    void write(const void* data, size_t size)
+    {
+        const size_t offset = buffer.size();
+
+        buffer.resize(offset + size);
+
+        bx::memCopy(&buffer[offset], data, size);
+    }
+
+    template <typename T>
+    void write(const T& value)
+    {
+        align(BX_ALIGNOF(T));
+        write(&value, sizeof(T));
+    }
+
+    void write_cursors(const State& state)
+    {
+        write<size_t>(state.cursors.size());
+        write(state.cursors.data(), state.cursors.size() * sizeof(Cursor));
+    }
+
+    void write_selections(const State& state)
+    {
+        for (size_t i = 0; i < state.cursors.size(); i++)
+        {
+            if (!range_empty(state.cursors[i].selection))
+            {
+                write(state.buffer.data() + state.cursors[i].selection.start, range_size(state.cursors[i].selection));
+            }
+        }
+    }
+
+    void write_codepoint(const State& state, const char* codepoint, size_t size)
+    {
+        const bool is_space = (size == 1 && *codepoint == ' ');
+        Header&    header   = get_header();
+
+        if (header.last_operation_type != CODEPOINT || (!is_space && header.last_codepoint_is_space))
+        {
+            start_operation(CODEPOINT);
+
+            write_cursors(state);
+            write_selections(state);
+
+            buffer.push_back(0);
+        }
+
+        header.last_codepoint_is_space = is_space;
+
+        buffer.resize(buffer.size() - 1);
+
+        write(codepoint, size);
+        buffer.push_back(0);
+    }
+
+    void start_operation(Operation operation)
+    {
+        Header& header = get_header();
+
+        header.last_operation_index = buffer.size();
+        header.last_operation_type  = operation;
+
+        write(operation);
+    }
+};
+
+
+// -----------------------------------------------------------------------------
 // STATE ACTIONS
 // -----------------------------------------------------------------------------
 
@@ -852,6 +977,12 @@ static void action_tab(State& state)
     parse_lines(state.buffer.data(), state.lines);
 }
 
+static void action_clear_history(State& state)
+{
+    state.history.clear();
+    // HistoryBuffer(state.history).write_cursors(state);
+}
+
 
 // -----------------------------------------------------------------------------
 // PUBLIC API
@@ -861,7 +992,7 @@ State::State()
 {
     clear();
 
-    word_separators = " `~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?";
+    word_separators = " `~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?"; // TODO : Whitespaces in a separate list?
     tab_size        = 4;
 }
 
@@ -878,6 +1009,8 @@ void State::clear()
     cursors.resize(16);
     cursors.clear();
     cursors.push_back({});
+
+    action(Action::CLEAR_HISTORY);
 
     char_width  = 0.0f;
     line_height = 0.0f;
@@ -1013,6 +1146,18 @@ void State::action(Action action)
             action_tab(*this);
             break;
 
+        case Action::CLEAR_HISTORY:
+            action_clear_history(*this);
+            break;
+
+        case Action::UNDO:
+            HistoryBuffer(history).undo(*this);
+            break;
+
+        case Action::REDO:
+            // ...
+            break;
+
         default:
             assert(false && "Not yet implemented.");
     }
@@ -1020,10 +1165,13 @@ void State::action(Action action)
 
 void State::codepoint(uint32_t codepoint)
 {
-    char        buffer[4] = { 0 };
-    const void* next      = utf8catcodepoint(buffer, static_cast<utf8_int32_t>(codepoint), 4);
+    char         buffer[4] = { 0 };
+    const void*  next      = utf8catcodepoint(buffer, static_cast<utf8_int32_t>(codepoint), 4);
+    const size_t size      = static_cast<const char*>(next) - buffer;
 
-    paste(buffer, static_cast<const char*>(next) - buffer);
+    HistoryBuffer(history).write_codepoint(*this, buffer, size);
+
+    paste(buffer, size);
 }
 
 void State::copy(Clipboard& out_clipboard)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>  // uint32_t
+#include <stdint.h>  // uint*_t
 #include <stddef.h>  // size_t
 
 // `TED_ARRAY` has to implement following subset of `std::vector`'s API:
@@ -46,6 +46,10 @@ enum struct Action
 
     TAB,
 
+    CLEAR_HISTORY,
+    UNDO,
+    REDO,
+
 };
 
 struct Range
@@ -89,13 +93,14 @@ struct State
 
     void paste(const char* string, size_t size = 0);
 
-    Array<char>   buffer;
-    Array<Range>  lines;
-    Array<Cursor> cursors;
-    const char*   word_separators;
-    float         char_width;
-    float         line_height;
-    size_t        tab_size;
+    Array<char>    buffer;
+    Array<Range>   lines;
+    Array<Cursor>  cursors;
+    Array<uint8_t> history;
+    const char*    word_separators;
+    float          char_width;
+    float          line_height;
+    size_t         tab_size;
 };
 
 } // namespace ted
