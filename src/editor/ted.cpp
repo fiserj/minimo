@@ -516,21 +516,52 @@ static void copy_or_move_to_clipboard(State& state, Clipboard& clipboard, bool m
 // UNDO/REDO
 // -----------------------------------------------------------------------------
 
+// PASTE:
+//   - store cursors
+//   - store selection contents for undo-pasting
+//   - paste the data
+//   - store cursors
+//
+// CUT:
+//   - store cursors
+//   - store selection contents for undo-pasting
+//   - store cursors
+//
+// CODEPOINT:
+//   - if first codepoint in a sequence, do as in "PASTE", except don't store
+//     the "after" cursors
+//   - for other codepoints, simply append them
+
+// NOTE : The `size_t` indices are quite wasteful on 64-bit system. Consider
+//        replacing them with u32, or even smaller types (and perhaps store
+//        offsets, rathen than the indices). Could also have some sort of
+//        variable size info, but that would make things more complex.
 struct HistoryBuffer
 {
     Array<uint8_t>& buffer;
 
-    enum Operation : uint8_t
+    struct Block
     {
-        NONE,
-        CODEPOINT,
+        enum Type : uint8_t
+        {
+            NONE,
+
+            ADD,
+            CURSORS,
+            REMOVE,
+        };
+
+        size_t  prev;
+        size_t  next;
+        Type    type;
+        bool    growable;
+        uint8_t payload[2];
     };
 
     struct Header
     {
-        size_t    last_operation_index    = SIZE_MAX;
-        Operation last_operation_type     = NONE;
-        bool      last_codepoint_is_space = false;
+        size_t last_block_start = 0;
+        size_t read_head        = 0;
     };
 
     HistoryBuffer(Array<uint8_t>& buffer)
@@ -538,25 +569,34 @@ struct HistoryBuffer
     {
         if (buffer.empty())
         {
+            buffer.resize(1024 * 1024);
+            buffer.clear();
+
             write(Header());
+            (void)start_block(Block::NONE, false);
         }
     }
 
-    inline Header& get_header()
+    inline Header* get_header()
     {
-        return *reinterpret_cast<Header*>(buffer.data());
+        return reinterpret_cast<Header*>(buffer.data());
+    }
+
+    inline Block* get_block_at(size_t offset)
+    {
+        return reinterpret_cast<Block*>(buffer.data() + offset);
+    }
+
+    inline Block* get_last_block()
+    {
+        return get_block_at(get_header()->last_block_start);
     }
 
     void undo(State& state)
     {
-        Header& header = get_header();
+        Block* block = get_last_block();
 
-        if (header.last_operation_index == SIZE_MAX)
-        {
-            return;
-        }
-
-
+        // ...
     }
 
     void align(size_t alignment)
@@ -605,11 +645,11 @@ struct HistoryBuffer
     void write_codepoint(const State& state, const char* codepoint, size_t size)
     {
         const bool is_space = (size == 1 && *codepoint == ' ');
-        Header&    header   = get_header();
+        Block*     block    = get_last_block();
 
-        if (header.last_operation_type != CODEPOINT || (!is_space && header.last_codepoint_is_space))
+        if (block->type != Block::ADD || !block->growable || (!is_space && block->payload[0]))
         {
-            start_operation(CODEPOINT);
+            block = start_block(Block::ADD, true);
 
             write_cursors(state);
             write_selections(state);
@@ -617,7 +657,7 @@ struct HistoryBuffer
             buffer.push_back(0);
         }
 
-        header.last_codepoint_is_space = is_space;
+        block->payload[0] = is_space;
 
         buffer.resize(buffer.size() - 1);
 
@@ -625,14 +665,25 @@ struct HistoryBuffer
         buffer.push_back(0);
     }
 
-    void start_operation(Operation operation)
+    Block* start_block(Block::Type type, bool growable)
     {
-        Header& header = get_header();
+        Block block    = {};
+        block.prev     = get_header()->last_block_start;
+        block.type     = type;
+        block.growable = growable;
 
-        header.last_operation_index = buffer.size();
-        header.last_operation_type  = operation;
+        align(BX_ALIGNOF(Block));
 
-        write(operation);
+        if (type != Block::NONE)
+        {
+            get_last_block()->next = buffer.size();
+        }
+
+        get_header()->last_block_start = buffer.size();
+
+        write(&block, sizeof(block));
+
+        return get_last_block();
     }
 };
 
