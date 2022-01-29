@@ -77,33 +77,33 @@ static uint32_t utf8_encode(uint32_t codepoint, char* out_string)
 {
     ASSERT(out_string);
 
-    if (0 == (uint32_t{0xffffff80} & codepoint))
+    if (0 == (UINT32_C(0xffffff80) & codepoint))
     {
-        out_string[0] = char{codepoint};
+        out_string[0] = char(codepoint);
 
         return 1;
     }
-    else if (0 == (uint32_t{0xfffff800} & codepoint))
+    else if (0 == (UINT32_C(0xfffff800) & codepoint))
     {
-        out_string[0] = char{0xc0 | ((codepoint >> 6) & 0x1f)};
-        out_string[1] = char{0x80 | ((codepoint     ) & 0x3f)};
+        out_string[0] = char(0xc0 | ((codepoint >> 6) & 0x1f));
+        out_string[1] = char(0x80 | ((codepoint     ) & 0x3f));
 
         return 2;
     }
-    else if (0 == (uint32_t{0xffff0000} & codepoint))
+    else if (0 == (UINT32_C(0xffff0000) & codepoint))
     {
-        out_string[0] = char{0xe0 | ((codepoint >> 12) & 0x0f)};
-        out_string[1] = char{0x80 | ((codepoint >>  6) & 0x3f)};
-        out_string[2] = char{0x80 | ((codepoint      ) & 0x3f)};
+        out_string[0] = char(0xe0 | ((codepoint >> 12) & 0x0f));
+        out_string[1] = char(0x80 | ((codepoint >>  6) & 0x3f));
+        out_string[2] = char(0x80 | ((codepoint      ) & 0x3f));
 
         return 3;
     }
-    else if (0 == (uint32_t{0xffe00000} & codepoint))
+    else if (0 == (UINT32_C(0xffe00000) & codepoint))
     {
-        out_string[0] = char{0xf0 | ((codepoint >> 18) & 0x07)};
-        out_string[1] = char{0x80 | ((codepoint >> 12) & 0x3f)};
-        out_string[2] = char{0x80 | ((codepoint >>  6) & 0x3f)};
-        out_string[3] = char{0x80 | ((codepoint      ) & 0x3f)};
+        out_string[0] = char(0xf0 | ((codepoint >> 18) & 0x07));
+        out_string[1] = char(0x80 | ((codepoint >> 12) & 0x3f));
+        out_string[2] = char(0x80 | ((codepoint >>  6) & 0x3f));
+        out_string[3] = char(0x80 | ((codepoint      ) & 0x3f));
 
         return 4;
     }
@@ -195,7 +195,7 @@ inline uint32_t utf8_next_codepoint(const char*& string)
 }
 
 // Reads previous codepoint from `string` and advances the pointer accordingly.
-inline uint32_t utf8_next_codepoint(const char*& string)
+inline uint32_t utf8_prev_codepoint(const char*& string)
 {
     ASSERT(string);
 
