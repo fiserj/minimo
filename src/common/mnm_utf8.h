@@ -4,6 +4,12 @@
 #   error "'<stdint.h>' has to be included before including 'mnm_utf8.h'."
 #endif
 
+#ifndef MNM_UTF8_INCLUDED
+#   define MNM_UTF8_INCLUDED
+#else
+#   error "Please don't include 'mnm_utf8.h' header repeatedly.
+#endif
+
 #ifndef ASSERT
 #   include <assert.h>
 #   define ASSERT(cond) assert(cond)
