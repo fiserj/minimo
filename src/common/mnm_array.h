@@ -29,9 +29,19 @@
 namespace mnm
 {
 
+struct ArrayBase
+{
+    static bx::AllocatorI* default_allocator()
+    {
+        static bx::DefaultAllocator s_allocator;
+
+        return &s_allocator;
+    }
+};
+
 // Simplified `std::vector`-like class. Supports only POD-like types.
 template <typename T>
-struct Array
+struct Array : ArrayBase
 {
     T*              data      = nullptr;
     uint32_t        size      = 0;
@@ -43,17 +53,13 @@ struct Array
         "`Array<T>` only supports POD-like types."
     );
 
-    Array(bx::AllocatorI* allocator = nullptr)
+    Array(bx::AllocatorI* allocator = default_allocator())
+        : allocator(allocator)
     {
-        if (!allocator)
-        {
-            static bx::DefaultAllocator s_default_allocator;
-
-            this->allocator = &s_default_allocator;
-        }
     }
 
     Array(const Array<T>& other)
+        : allocator(other.allocator)
     {
         operator=(other);
     }
@@ -89,7 +95,7 @@ struct Array
         if (new_capacity > capacity)
         {
             capacity = new_capacity;
-            data     = static_cast<T*>(BX_REALLOC(allocator, data, capacity));
+            data     = static_cast<T*>(BX_REALLOC(allocator, data, capacity * sizeof(T)));
 
             ASSERT(data);
         }
@@ -139,7 +145,7 @@ struct Array
 
     void push_back(const T& value)
     {
-        ASSERT(&value < data && &value >= data + capacity);
+        ASSERT(&value < data || &value >= data + capacity);
 
         if (size == capacity)
         {

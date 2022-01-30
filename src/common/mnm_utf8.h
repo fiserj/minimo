@@ -174,16 +174,16 @@ inline uint32_t utf8_next_codepoint(const char*& string)
 {
     ASSERT(string);
 
-    uint32_t codepoint;
-    uint32_t state = UTF8_ACCEPT;
+    uint32_t codepoint = 0;
+    uint32_t state     = UTF8_ACCEPT;
 
-    for (; *string; string++)
+    while (*string)
     {
-        if (UTF8_ACCEPT == utf8_decode(
-            state,
-            *reinterpret_cast<const uint8_t*>(string),
-            codepoint
-        ))
+        utf8_decode(state, *reinterpret_cast<const uint8_t*>(string), codepoint);
+
+        string++;
+
+        if (UTF8_ACCEPT == state)
         {
             break;
         }
