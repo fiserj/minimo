@@ -1,10 +1,12 @@
 #pragma once
 
+#include <inttypes.h> // PRIu32
+
 struct Command
 {
     enum Enum
     {
-        // The first block has to be copy of `ted::Action`.
+        // The first block has to be copy of `mnm::tes::Action`.
         MOVE_LEFT,
         MOVE_RIGHT,
         MOVE_UP,
@@ -44,7 +46,7 @@ struct Command
 // struct CommandBuffer
 // {
 //     std::vector<uint8_t> buffer;
-//     size_t               head;
+//     uint32_t               head;
 
 //     CommandBuffer()
 //     {
@@ -64,19 +66,19 @@ struct Command
 //         head = 0;
 //     }
 
-//     void align(size_t alignment)
+//     void align(uint32_t alignment)
 //     {
 //         assert((alignment & (alignment - 1)) == 0);
 
-//         const size_t mask = alignment - 1;
-//         const size_t size = (buffer.size() + mask) & (~mask);
+//         const uint32_t mask = alignment - 1;
+//         const uint32_t size = (buffer.size + mask) & (~mask);
 
 //         buffer.resize(size);
 //     }
 
-//     void write(const void* data, size_t size)
+//     void write(const void* data, uint32_t size)
 //     {
-//         const size_t offset = buffer.size();
+//         const uint32_t offset = buffer.size;
 
 //         buffer.resize(offset + size);
 
@@ -92,7 +94,7 @@ struct Command
 
 //     void read(void* data, uint32_t size)
 //     {
-//         assert(head + size <= buffer.size());
+//         assert(head + size <= buffer.size);
 
 //         bx::memCopy(data, &buffer[head], size);
 
@@ -202,16 +204,16 @@ struct TextEditor
         OVERLAY,
     };
 
-    ted::State     state;
-    ted::Clipboard clipboard;
-    KeyBinding     bindings[Command::COUNT];
-    Command::Enum  commands[Command::COUNT];
-    double         blink_base_time  = 0.0;
-    float          split_x          = 0.0f; // Screen coordinates.
-    float          scroll_offset    = 0.0f; // Lines (!).
-    float          handle_position  = 0.0f;
-    DisplayMode    display_mode     = DisplayMode::RIGHT;
-    bool           viewport_clicked = false;
+    mnm::tes::State     state;
+    mnm::tes::Clipboard clipboard;
+    KeyBinding          bindings[Command::COUNT];
+    Command::Enum       commands[Command::COUNT];
+    double              blink_base_time  = 0.0;
+    float               split_x          = 0.0f; // Screen coordinates.
+    float               scroll_offset    = 0.0f; // Lines (!).
+    float               handle_position  = 0.0f;
+    DisplayMode         display_mode     = DisplayMode::RIGHT;
+    bool                viewport_clicked = false;
 
     TextEditor()
     {
@@ -285,7 +287,7 @@ struct TextEditor
         state.clear();
         state.paste(string);
         state.cursors[0] = {};
-        state.action(ted::Action::CLEAR_HISTORY);
+        state.action(mnm::tes::Action::CLEAR_HISTORY);
     }
 
     void update(gui::Context& ctx, uint8_t id)
@@ -349,11 +351,11 @@ struct TextEditor
         char  line_format[8];
         float line_number_width = 0.0f;
 
-        for (size_t i = state.lines.size(), j = 0; ; i /= 10, j++)
+        for (uint32_t i = state.lines.size, j = 0; ; i /= 10, j++)
         {
             if (i == 0)
             {
-                bx::snprintf(line_format, sizeof(line_format), "%%%izu ", bx::max<size_t>(j + 1, 3));
+                bx::snprintf(line_format, sizeof(line_format), "%%%" PRIu32 PRIu32 " ", bx::max(j + 1, UINT32_C(3)));
                 bx::snprintf(line_number, sizeof(line_number), line_format, 1);
 
                 line_number_width = state.char_width * bx::strLen(line_number);
@@ -363,9 +365,9 @@ struct TextEditor
         }
 
         // Scrollbar -----------------------------------------------------------
-        const float max_scroll = bx::max(0.0f, state.lines.size() - 1.0f);
+        const float max_scroll = bx::max(0.0f, state.lines.size - 1.0f);
 
-        if (state.lines.size() > 0)
+        if (state.lines.size > 0)
         {
             const float handle_size = bx::max(viewport.height() * viewport.height() /
                 (max_scroll  * state.line_height + viewport.height()), min_handle_size);
@@ -457,7 +459,7 @@ struct TextEditor
                         break;
 
                     default:
-                        state.action(static_cast<ted::Action>(commands[i]));
+                        state.action(mnm::tes::Action(commands[i]));
                     }
 
                     jump_to_cursor = true;
@@ -468,8 +470,8 @@ struct TextEditor
 
             if (jump_to_cursor)
             {
-                const size_t cursor = key_down(KEY_DOWN) ? state.cursors.size() - 1 : 0;
-                const float  line   = static_cast<float>(ted::to_position(
+                const uint32_t cursor = key_down(KEY_DOWN) ? state.cursors.size - 1 : 0;
+                const float  line   = static_cast<float>(mnm::tes::to_position(
                     state,
                     state.cursors[cursor].offset
                 ).y);
@@ -482,15 +484,15 @@ struct TextEditor
         }
 
         // Selections ----------------------------------------------------------
-        const size_t first_line = static_cast<size_t>(bx::floor(scroll_offset));
-        const size_t line_count = static_cast<size_t>(bx::ceil(viewport.height() / state.line_height)) + 1;
-        const size_t last_line  = bx::min(first_line + line_count, state.lines.size() - 1);
+        const uint32_t first_line = static_cast<uint32_t>(bx::floor(scroll_offset));
+        const uint32_t line_count = static_cast<uint32_t>(bx::ceil(viewport.height() / state.line_height)) + 1;
+        const uint32_t last_line  = bx::min(first_line + line_count, state.lines.size - 1);
 
-        const ted::Range visible_range = { state.lines[first_line].start, state.lines[last_line].end };
+        const mnm::tes::Range visible_range = { state.lines[first_line].start, state.lines[last_line].end };
 
-        for (size_t i = 0, search_line = first_line; i < state.cursors.size(); i++)
+        for (uint32_t i = 0, search_line = first_line; i < state.cursors.size; i++)
         {
-            using namespace ted;
+            using namespace mnm::tes;
 
             const Range visible_selection = range_intersection(state.cursors[i].selection, visible_range);
 
@@ -500,12 +502,12 @@ struct TextEditor
 
                 float  y     = round_to_pixel(viewport.y0 + (position.y - first_line - bx::fract(scroll_offset)) * state.line_height, dpi);
                 float  x0    = viewport.x0 + line_number_width + position.x * state.char_width;
-                size_t start = visible_selection.start;
+                uint32_t start = visible_selection.start;
 
                 for (;;)
                 {
-                    const size_t end    = bx::min(visible_selection.end, state.lines[position.y].end);
-                    const size_t length = utf8nlen(line_string(state, position.y), end - start);
+                    const uint32_t end    = bx::min(visible_selection.end, state.lines[position.y].end);
+                    const uint32_t length = utf8nlen(line_string(state, position.y), end - start);
 
                     const float x1 = x0 + state.char_width * length;
 
@@ -536,15 +538,15 @@ struct TextEditor
 
         float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
 
-        for (size_t i = first_line; i <= last_line; i++, y += state.line_height)
+        for (uint32_t i = first_line; i <= last_line; i++, y += state.line_height)
         {
             bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
             ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
 
             ctx.text(
-                state.buffer.data() + state.lines[i].start,
-                state.buffer.data() + state.lines[i].end,
+                state.buffer.data + state.lines[i].start,
+                state.buffer.data + state.lines[i].end,
                 max_chars,
                 COLOR_EDITOR_TEXT,
                 viewport.x0 + line_number_width,
@@ -557,9 +559,9 @@ struct TextEditor
         // Carets --------------------------------------------------------------
         if (bx::fract(static_cast<float>(elapsed() - blink_base_time)) < 0.5f)
         {
-            for (size_t i = 0; i < state.cursors.size(); i++)
+            for (uint32_t i = 0; i < state.cursors.size; i++)
             {
-                using namespace ted;
+                using namespace mnm::tes;
 
                 if (range_contains(visible_range, state.cursors[i].offset))
                 {

@@ -4,11 +4,13 @@ add_executable(${NAME}
     editor.cpp
     editor_font.h
     editor_ted.h
-    ted.h
+    ../common/mnm_array.h
+    ../common/mnm_utf8.h
 )
 
 target_include_directories(${NAME} PRIVATE
     .
+    ../common
     ${CMAKE_BINARY_DIR}/shaders/shaders
 )
 

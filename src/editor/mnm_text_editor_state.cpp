@@ -116,11 +116,11 @@ static uint32_t to_offset(const State& state, uint32_t x, uint32_t y)
     const char* start  = string;
     uint32_t    codepoint;
 
-    while ((codepoint = utf8_next_codepoint(string)) && codepoint != '\n' && x--)
+    while (x-- && (codepoint = utf8_next_codepoint(string)) && codepoint != '\n')
     {
     }
 
-    return uint32_t(string - start);
+    return state.lines[y].start + uint32_t(string - start);
 }
 
 static uint32_t to_line(const State& state, uint32_t offset, uint32_t start_line = 0)
@@ -902,7 +902,7 @@ void State::clear()
 void State::click(float x, float y, bool multi_mode)
 {
     const Position position = click_position(*this, x, y);
-    const uint32_t   offset   = to_offset(*this, position.x, position.y);
+    const uint32_t offset   = to_offset(*this, position.x, position.y);
     Cursor*        cursor   = nullptr;
 
     if (multi_mode)

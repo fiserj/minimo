@@ -42,7 +42,7 @@ using Vector = std::vector<T>;
 // INTERNAL INCLUDES
 // -----------------------------------------------------------------------------
 
-#include "ted.cpp"
+#include "mnm_text_editor_state.cpp"
 
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context, Editor
@@ -200,7 +200,7 @@ static void setup()
 
     g_editor.set_content(test_file); // [TEST]
 
-    g_watch.init(g_editor.state.buffer.data(), g_editor.state.buffer.size());
+    g_watch.init(g_editor.state.buffer.data, g_editor.state.buffer.size);
 
     update_script_context(test_file); // [TEST]
 
@@ -248,9 +248,9 @@ static void update()
             static_cast<int>(ctx->viewport.height())
         );
 
-        if (g_watch.update(g_editor.state.buffer.data(), g_editor.state.buffer.size()))
+        if (g_watch.update(g_editor.state.buffer.data, g_editor.state.buffer.size))
         {
-            if (update_script_context(g_editor.state.buffer.data()) && g_script_ctx.callbacks.setup)
+            if (update_script_context(g_editor.state.buffer.data) && g_script_ctx.callbacks.setup)
             {
                 ctx->callbacks.setup();
             }
