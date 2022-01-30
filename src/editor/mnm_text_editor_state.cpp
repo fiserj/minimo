@@ -168,8 +168,18 @@ static Position click_position(const State& state, float x, float y)
     x = bx::max(x, 0.0f) / state.char_width;
     y = bx::max(y, 0.0f) / state.line_height;
 
-    const uint32_t yi = bx::min(uint32_t(y), state.lines.size - 1);
-    const uint32_t xi = bx::min(uint32_t(x + 0.5f), line_length(state, yi) - 1);
+    uint32_t yi(y);
+    uint32_t xi;
+
+    if (yi < state.lines.size)
+    {
+        xi = bx::min(uint32_t(x + 0.5f), line_length(state, yi) - (yi + 1 != state.lines.size));
+    }
+    else
+    {
+        yi = state.lines.size - 1;
+        xi = line_length(state, yi);
+    }
 
     return { xi, yi };
 }
