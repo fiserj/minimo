@@ -26,6 +26,9 @@
 // Additional required headers:
 // * <type_traits>
 
+namespace mnm
+{
+
 // Simplified `std::vector`-like class. Supports only POD-like types.
 template <typename T>
 struct Array
@@ -87,6 +90,8 @@ struct Array
         {
             capacity = new_capacity;
             data     = static_cast<T*>(BX_REALLOC(allocator, data, capacity));
+
+            ASSERT(data);
         }
     }
 
@@ -134,6 +139,8 @@ struct Array
 
     void push_back(const T& value)
     {
+        ASSERT(&value < data && &value >= data + capacity);
+
         if (size == capacity)
         {
             reserve(next_capacity(size + 1));
@@ -142,6 +149,12 @@ struct Array
         bx::memCopy(data + size, &value, sizeof(value));
 
         size++;
+    }
+
+    void pop_back()
+    {
+        ASSERT(size > 0);
+        size--;
     }
 
     const T& operator[](uint32_t i) const
@@ -155,4 +168,26 @@ struct Array
         ASSERT(data && i < size);
         return data[i];
     }
+
+    const T& front() const
+    {
+        return operator[](0);
+    }
+
+    T& front()
+    {
+        return operator[](0);
+    }
+
+    const T& back() const
+    {
+        return operator[](size - 1);
+    }
+
+    T& back()
+    {
+        return operator[](size - 1);
+    }
 };
+
+} // namespace mnm
