@@ -507,7 +507,7 @@ struct TextEditor
                 for (;;)
                 {
                     const uint32_t end    = bx::min(visible_selection.end, state.lines[position.y].end);
-                    const uint32_t length = utf8nlen(line_string(state, position.y), end - start);
+                    const uint32_t length = mnm::utf8_length(line_string(state, position.y), end - start);
 
                     const float x1 = x0 + state.char_width * length;
 

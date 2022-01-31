@@ -225,11 +225,11 @@ struct GlyphCache
             GlyphCache& cache;
             int         index = 0;
 
-            void write_glyph_range(utf8_int32_t start, utf8_int32_t end)
+            void write_glyph_range(uint32_t start, uint32_t end)
             {
                 char buffer[5] = { 0 };
 
-                for (utf8_int32_t codepoint = start; codepoint <= end; codepoint++)
+                for (uint32_t codepoint = start; codepoint <= end; codepoint++)
                 {
                     const int x = index % cache.glyph_cols;
                     const int y = index / cache.glyph_cols;
@@ -239,10 +239,8 @@ struct GlyphCache
                     identity();
                     translate(x * cache.glyph_width, (y + 0.25f) * cache.glyph_height, 0.0f);
 
-                    const void* end = utf8catcodepoint(buffer, codepoint, sizeof(buffer));
-                    ASSERT(end);
-
-                    text(buffer, static_cast<const char*>(end));
+                    const uint32_t size = mnm::utf8_encode(codepoint, buffer);
+                    text(buffer, buffer + size);
                 }
             }
         };
@@ -551,6 +549,7 @@ struct DrawList
     }
 };
 
+// TODO : Remove `mnm::` prefixes when the whole thing is moved to the same namespace.
 struct Context
 {
     Resources   resources;
@@ -751,7 +750,7 @@ struct Context
     // Single-line text.
     inline void text_size(const char* string, float& out_width, float& out_height)
     {
-        out_width  = glyph_cache.glyph_screen_width () * static_cast<float>(utf8size_lazy(string));
+        out_width  = glyph_cache.glyph_screen_width () * static_cast<float>(mnm::utf8_size(string));
         out_height = glyph_cache.glyph_screen_height();
     }
 
@@ -760,9 +759,9 @@ struct Context
     {
         draw_list.start_string(x, y, color, uniforms.clip_stack.top());
 
-        utf8_int32_t codepoint = 0;
+        uint32_t codepoint;
 
-        for (void* it = utf8codepoint(string, &codepoint); codepoint; it = utf8codepoint(it, &codepoint))
+        while ((codepoint = mnm::utf8_next_codepoint(string)))
         {
             draw_list.add_glyph(glyph_cache.codepoint_index(codepoint));
         }
@@ -777,10 +776,9 @@ struct Context
         {
             draw_list.start_string(x, y, color, uniforms.clip_stack.top());
 
-            utf8_int32_t codepoint = 0;
-            uint32_t     i         = 0;
+            uint32_t codepoint;
 
-            for (void* it = utf8codepoint(start, &codepoint); it != end && i < max_chars; it = utf8codepoint(it, &codepoint), i++)
+            while ((codepoint = mnm::utf8_next_codepoint(start)) && start != end && max_chars--)
             {
                 draw_list.add_glyph(glyph_cache.codepoint_index(codepoint));
             }

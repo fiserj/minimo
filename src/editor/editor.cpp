@@ -11,8 +11,6 @@
 #include <bx/string.h>            // snprintf, strLen
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 
-#include <utf8.h>                 // utf8codepoint, utf8nlen, utf8size_lazy
-
 #include <mnm/mnm.h>
 
 #include <shaders/text_fs.h>      // text_fs
