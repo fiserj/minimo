@@ -1,8 +1,7 @@
 #include <assert.h>               // assert
 #include <stddef.h>               // offsetof
 #include <stdint.h>               // uint*_t
-
-#include <vector>                 // vector
+#include <string.h>               // strcat, strncpy, strcpy
 
 #include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER* (not really needed here, but necessary due to the included shader headers)
 
@@ -31,21 +30,13 @@
 
 
 // -----------------------------------------------------------------------------
-// TYPE ALIASES
-// -----------------------------------------------------------------------------
-
-template <typename T>
-using Vector = std::vector<T>;
-
-
-// -----------------------------------------------------------------------------
 // INTERNAL INCLUDES
 // -----------------------------------------------------------------------------
 
 #include "mnm_text_editor_state.cpp"
 
 #include "editor_font.h" // g_font_*
-#include "editor_gui.h"  // Context, Editor
+#include "editor_gui.h"  // Context
 #include "editor_ted.h"
 #include "editor_tcc.h"
 
