@@ -240,7 +240,7 @@ static bool update_script_context(const char* source)
 
         if (callbacks.update)
         {
-            std::swap(g_script_ctx.tcc_state, tcc_state);
+            bx::swap(g_script_ctx.tcc_state, tcc_state);
 
             g_script_ctx.callbacks      = callbacks;
             g_script_ctx.quit_requested = false;
