@@ -18,6 +18,8 @@ target_link_libraries(${NAME} PRIVATE
     ${PROJECT_NAME}
     bgfx
     tinycc
+    tree-sitter
+    tree-sitter-c
     utf8
 )
 
