@@ -1,30 +1,16 @@
 #pragma once
 
-#ifndef UINT32_MAX
-#   error '<stdint.h>' has to be included before including 'mnm_array.h'.
-#endif
+#include <stdint.h>       // uint*_t
 
-#ifndef BX_H_HEADER_GUARD
-#   error '<bx/bx.h>' has to be included before including 'mnm_array.h'.
-#endif
+#include <bx/allocator.h> // AllocatorI
+#include <bx/bx.h>        // max, mem*
 
-#ifndef BX_ALLOCATOR_H_HEADER_GUARD
-#   error '<bx/allocator.h>' has to be included before including 'mnm_array.h'.
-#endif
-
-#ifndef MNM_ARRAY_INCLUDED
-#   define MNM_ARRAY_INCLUDED
-#else
-#   error Please don't include 'mnm_array.h' header repeatedly.
-#endif
+#include <type_traits>    // is_trivial, is_standard_layout
 
 #ifndef ASSERT
-#   include <assert.h>
+#   include <assert.h>    // assert
 #   define ASSERT(cond) assert(cond)
 #endif
-
-// Additional required headers:
-// * <type_traits>
 
 namespace mnm
 {

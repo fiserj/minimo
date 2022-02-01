@@ -1,29 +1,8 @@
-#ifndef UINT32_MAX
-#   include <stdint.h>
-#endif
+#include "mnm_text_editor_state.h"
 
-// TODO : Wrap with own `MNM_STD_TYPE_TRAITS_INCLUDED` macro?
-#include <type_traits>
+#include <bx/sort.h>  // quickSort
 
-#ifndef BX_ALLOCATOR_H_HEADER_GUARD
-#   include <bx/allocator.h>
-#endif
-
-#ifndef BX_SORT_H_HEADER_GUARD
-#   include <bx/sort.h>
-#endif
-
-#ifndef MNM_ARRAY_INCLUDED
-#   include <mnm_array.h>
-#endif
-
-#ifndef MNM_UTF8_INCLUDED
-#   include <mnm_utf8.h>
-#endif
-
-#ifndef MNM_TEXT_EDITOR_STATE_INCLUDED
-#   include "mnm_text_editor_state.h"
-#endif
+#include <mnm_utf8.h> // utf8_*
 
 namespace mnm
 {
@@ -121,6 +100,18 @@ static uint32_t to_offset(const State& state, uint32_t x, uint32_t y)
     }
 
     return state.lines[y].start + uint32_t(string - start);
+
+    // utf8_int32_t codepoint;
+    // const void*  iterator = utf8codepoint(line_string(state, y), &codepoint);
+    // uint32_t       offset   = state.lines[y].start;
+
+    // for (; codepoint && codepoint != '\n' && x--; iterator = utf8codepoint(iterator, &codepoint))
+    // {
+    //     // TODO : This could be provided by a tweaked version of `utf8codepoint`, but low impact / priority.
+    //     offset += utf8codepointsize(codepoint);
+    // }
+
+    // return offset;
 }
 
 static uint32_t to_line(const State& state, uint32_t offset, uint32_t start_line = 0)
@@ -821,6 +812,28 @@ static void action_select_word(State& state)
     }
 
     cursor.offset = cursor.selection.end;
+
+    // utf8_int32_t codepoint;
+    // const char*  start    = state.buffer.data + cursor.offset;
+    // const void*  iterator = utf8codepoint(start, &codepoint);
+    // const bool   category = is_word_separator(codepoint, state.word_separators);
+
+    // while (codepoint && codepoint != '\n' && category == is_word_separator(codepoint, state.word_separators))
+    // {
+    //     cursor.selection.end += utf8codepointsize(codepoint);
+    //     iterator = utf8codepoint(iterator, &codepoint);
+    // }
+
+    // iterator = utf8rcodepoint(start   , &codepoint);
+    // iterator = utf8rcodepoint(iterator, &codepoint);
+
+    // while (codepoint && cursor.selection.start > line.start && category == is_word_separator(codepoint, state.word_separators))
+    // {
+    //     cursor.selection.start -= utf8codepointsize(codepoint);
+    //     iterator = utf8rcodepoint(iterator, &codepoint);
+    // }
+
+    // cursor.offset = cursor.selection.end;
 }
 
 static void action_select_line(State& state)

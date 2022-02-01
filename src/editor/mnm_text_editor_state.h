@@ -1,18 +1,8 @@
 #pragma once
 
-#ifndef UINT32_MAX
-#   error '<stdint.h>' has to be included before including 'mnm_text_editor_state.h'.
-#endif
+#include <stdint.h>    // uint*_t
 
-#ifndef MNM_ARRAY_INCLUDED
-#   error 'mnm_array.h' has to be included before including 'mnm_text_editor_state.h'.
-#endif
-
-#ifndef MNM_TEXT_EDITOR_STATE_INCLUDED
-#   define MNM_TEXT_EDITOR_STATE_INCLUDED
-#else
-#   error Please don't include 'mnm_text_editor_state.h' header repeatedly.
-#endif
+#include <mnm_array.h> // Array
 
 namespace mnm
 {
