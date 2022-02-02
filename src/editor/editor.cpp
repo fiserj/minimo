@@ -32,6 +32,7 @@
 // -----------------------------------------------------------------------------
 
 #include "mnm_text_editor_state.cpp"
+#include "mnm_editor_parser.h"
 
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context
@@ -188,6 +189,8 @@ static void setup()
     char* test_file = load_string("../src/test/static_geometry.c");
 
     g_editor.set_content(test_file); // [TEST]
+
+    mnm::test_tree_sitter(test_file); // [TEST !!!]
 
     g_watch.init(g_editor.state.buffer.data, g_editor.state.buffer.size);
 
