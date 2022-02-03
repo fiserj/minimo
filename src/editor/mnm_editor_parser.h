@@ -287,16 +287,28 @@ struct Token
     };
 };
 
-static void dump_tree_sitter_node(const char* source_code, TSNode node, int indent = 0)
+static void dump_tree_sitter_node
+(
+    const char* source_code,
+    uint32_t    range_start,
+    uint32_t    range_end,
+    TSNode      node,
+    int         indent = 0
+)
 {
-    const char* type = ts_node_type(node);
+    const uint32_t start  = ts_node_start_byte(node);
+    const uint32_t end    = ts_node_end_byte  (node);
+
+    if ((start > range_end) | (end < range_start))
+    {
+        return;
+    }
+
     const uint32_t n = ts_node_child_count(node);
 
     if (n == 0)
     {
         const uint16_t symbol = ts_node_symbol    (node);
-        const uint32_t start  = ts_node_start_byte(node);
-        const uint32_t end    = ts_node_end_byte  (node);
 
         const char*    str = source_code + start;
         const uint32_t len = end - start;
@@ -306,7 +318,7 @@ static void dump_tree_sitter_node(const char* source_code, TSNode node, int inde
 
     for (uint32_t i = 0; i < n; i++)
     {
-        dump_tree_sitter_node(source_code, ts_node_child(node, i), indent + 2);
+        dump_tree_sitter_node(source_code, range_start, range_end, ts_node_child(node, i), indent + 2);
     }
 }
 
@@ -323,7 +335,7 @@ static void test_tree_sitter(const char* source_code)
         strlen(source_code)
     );
 
-    dump_tree_sitter_node(source_code, ts_tree_root_node(tree));
+    dump_tree_sitter_node(source_code, 120, 325, ts_tree_root_node(tree));
 
     ts_tree_delete(tree);
     ts_parser_delete(parser);
