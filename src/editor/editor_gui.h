@@ -311,10 +311,12 @@ struct Colors
     {
         ASSERT(color < MAX_COLOR_PALETTE_SIZE);
 
-        colors[color][0] = (rgba & 0xff000000) / 255.0f;
-        colors[color][1] = (rgba & 0x00ff0000) / 255.0f;
-        colors[color][2] = (rgba & 0x0000ff00) / 255.0f;
-        colors[color][3] = (rgba & 0x000000ff) / 255.0f;
+        constexpr float mul = 1.0f / 255.0f;
+
+        colors[color][0] = ((rgba & 0xff000000) >> 24) * mul;
+        colors[color][1] = ((rgba & 0x00ff0000) >> 16) * mul;
+        colors[color][2] = ((rgba & 0x0000ff00) >>  8) * mul;
+        colors[color][3] = ((rgba & 0x000000ff)      ) * mul;
     }
 };
 
@@ -563,6 +565,21 @@ struct Context
     float       drag_start_y    = 0.0f;
     float       scroll_start_y  = 0.0f;
     float       font_cap_height = 8.0f; // In screen coordinates.
+
+    Context()
+    {
+        // NOTE : Colors with zero alpha are for text rendering, the remaining
+        //        ones are for filled rectangle rendering (see `text.fs` shader
+        //        for exaplanation).
+
+        uniforms.colors.set(COLOR_EDITOR_TEXT       , 0xffffff00);
+        uniforms.colors.set(COLOR_EDITOR_LINE_NUMBER, 0xaaaaaa00);
+
+        uniforms.colors.set(COLOR_RED               , 0xff0000ff);
+        uniforms.colors.set(COLOR_GREEN             , 0x00ff00ff);
+        uniforms.colors.set(COLOR_BLUE              , 0x0000ffff);
+        uniforms.colors.set(COLOR_BLACK             , 0x000000ff);
+    }
 
     void begin_frame()
     {

@@ -8,8 +8,12 @@ $output v_color0, v_texcoord0
 #define u_glyph_texel_size                 u_atlas_info[0].zw
 #define u_glyph_texel_to_screen_size_ratio u_atlas_info[1].xy
 
+#define u_rect_color(i)                    u_atlas_info[ 2 + i] // NOTE : `numel(u_atlas_info) - 4 - 32`.
 #define u_clip_rect(i)                     u_atlas_info[34 + i] // NOTE : `numel(u_atlas_info) - 4`.
 
+// - Atlas info ( 2 x `vec4`).
+// - Colors     (32 x `vec4`).
+// - Clip rects ( 4 x `vec4`).
 uniform vec4 u_atlas_info[38]; // NOTE : Keep in sync with `Uniforms::COUNT`.
 
 // 0 -- 3
@@ -24,20 +28,6 @@ const vec2 offset[] =
     vec2(1, 0)
 };
 
-// TODO : Move to a uniform.
-// NOTE : Colors with zero alpha are for text rendering, the remaining ones are
-//        for filled rectangle rendering (see `text.fs` for exaplanation).
-const vec4 colors[] =
-{
-    vec4(1.00, 1.00, 1.00, 0.00), // COLOR_EDITOR_TEXT
-    vec4(0.67, 0.67, 0.67, 0.00), // COLOR_EDITOR_LINE_NUMBER
-
-    vec4(1.00, 0.00, 0.00, 1.00), // COLOR_RED
-    vec4(0.00, 1.00, 0.00, 1.00), // COLOR_GREEN
-    vec4(0.00, 0.00, 1.00, 1.00), // COLOR_BLUE
-    vec4(0.00, 0.00, 0.00, 1.00)  // COLOR_BLACK,
-};
-
 void main()
 {
     // Decode vertex properties.
@@ -47,7 +37,7 @@ void main()
     const float glyph_index  =     a_position.z * 0.001953125  ; // 1 / 4 / 4 / 32
 
     // Clip vertex position.
-    const vec4 clip          = u_clip_rect(int(clip_index));//vec4(0.0, 0.0, 600.0, 500.0);
+    const vec4 clip          = u_clip_rect(int(clip_index));
     const vec2 position      = clamp(a_position.xy, clip.xy, clip.zw);
     const vec2 position_diff = position - a_position.xy;
     gl_Position              = mul(u_modelViewProj, vec4(position, 0.0, 1.0));
@@ -65,5 +55,5 @@ void main()
     uv += position_diff * u_glyph_texel_to_screen_size_ratio;
 
     v_texcoord0 = uv;
-    v_color0    = colors[int(color_index)];
+    v_color0    = u_rect_color(int(color_index));
 }
