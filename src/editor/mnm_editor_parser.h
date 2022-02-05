@@ -284,6 +284,40 @@ enum struct AstToken : TSSymbol
     ALIAS_SYM_type_identifier                            = 269,
 };
 
+static gui::Color token_color(AstToken token)
+{
+    switch (token)
+    {
+    default:
+        return gui::COLOR_EDITOR_TEXT;
+    };
+}
+
+static void lay_syntax_highlighted_text
+(
+    gui::Context&     ctx,
+    float             x,
+    float             y,
+    const tes::State& text,
+    const TSTree*     tree,
+    uint32_t          start_line,
+    uint32_t          end_line,
+    uint32_t          max_chars
+)
+{
+    for (uint32_t i = start_line; i <= end_line; i++, y += text.line_height)
+    {
+        ctx.text(
+            text.buffer.data + text.lines[i].start,
+            text.buffer.data + text.lines[i].end,
+            max_chars,
+            gui::COLOR_EDITOR_TEXT,
+            x,
+            y
+        );
+    }
+}
+
 static void dump_tree_sitter_node
 (
     const char* source_code,

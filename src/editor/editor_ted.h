@@ -538,20 +538,22 @@ struct TextEditor
 
         float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
 
+        mnm::lay_syntax_highlighted_text(
+            ctx,
+            viewport.x0 + line_number_width,
+            y,
+            state,
+            nullptr,
+            first_line,
+            last_line,
+            max_chars
+        );
+
         for (uint32_t i = first_line; i <= last_line; i++, y += state.line_height)
         {
             bx::snprintf(line_number, sizeof(line_number), line_format, i);
 
             ctx.text(line_number, COLOR_EDITOR_LINE_NUMBER, viewport.x0, y);
-
-            ctx.text(
-                state.buffer.data + state.lines[i].start,
-                state.buffer.data + state.lines[i].end,
-                max_chars,
-                COLOR_EDITOR_TEXT,
-                viewport.x0 + line_number_width,
-                y
-            );
         }
 
         ctx.pop_clip();

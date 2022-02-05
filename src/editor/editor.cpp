@@ -32,10 +32,12 @@
 // -----------------------------------------------------------------------------
 
 #include "mnm_text_editor_state.cpp"
-#include "mnm_editor_parser.h"
 
 #include "editor_font.h" // g_font_*
 #include "editor_gui.h"  // Context
+
+#include "mnm_editor_parser.h"
+
 #include "editor_ted.h"
 #include "editor_tcc.h"
 
