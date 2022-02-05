@@ -8,9 +8,9 @@ $output v_color0, v_texcoord0
 #define u_glyph_texel_size                 u_atlas_info[0].zw
 #define u_glyph_texel_to_screen_size_ratio u_atlas_info[1].xy
 
-#define u_clip_rect(i)                     u_atlas_info[18 + i]
+#define u_clip_rect(i)                     u_atlas_info[34 + i] // NOTE : `numel(u_atlas_info) - 4`.
 
-uniform vec4 u_atlas_info[22]; // NOTE : Size has to be kept in sync with `Uniforms::COUNT`.
+uniform vec4 u_atlas_info[38]; // NOTE : Keep in sync with `Uniforms::COUNT`.
 
 // 0 -- 3
 // | \  |
@@ -41,10 +41,10 @@ const vec4 colors[] =
 void main()
 {
     // Decode vertex properties.
-    const float vertex_index = mod(a_position.z, 4.0);
-    const float clip_index   = mod(a_position.z * 0.25, 4.0);
-    const float color_index  = mod(a_position.z * 0.0625, 16.0);
-    const float glyph_index  = a_position.z * 0.00390625;
+    const float vertex_index = mod(a_position.z         ,  4.0);
+    const float clip_index   = mod(a_position.z * 0.25  ,  4.0);
+    const float color_index  = mod(a_position.z * 0.0625, 32.0);
+    const float glyph_index  =     a_position.z * 0.001953125  ; // 1 / 4 / 4 / 32
 
     // Clip vertex position.
     const vec4 clip          = u_clip_rect(int(clip_index));//vec4(0.0, 0.0, 600.0, 500.0);

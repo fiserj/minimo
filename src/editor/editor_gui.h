@@ -9,7 +9,7 @@ namespace gui
 
 constexpr uint32_t MAX_DRAW_LIST_SIZE     = 4096;
 
-constexpr uint32_t MAX_COLOR_PALETTE_SIZE = 16;
+constexpr uint32_t MAX_COLOR_PALETTE_SIZE = 32;
 
 constexpr uint32_t MAX_CLIP_STACK_SIZE    = 4;
 
