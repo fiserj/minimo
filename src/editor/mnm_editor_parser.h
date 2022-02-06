@@ -9,287 +9,122 @@ extern "C" const TSLanguage *tree_sitter_c(void);
 namespace mnm
 {
 
-// The values are taken from `tree-sitter-c/src/parser.c`. It's unlikely that
-// they would change, but even so, it'd be great to generate this list automatically.
-enum struct AstToken : TSSymbol
+// NOTE : Consult `tree-sitter-c/src/parser.c` for the symbol values
+static bool is_symbol_printable(TSSymbol symbol)
 {
-    SYM_identifier                                       = 1,
-    AUX_SYM_preproc_include_token1                       = 2,
-    ANON_SYM_LF                                          = 3,
-    AUX_SYM_preproc_def_token1                           = 4,
-    ANON_SYM_LPAREN                                      = 5,
-    ANON_SYM_DOT_DOT_DOT                                 = 6,
-    ANON_SYM_COMMA                                       = 7,
-    ANON_SYM_RPAREN                                      = 8,
-    AUX_SYM_preproc_if_token1                            = 9,
-    AUX_SYM_preproc_if_token2                            = 10,
-    AUX_SYM_preproc_ifdef_token1                         = 11,
-    AUX_SYM_preproc_ifdef_token2                         = 12,
-    AUX_SYM_preproc_else_token1                          = 13,
-    AUX_SYM_preproc_elif_token1                          = 14,
-    SYM_preproc_directive                                = 15,
-    SYM_preproc_arg                                      = 16,
-    ANON_SYM_LPAREN2                                     = 17,
-    ANON_SYM_defined                                     = 18,
-    ANON_SYM_BANG                                        = 19,
-    ANON_SYM_TILDE                                       = 20,
-    ANON_SYM_DASH                                        = 21,
-    ANON_SYM_PLUS                                        = 22,
-    ANON_SYM_STAR                                        = 23,
-    ANON_SYM_SLASH                                       = 24,
-    ANON_SYM_PERCENT                                     = 25,
-    ANON_SYM_PIPE_PIPE                                   = 26,
-    ANON_SYM_AMP_AMP                                     = 27,
-    ANON_SYM_PIPE                                        = 28,
-    ANON_SYM_CARET                                       = 29,
-    ANON_SYM_AMP                                         = 30,
-    ANON_SYM_EQ_EQ                                       = 31,
-    ANON_SYM_BANG_EQ                                     = 32,
-    ANON_SYM_GT                                          = 33,
-    ANON_SYM_GT_EQ                                       = 34,
-    ANON_SYM_LT_EQ                                       = 35,
-    ANON_SYM_LT                                          = 36,
-    ANON_SYM_LT_LT                                       = 37,
-    ANON_SYM_GT_GT                                       = 38,
-    ANON_SYM_SEMI                                        = 39,
-    ANON_SYM_typedef                                     = 40,
-    ANON_SYM_extern                                      = 41,
-    ANON_SYM___attribute__                               = 42,
-    ANON_SYM_COLON_COLON                                 = 43,
-    ANON_SYM_LBRACK_LBRACK                               = 44,
-    ANON_SYM_RBRACK_RBRACK                               = 45,
-    ANON_SYM___declspec                                  = 46,
-    ANON_SYM___based                                     = 47,
-    ANON_SYM___cdecl                                     = 48,
-    ANON_SYM___clrcall                                   = 49,
-    ANON_SYM___stdcall                                   = 50,
-    ANON_SYM___fastcall                                  = 51,
-    ANON_SYM___thiscall                                  = 52,
-    ANON_SYM___vectorcall                                = 53,
-    SYM_ms_restrict_modifier                             = 54,
-    SYM_ms_unsigned_ptr_modifier                         = 55,
-    SYM_ms_signed_ptr_modifier                           = 56,
-    ANON_SYM__unaligned                                  = 57,
-    ANON_SYM___unaligned                                 = 58,
-    ANON_SYM_LBRACE                                      = 59,
-    ANON_SYM_RBRACE                                      = 60,
-    ANON_SYM_LBRACK                                      = 61,
-    ANON_SYM_RBRACK                                      = 62,
-    ANON_SYM_EQ                                          = 63,
-    ANON_SYM_static                                      = 64,
-    ANON_SYM_auto                                        = 65,
-    ANON_SYM_register                                    = 66,
-    ANON_SYM_inline                                      = 67,
-    ANON_SYM_const                                       = 68,
-    ANON_SYM_volatile                                    = 69,
-    ANON_SYM_restrict                                    = 70,
-    ANON_SYM__Atomic                                     = 71,
-    ANON_SYM_signed                                      = 72,
-    ANON_SYM_unsigned                                    = 73,
-    ANON_SYM_long                                        = 74,
-    ANON_SYM_short                                       = 75,
-    SYM_primitive_type                                   = 76,
-    ANON_SYM_enum                                        = 77,
-    ANON_SYM_struct                                      = 78,
-    ANON_SYM_union                                       = 79,
-    ANON_SYM_COLON                                       = 80,
-    ANON_SYM_if                                          = 81,
-    ANON_SYM_else                                        = 82,
-    ANON_SYM_switch                                      = 83,
-    ANON_SYM_case                                        = 84,
-    ANON_SYM_default                                     = 85,
-    ANON_SYM_while                                       = 86,
-    ANON_SYM_do                                          = 87,
-    ANON_SYM_for                                         = 88,
-    ANON_SYM_return                                      = 89,
-    ANON_SYM_break                                       = 90,
-    ANON_SYM_continue                                    = 91,
-    ANON_SYM_goto                                        = 92,
-    ANON_SYM_QMARK                                       = 93,
-    ANON_SYM_STAR_EQ                                     = 94,
-    ANON_SYM_SLASH_EQ                                    = 95,
-    ANON_SYM_PERCENT_EQ                                  = 96,
-    ANON_SYM_PLUS_EQ                                     = 97,
-    ANON_SYM_DASH_EQ                                     = 98,
-    ANON_SYM_LT_LT_EQ                                    = 99,
-    ANON_SYM_GT_GT_EQ                                    = 100,
-    ANON_SYM_AMP_EQ                                      = 101,
-    ANON_SYM_CARET_EQ                                    = 102,
-    ANON_SYM_PIPE_EQ                                     = 103,
-    ANON_SYM_DASH_DASH                                   = 104,
-    ANON_SYM_PLUS_PLUS                                   = 105,
-    ANON_SYM_sizeof                                      = 106,
-    ANON_SYM_DOT                                         = 107,
-    ANON_SYM_DASH_GT                                     = 108,
-    SYM_number_literal                                   = 109,
-    ANON_SYM_L_SQUOTE                                    = 110,
-    ANON_SYM_u_SQUOTE                                    = 111,
-    ANON_SYM_U_SQUOTE                                    = 112,
-    ANON_SYM_u8_SQUOTE                                   = 113,
-    ANON_SYM_SQUOTE                                      = 114,
-    AUX_SYM_char_literal_token1                          = 115,
-    ANON_SYM_L_DQUOTE                                    = 116,
-    ANON_SYM_u_DQUOTE                                    = 117,
-    ANON_SYM_U_DQUOTE                                    = 118,
-    ANON_SYM_u8_DQUOTE                                   = 119,
-    ANON_SYM_DQUOTE                                      = 120,
-    AUX_SYM_string_literal_token1                        = 121,
-    SYM_escape_sequence                                  = 122,
-    SYM_system_lib_string                                = 123,
-    SYM_true                                             = 124,
-    SYM_false                                            = 125,
-    SYM_null                                             = 126,
-    SYM_comment                                          = 127,
-    SYM_translation_unit                                 = 128,
-    SYM_preproc_include                                  = 129,
-    SYM_preproc_def                                      = 130,
-    SYM_preproc_function_def                             = 131,
-    SYM_preproc_params                                   = 132,
-    SYM_preproc_call                                     = 133,
-    SYM_preproc_if                                       = 134,
-    SYM_preproc_ifdef                                    = 135,
-    SYM_preproc_else                                     = 136,
-    SYM_preproc_elif                                     = 137,
-    SYM_preproc_if_in_field_declaration_list             = 138,
-    SYM_preproc_ifdef_in_field_declaration_list          = 139,
-    SYM_preproc_else_in_field_declaration_list           = 140,
-    SYM_preproc_elif_in_field_declaration_list           = 141,
-    SYM__preproc_expression                              = 142,
-    SYM_preproc_parenthesized_expression                 = 143,
-    SYM_preproc_defined                                  = 144,
-    SYM_preproc_unary_expression                         = 145,
-    SYM_preproc_call_expression                          = 146,
-    SYM_preproc_argument_list                            = 147,
-    SYM_preproc_binary_expression                        = 148,
-    SYM_function_definition                              = 149,
-    SYM_declaration                                      = 150,
-    SYM_type_definition                                  = 151,
-    SYM__declaration_modifiers                           = 152,
-    SYM__declaration_specifiers                          = 153,
-    SYM_linkage_specification                            = 154,
-    SYM_attribute_specifier                              = 155,
-    SYM_attribute                                        = 156,
-    SYM_attribute_declaration                            = 157,
-    SYM_ms_declspec_modifier                             = 158,
-    SYM_ms_based_modifier                                = 159,
-    SYM_ms_call_modifier                                 = 160,
-    SYM_ms_unaligned_ptr_modifier                        = 161,
-    SYM_ms_pointer_modifier                              = 162,
-    SYM_declaration_list                                 = 163,
-    SYM__declarator                                      = 164,
-    SYM__field_declarator                                = 165,
-    SYM__type_declarator                                 = 166,
-    SYM__abstract_declarator                             = 167,
-    SYM_parenthesized_declarator                         = 168,
-    SYM_parenthesized_field_declarator                   = 169,
-    SYM_parenthesized_type_declarator                    = 170,
-    SYM_abstract_parenthesized_declarator                = 171,
-    SYM_attributed_declarator                            = 172,
-    SYM_attributed_field_declarator                      = 173,
-    SYM_attributed_type_declarator                       = 174,
-    SYM_pointer_declarator                               = 175,
-    SYM_pointer_field_declarator                         = 176,
-    SYM_pointer_type_declarator                          = 177,
-    SYM_abstract_pointer_declarator                      = 178,
-    SYM_function_declarator                              = 179,
-    SYM_function_field_declarator                        = 180,
-    SYM_function_type_declarator                         = 181,
-    SYM_abstract_function_declarator                     = 182,
-    SYM_array_declarator                                 = 183,
-    SYM_array_field_declarator                           = 184,
-    SYM_array_type_declarator                            = 185,
-    SYM_abstract_array_declarator                        = 186,
-    SYM_init_declarator                                  = 187,
-    SYM_compound_statement                               = 188,
-    SYM_storage_class_specifier                          = 189,
-    SYM_type_qualifier                                   = 190,
-    SYM__type_specifier                                  = 191,
-    SYM_sized_type_specifier                             = 192,
-    SYM_enum_specifier                                   = 193,
-    SYM_enumerator_list                                  = 194,
-    SYM_struct_specifier                                 = 195,
-    SYM_union_specifier                                  = 196,
-    SYM_field_declaration_list                           = 197,
-    SYM__field_declaration_list_item                     = 198,
-    SYM_field_declaration                                = 199,
-    SYM_bitfield_clause                                  = 200,
-    SYM_enumerator                                       = 201,
-    SYM_variadic_parameter                               = 202,
-    SYM_parameter_list                                   = 203,
-    SYM_parameter_declaration                            = 204,
-    SYM_attributed_statement                             = 205,
-    SYM_attributed_non_case_statement                    = 206,
-    SYM_labeled_statement                                = 207,
-    SYM_expression_statement                             = 208,
-    SYM_if_statement                                     = 209,
-    SYM_switch_statement                                 = 210,
-    SYM_case_statement                                   = 211,
-    SYM_while_statement                                  = 212,
-    SYM_do_statement                                     = 213,
-    SYM_for_statement                                    = 214,
-    SYM_return_statement                                 = 215,
-    SYM_break_statement                                  = 216,
-    SYM_continue_statement                               = 217,
-    SYM_goto_statement                                   = 218,
-    SYM__expression                                      = 219,
-    SYM_comma_expression                                 = 220,
-    SYM_conditional_expression                           = 221,
-    SYM_assignment_expression                            = 222,
-    SYM_pointer_expression                               = 223,
-    SYM_unary_expression                                 = 224,
-    SYM_binary_expression                                = 225,
-    SYM_update_expression                                = 226,
-    SYM_cast_expression                                  = 227,
-    SYM_type_descriptor                                  = 228,
-    SYM_sizeof_expression                                = 229,
-    SYM_subscript_expression                             = 230,
-    SYM_call_expression                                  = 231,
-    SYM_argument_list                                    = 232,
-    SYM_field_expression                                 = 233,
-    SYM_compound_literal_expression                      = 234,
-    SYM_parenthesized_expression                         = 235,
-    SYM_initializer_list                                 = 236,
-    SYM_initializer_pair                                 = 237,
-    SYM_subscript_designator                             = 238,
-    SYM_field_designator                                 = 239,
-    SYM_char_literal                                     = 240,
-    SYM_concatenated_string                              = 241,
-    SYM_string_literal                                   = 242,
-    SYM__empty_declaration                               = 243,
-    SYM_macro_type_specifier                             = 244,
-    AUX_SYM_translation_unit_repeat1                     = 245,
-    AUX_SYM_preproc_params_repeat1                       = 246,
-    AUX_SYM_preproc_if_in_field_declaration_list_repeat1 = 247,
-    AUX_SYM_preproc_argument_list_repeat1                = 248,
-    AUX_SYM_declaration_repeat1                          = 249,
-    AUX_SYM_type_definition_repeat1                      = 250,
-    AUX_SYM_type_definition_repeat2                      = 251,
-    AUX_SYM__declaration_specifiers_repeat1              = 252,
-    AUX_SYM_attribute_declaration_repeat1                = 253,
-    AUX_SYM_attributed_declarator_repeat1                = 254,
-    AUX_SYM_pointer_declarator_repeat1                   = 255,
-    AUX_SYM_function_declarator_repeat1                  = 256,
-    AUX_SYM_sized_type_specifier_repeat1                 = 257,
-    AUX_SYM_enumerator_list_repeat1                      = 258,
-    AUX_SYM_field_declaration_repeat1                    = 259,
-    AUX_SYM_parameter_list_repeat1                       = 260,
-    AUX_SYM_case_statement_repeat1                       = 261,
-    AUX_SYM_argument_list_repeat1                        = 262,
-    AUX_SYM_initializer_list_repeat1                     = 263,
-    AUX_SYM_initializer_pair_repeat1                     = 264,
-    AUX_SYM_concatenated_string_repeat1                  = 265,
-    AUX_SYM_string_literal_repeat1                       = 266,
-    ALIAS_SYM_field_identifier                           = 267,
-    ALIAS_SYM_statement_identifier                       = 268,
-    ALIAS_SYM_type_identifier                            = 269,
-};
-
-static gui::Color token_color(AstToken token)
-{
-    switch (token)
+    switch (symbol)
     {
+    case   1: // sym_identifier
+    case   2: // aux_sym_preproc_include_token1
+    case   4: // aux_sym_preproc_def_token1
+    case   5: // anon_sym_LPAREN
+    case   6: // anon_sym_DOT_DOT_DOT
+    case   7: // anon_sym_COMMA
+    case   8: // anon_sym_RPAREN
+    case   9: // aux_sym_preproc_if_token1
+    case  10: // aux_sym_preproc_if_token2
+    case  11: // aux_sym_preproc_ifdef_token1
+    case  12: // aux_sym_preproc_ifdef_token2
+    case  13: // aux_sym_preproc_else_token1
+    case  14: // aux_sym_preproc_elif_token1
+    case  15: // sym_preproc_directive
+    case  16: // sym_preproc_arg
+    case  17: // anon_sym_LPAREN2
+    case  18: // anon_sym_defined
+    case  19: // anon_sym_BANG
+    case  20: // anon_sym_TILDE
+    case  21: // anon_sym_DASH
+    case  22: // anon_sym_PLUS
+    case  23: // anon_sym_STAR
+    case  24: // anon_sym_SLASH
+    case  25: // anon_sym_PERCENT
+    case  26: // anon_sym_PIPE_PIPE
+    case  27: // anon_sym_AMP_AMP
+    case  28: // anon_sym_PIPE
+    case  29: // anon_sym_CARET
+    case  30: // anon_sym_AMP
+    case  31: // anon_sym_EQ_EQ
+    case  32: // anon_sym_BANG_EQ
+    case  33: // anon_sym_GT
+    case  34: // anon_sym_GT_EQ
+    case  35: // anon_sym_LT_EQ
+    case  36: // anon_sym_LT
+    case  37: // anon_sym_LT_LT
+    case  38: // anon_sym_GT_GT
+    case  39: // anon_sym_SEMI
+    case  40: // anon_sym_typedef
+    case  41: // anon_sym_extern
+    case  59: // anon_sym_LBRACE
+    case  60: // anon_sym_RBRACE
+    case  61: // anon_sym_LBRACK
+    case  62: // anon_sym_RBRACK
+    case  63: // anon_sym_EQ
+    case  64: // anon_sym_static
+    case  65: // anon_sym_auto
+    case  66: // anon_sym_register
+    case  67: // anon_sym_inline
+    case  68: // anon_sym_const
+    case  69: // anon_sym_volatile
+    case  70: // anon_sym_restrict
+    case  71: // anon_sym__Atomic
+    case  72: // anon_sym_signed
+    case  73: // anon_sym_unsigned
+    case  74: // anon_sym_long
+    case  75: // anon_sym_short
+    case  76: // sym_primitive_type
+    case  77: // anon_sym_enum
+    case  78: // anon_sym_struct
+    case  79: // anon_sym_union
+    case  80: // anon_sym_COLON
+    case  81: // anon_sym_if
+    case  82: // anon_sym_else
+    case  83: // anon_sym_switch
+    case  84: // anon_sym_case
+    case  85: // anon_sym_default
+    case  86: // anon_sym_while
+    case  87: // anon_sym_do
+    case  88: // anon_sym_for
+    case  89: // anon_sym_return
+    case  90: // anon_sym_break
+    case  91: // anon_sym_continue
+    case  92: // anon_sym_goto
+    case  93: // anon_sym_QMARK
+    case  94: // anon_sym_STAR_EQ
+    case  95: // anon_sym_SLASH_EQ
+    case  96: // anon_sym_PERCENT_EQ
+    case  97: // anon_sym_PLUS_EQ
+    case  98: // anon_sym_DASH_EQ
+    case  99: // anon_sym_LT_LT_EQ
+    case 100: // anon_sym_GT_GT_EQ
+    case 101: // anon_sym_AMP_EQ
+    case 102: // anon_sym_CARET_EQ
+    case 103: // anon_sym_PIPE_EQ
+    case 104: // anon_sym_DASH_DASH
+    case 105: // anon_sym_PLUS_PLUS
+    case 106: // anon_sym_sizeof
+    case 107: // anon_sym_DOT
+    case 108: // anon_sym_DASH_GT
+    case 109: // sym_number_literal
+    case 123: // sym_system_lib_string
+    case 124: // sym_true
+    case 125: // sym_false
+    case 126: // sym_null
+    case 127: // sym_comment
+    case 242: // sym_string_literal
+        return true;
+
+    case   3: // anon_sym_LF
+    case 129: // sym_preproc_include
+    case 130: // sym_preproc_def
+    case 150: // sym_declaration
+    case 179: // sym_function_declarator 
+    case 189: // sym_storage_class_specifier
+    case 203: // sym_parameter_list
+        return false;
+
     default:
-        return gui::COLOR_EDITOR_TEXT;
+        ASSERT(false && "WIP : Map out the tokens that should not be printed");
+        return false;
     };
 }
 
@@ -312,17 +147,15 @@ static void lay_syntax_highlighted_text
 
     for (;;)
     {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
+        const TSNode node = ts_tree_cursor_current_node(&cursor);
 
         if (ts_node_start_byte(node) >= text.lines[end_line].end)
         {
             break;
         }
 
-        // Process node.
-        // TODO : Instead of checking node count, we should explicitly list
-        //        which nodes' strings should be displayed.
-        if (0 == ts_node_child_count(node))
+        // NOTE : If symbol is printable, we stop descending.
+        if (is_symbol_printable(ts_node_symbol(node)))
         {
             const TSPoint point = ts_node_start_point(node);
             // ASSERT(point.column <= max_chars);
@@ -336,9 +169,12 @@ static void lay_syntax_highlighted_text
                 y + (point.row - start_line) * text.line_height
             );
         }
+        else if (ts_tree_cursor_goto_first_child (&cursor))
+        {
+            continue;
+        }
 
-        if (ts_tree_cursor_goto_first_child (&cursor) ||
-            ts_tree_cursor_goto_next_sibling(&cursor))
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
         {
             continue;
         }
