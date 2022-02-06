@@ -204,6 +204,9 @@ struct TextEditor
         OVERLAY,
     };
 
+    TSParser*           parser           = nullptr;
+    TSTree*             tree             = nullptr; // TODO : This has to be updated and cleared!
+    TSTreeCursor        tree_cursor      = {};
     mnm::tes::State     state;
     mnm::tes::Clipboard clipboard;
     KeyBinding          bindings[Command::COUNT];
@@ -215,8 +218,22 @@ struct TextEditor
     DisplayMode         display_mode     = DisplayMode::RIGHT;
     bool                viewport_clicked = false;
 
+    TextEditor(const TextEditor&) = delete;
+
+    TextEditor& operator=(const TextEditor&) = delete;
+
+    ~TextEditor()
+    {
+        ts_tree_cursor_delete(&tree_cursor);
+        ts_tree_delete(tree);
+        ts_parser_delete(parser);
+    }
+
     TextEditor()
     {
+        parser = ts_parser_new();
+        ts_parser_set_language(parser, tree_sitter_c());
+
 #if BX_PLATFORM_OSX
         constexpr char PLATFORM_MOD = Modifier::SUPER;
 #else
@@ -288,6 +305,13 @@ struct TextEditor
         state.paste(string);
         state.cursors[0] = {};
         state.action(mnm::tes::Action::CLEAR_HISTORY);
+
+        tree = ts_parser_parse_string(
+            parser,
+            tree,
+            state.buffer.data,
+            state.buffer.size - 1
+        );
     }
 
     void update(gui::Context& ctx, uint8_t id)
@@ -538,12 +562,21 @@ struct TextEditor
 
         float y = round_to_pixel(viewport.y0 - bx::fract(scroll_offset) * state.line_height, dpi);
 
+        if (tree_cursor.tree)
+        {
+            ts_tree_cursor_reset(&tree_cursor, ts_tree_root_node(tree));
+        }
+        else
+        {
+            tree_cursor = ts_tree_cursor_new(ts_tree_root_node(tree));
+        }
+
         mnm::lay_syntax_highlighted_text(
             ctx,
             viewport.x0 + line_number_width,
             y,
             state,
-            nullptr,
+            tree_cursor,
             first_line,
             last_line,
             max_chars

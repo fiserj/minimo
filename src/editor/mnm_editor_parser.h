@@ -299,22 +299,61 @@ static void lay_syntax_highlighted_text
     float             x,
     float             y,
     const tes::State& text,
-    const TSTree*     tree,
+    TSTreeCursor&     cursor,
     uint32_t          start_line,
     uint32_t          end_line,
     uint32_t          max_chars
 )
 {
-    for (uint32_t i = start_line; i <= end_line; i++, y += text.line_height)
+    if (-1 == ts_tree_cursor_goto_first_child_for_byte(&cursor, text.lines[start_line].start))
     {
-        ctx.text(
-            text.buffer.data + text.lines[i].start,
-            text.buffer.data + text.lines[i].end,
-            max_chars,
-            gui::COLOR_EDITOR_TEXT,
-            x,
-            y
-        );
+        return;
+    }
+
+    for (;;)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+
+        if (ts_node_start_byte(node) >= text.lines[end_line].end)
+        {
+            break;
+        }
+
+        // Process node.
+        // TODO : Instead of checking node count, we should explicitly list
+        //        which nodes' strings should be displayed.
+        if (0 == ts_node_child_count(node))
+        {
+            const TSPoint point = ts_node_start_point(node);
+            // ASSERT(point.column <= max_chars);
+
+            ctx.text(
+                text.buffer.data + ts_node_start_byte(node),
+                text.buffer.data + ts_node_end_byte(node),
+                max_chars,// - point.column,
+                gui::COLOR_EDITOR_TEXT,
+                x + point.column * text.char_width,
+                y + (point.row - start_line) * text.line_height
+            );
+        }
+
+        if (ts_tree_cursor_goto_first_child (&cursor) ||
+            ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        retrace:
+
+        if (!ts_tree_cursor_goto_parent(&cursor))
+        {
+            break;
+        }
+
+        if (!ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            goto retrace;
+        }
     }
 }
 
