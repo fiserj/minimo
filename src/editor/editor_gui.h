@@ -795,7 +795,7 @@ struct Context
 
             uint32_t codepoint;
 
-            while ((codepoint = mnm::utf8_next_codepoint(start)) && start != end && max_chars--)
+            while (start != end && max_chars-- && (codepoint = mnm::utf8_next_codepoint(start)))
             {
                 draw_list.add_glyph(glyph_cache.codepoint_index(codepoint));
             }
