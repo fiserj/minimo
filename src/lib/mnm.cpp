@@ -322,6 +322,19 @@ static inline void push_back(Vector<u8>& buffer, const T& value)
     push_back<sizeof(T)>(buffer, &value);
 }
 
+static inline void push_back(DynamicArray<u8>& buffer, const void* data, u32 size)
+{
+    buffer.resize(buffer.size + size);
+
+    (void)memcpy(buffer.data + buffer.size - size, data, size);
+}
+
+template <typename T>
+static inline void push_back(DynamicArray<u8>& buffer, const T& value)
+{
+    push_back<sizeof(T)>(buffer, &value);
+}
+
 template <typename HandleT>
 inline void destroy_if_valid(HandleT& handle)
 {
@@ -1503,12 +1516,11 @@ const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
 // INSTANCE RECORDING
 // -----------------------------------------------------------------------------
 
-class InstanceRecorder
+struct InstanceRecorder
 {
-public:
-    void begin(u16 id, u16 type)
+    void begin(u16 id_, u16 type)
     {
-        ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
+        ASSERT(!is_recording() || (id_ == UINT16_MAX && type == UINT16_MAX));
 
         constexpr u16 type_sizes[] =
         {
@@ -1522,11 +1534,11 @@ public:
             112,          // INSTANCE_DATA_112
         };
 
-        m_id            = id;
-        m_instance_size = type_sizes[std::max<size_t>(type, BX_COUNTOF(type_sizes) - 1)];
-        m_is_transform  = type == INSTANCE_TRANSFORM;
+        id            = id_;
+        instance_size = type_sizes[std::max<size_t>(type, BX_COUNTOF(type_sizes) - 1)];
+        is_transform  = type == INSTANCE_TRANSFORM;
 
-        m_buffer.clear();
+        buffer.clear();
     }
 
     inline void end()
@@ -1541,34 +1553,23 @@ public:
         ASSERT(data);
         ASSERT(is_recording());
 
-        push_back(m_buffer, data, m_instance_size);
-    }
-
-    inline const Vector<u8>& buffer() const
-    {
-        ASSERT(is_recording());
-
-        return m_buffer;
+        push_back(buffer, data, instance_size);
     }
 
     inline u32 instance_count() const
     {
-        return u32(m_buffer.size() / m_instance_size);
+        return u32(buffer.size / instance_size);
     }
 
-    inline bool is_recording() const { return m_id != UINT16_MAX; }
+    inline bool is_recording() const
+    {
+        return id != UINT16_MAX;
+    }
 
-    inline u16 id() const { return m_id; }
-
-    inline u16 instance_size() const { return m_instance_size; }
-
-    inline bool is_transform() const { return m_is_transform; }
-
-private:
-    Vector<u8> m_buffer;
-    u16        m_id            = UINT16_MAX;
-    u16        m_instance_size = 0;
-    bool            m_is_transform  = false;
+    DynamicArray<u8> buffer;
+    u16              id            = UINT16_MAX;
+    u16              instance_size = 0;
+    bool             is_transform  = false;
 };
 
 
@@ -1991,12 +1992,12 @@ class InstanceCache
 public:
     bool add_buffer(const InstanceRecorder& recorder)
     {
-        ASSERT(recorder.id() < m_data.size());
+        ASSERT(recorder.id < m_data.size());
 
         MutexScope lock(m_mutex);
 
         const u32 count     = recorder.instance_count();
-        const u16 stride    = recorder.instance_size ();
+        const u16 stride    = recorder.instance_size;
         const u32 available = bgfx::getAvailInstanceDataBuffer(count, stride);
 
         if (available < count)
@@ -2005,10 +2006,10 @@ public:
             return false;
         }
 
-        InstanceData &data = m_data[recorder.id()];
-        data.is_transform = recorder.is_transform();
+        InstanceData &data = m_data[recorder.id];
+        data.is_transform = recorder.is_transform;
         bgfx::allocInstanceDataBuffer(&data.buffer, count, stride);
-        (void)memcpy(data.buffer.data, recorder.buffer().data(), recorder.buffer().size());
+        (void)memcpy(data.buffer.data, recorder.buffer.data, recorder.buffer.size);
 
         return true;
     }
@@ -5216,9 +5217,9 @@ void instance(const void* data)
     using namespace mnm;
 
     ASSERT(t_ctx->instance_recorder.is_recording());
-    ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform()));
+    ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform));
 
-    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform() ? &t_ctx->matrix_stack.top() : data);
+    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform ? &t_ctx->matrix_stack.top() : data);
 }
 
 void instances(int id)
