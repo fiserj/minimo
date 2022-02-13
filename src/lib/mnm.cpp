@@ -101,6 +101,8 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include <mnm_shaders.h>          // *_fs, *_vs
 
+#include "common.h"
+
 namespace mnm
 {
 
@@ -109,85 +111,59 @@ namespace mnm
 // CONSTANTS
 // -----------------------------------------------------------------------------
 
-constexpr uint16_t MIN_WINDOW_SIZE       = 240;
+constexpr i32 DEFAULT_WINDOW_HEIGHT = 600;
+constexpr i32 DEFAULT_WINDOW_WIDTH  = 800;
+constexpr i32 MIN_WINDOW_SIZE       = 240;
 
-constexpr uint16_t DEFAULT_WINDOW_WIDTH  = 800;
+constexpr u32 ATLAS_FREE            = 0x08000;
+constexpr u32 ATLAS_MONOSPACED      = 0x00002;
+constexpr u32 MESH_INVALID          = 0x00006;
+constexpr u32 VERTEX_POSITION       = 0x00000;
 
-constexpr uint16_t DEFAULT_WINDOW_HEIGHT = 600;
+// These have to be cross-checked against regular mesh flags (see later).
+constexpr u32 INSTANCING_SUPPORTED  = 0x10000;
+constexpr u32 SAMPLER_COLOR_R       = 0x20000;
+constexpr u32 TEXT_MESH             = 0x40000;
+constexpr u32 VERTEX_PIXCOORD       = 0x80000;
 
-enum
-{
-                   ATLAS_FREE            = 0x08000,
-
-                   ATLAS_MONOSPACED      = 0x00002,
-
-                   INSTANCING_SUPPORTED  = 0x10000, // Needs to make sure it's outside regular mesh flags.
-
-                   MESH_INVALID          = 0x00006,
-
-                   SAMPLER_COLOR_R       = 0x20000, // Needs to make sure it's outside regular mesh flags.
-
-                   TEXT_MESH             = 0x40000, // Needs to make sure it's outside regular mesh flags.
-
-                   VERTEX_PIXCOORD       = 0x80000, // Needs to make sure it's outside regular mesh flags.
-
-                   VERTEX_POSITION       = 0x00000,
-};
 
 // -----------------------------------------------------------------------------
 // FLAG MASKS AND SHIFTS
 // -----------------------------------------------------------------------------
 
-constexpr uint16_t MESH_TYPE_MASK         = MESH_STATIC | MESH_TRANSIENT | MESH_DYNAMIC | MESH_INVALID;
+constexpr u16 MESH_TYPE_MASK         = MESH_STATIC | MESH_TRANSIENT | MESH_DYNAMIC | MESH_INVALID;
+constexpr u16 MESH_TYPE_SHIFT        = 1;
 
-constexpr uint16_t MESH_TYPE_SHIFT        = 1;
+constexpr u16 PRIMITIVE_TYPE_MASK    = PRIMITIVE_TRIANGLES | PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP |
+                                       PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
+constexpr u16 PRIMITIVE_TYPE_SHIFT   = 4;
 
-constexpr uint16_t PRIMITIVE_TYPE_MASK    = PRIMITIVE_TRIANGLES | PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP |
-                                            PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
+constexpr u16 TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CENTER | TEXT_H_ALIGN_RIGHT;
+constexpr u16 TEXT_H_ALIGN_SHIFT     = 4;
+constexpr u16 TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
+constexpr u16 TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
+constexpr u16 TEXT_V_ALIGN_SHIFT     = 7;
+constexpr u16 TEXT_Y_AXIS_MASK       = TEXT_Y_AXIS_UP | TEXT_Y_AXIS_DOWN;
+constexpr u16 TEXT_Y_AXIS_SHIFT      = 10;
 
-constexpr uint16_t PRIMITIVE_TYPE_SHIFT   = 4;
+constexpr u16 TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
+constexpr u16 TEXTURE_BORDER_SHIFT   = 1;
+constexpr u16 TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
+constexpr u16 TEXTURE_FORMAT_SHIFT   = 3;
+constexpr u16 TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
+constexpr u16 TEXTURE_SAMPLING_SHIFT = 0;
+constexpr u16 TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
+constexpr u16 TEXTURE_TARGET_SHIFT   = 6;
 
-constexpr uint16_t TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CENTER | TEXT_H_ALIGN_RIGHT;
+constexpr u16 VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
+constexpr u16 VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
-constexpr uint16_t TEXT_H_ALIGN_SHIFT     = 4;
-
-constexpr uint16_t TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
-
-constexpr uint16_t TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
-
-constexpr uint16_t TEXT_V_ALIGN_SHIFT     = 7;
-
-constexpr uint16_t TEXT_Y_AXIS_MASK       = TEXT_Y_AXIS_UP | TEXT_Y_AXIS_DOWN;
-
-constexpr uint16_t TEXT_Y_AXIS_SHIFT      = 10;
-
-constexpr uint16_t TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
-
-constexpr uint16_t TEXTURE_BORDER_SHIFT   = 1;
-
-constexpr uint16_t TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
-
-constexpr uint16_t TEXTURE_FORMAT_SHIFT   = 3;
-
-constexpr uint16_t TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
-
-constexpr uint16_t TEXTURE_SAMPLING_SHIFT = 0;
-
-constexpr uint16_t TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
-
-constexpr uint16_t TEXTURE_TARGET_SHIFT   = 6;
-
-constexpr uint16_t VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
-
-constexpr uint16_t VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
-
-constexpr uint32_t USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 |
-                                            OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY;
-
-constexpr uint32_t INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
+constexpr u32 USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 |
+                                       OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY;
+constexpr u32 INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
 
 static_assert(
-    0 == (USER_MESH_FLAGS & INTERNAL_MESH_FLAGS),
+    0 == (INTERNAL_MESH_FLAGS & USER_MESH_FLAGS),
     "Internal mesh flags interfere with the user-exposed ones."
 );
 
@@ -195,39 +171,6 @@ static_assert(
     bx::isPowerOf2(PRIMITIVE_QUADS),
     "`PRIMITIVE_QUADS` must be power of two."
 );
-
-
-// -----------------------------------------------------------------------------
-// RESOURCE LIMITS
-// -----------------------------------------------------------------------------
-
-constexpr uint32_t MAX_FONTS             = 128;
-
-constexpr uint32_t MAX_FRAMEBUFFERS      = 128;
-
-constexpr uint32_t MAX_INSTANCE_BUFFERS  = 16;
-
-constexpr uint32_t MAX_MESHES            = 4096;
-
-constexpr uint32_t MAX_PASSES            = 64;
-
-constexpr uint32_t MAX_PROGRAMS          = 128;
-
-constexpr uint32_t MAX_TASKS             = 64;
-
-constexpr uint32_t MAX_TEXTURES          = 1024;
-
-constexpr uint32_t MAX_TEXTURE_ATLASES   = 32;
-
-constexpr uint32_t MAX_UNIFORMS          = 256;
-
-
-// -----------------------------------------------------------------------------
-// UTILITY MACROS
-// -----------------------------------------------------------------------------
-
-// TODO : Better assert.
-#define ASSERT(cond) assert(cond)
 
 
 // -----------------------------------------------------------------------------
@@ -257,6 +200,39 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
+
+
+// -----------------------------------------------------------------------------
+// DEFERRED EXECUTION
+// -----------------------------------------------------------------------------
+
+template <typename Func>
+struct Deferred
+{
+    Func func;
+
+    Deferred(const Deferred&) = delete;
+
+    Deferred& operator=(const Deferred&) = delete;
+
+    Deferred(Func&& func) : func(static_cast<Func&&>(func))
+    {
+    }
+
+    ~Deferred()
+    {
+        func();
+    }
+};
+
+template <typename Func>
+Deferred<Func> make_deferred(Func&& func)
+{
+    return Deferred<Func>(static_cast<decltype(func)>(func));
+}
+
+#define defer(...) auto BX_CONCATENATE(deferred_ , __LINE__) = \
+    make_deferred([&]() mutable { __VA_ARGS__; })
 
 
 // -----------------------------------------------------------------------------
