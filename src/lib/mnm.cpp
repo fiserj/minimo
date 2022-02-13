@@ -1974,17 +1974,19 @@ struct InstanceData
 {
     bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
     bool                     is_transform = false;
-    u8                  _pad[7];
+    u8                       _pad[7];
 };
 
-class InstanceCache
+struct InstanceCache
 {
-public:
+    Mutex                                     mutex;
+    Array<InstanceData, MAX_INSTANCE_BUFFERS> data;
+
     bool add_buffer(const InstanceRecorder& recorder)
     {
-        ASSERT(recorder.id < m_data.size());
+        ASSERT(recorder.id < data.size());
 
-        MutexScope lock(m_mutex);
+        MutexScope lock(mutex);
 
         const u32 count     = recorder.instance_count();
         const u16 stride    = recorder.instance_size;
@@ -1996,22 +1998,18 @@ public:
             return false;
         }
 
-        InstanceData &data = m_data[recorder.id];
-        data.is_transform = recorder.is_transform;
-        bgfx::allocInstanceDataBuffer(&data.buffer, count, stride);
-        (void)memcpy(data.buffer.data, recorder.buffer.data, recorder.buffer.size);
+        InstanceData &instance_data = data[recorder.id];
+        instance_data.is_transform = recorder.is_transform;
+        bgfx::allocInstanceDataBuffer(&instance_data.buffer, count, stride);
+        (void)memcpy(instance_data.buffer.data, recorder.buffer.data, recorder.buffer.size);
 
         return true;
     }
 
     inline const InstanceData& operator[](u16 id) const
     {
-        return m_data[id];
+        return data[id];
     }
-
-private:
-    Mutex                                     m_mutex;
-    Array<InstanceData, MAX_INSTANCE_BUFFERS> m_data;
 };
 
 
