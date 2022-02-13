@@ -3578,38 +3578,31 @@ private:
 // TIME MEASUREMENT
 // -----------------------------------------------------------------------------
 
-class Timer 
+struct Timer 
 {
-public:
+    i64 counter = 0;
+    f64 elapsed = 0;
+    f64 frequency = f64(bx::getHPFrequency());
+
     inline void tic()
     {
-        m_counter = bx::getHPCounter();
+        counter = bx::getHPCounter();
     }
 
-    double toc(bool restart = false)
+    f64 toc(bool restart = false)
     {
-        const int64_t now = bx::getHPCounter();
+        const i64 now = bx::getHPCounter();
 
-        m_elapsed = (now - m_counter) / ms_frequency;
+        elapsed = (now - counter) / frequency;
 
         if (restart)
         {
-            m_counter = now;
+            counter = now;
         }
 
-        return m_elapsed;
+        return elapsed;
     }
-
-    inline double elapsed() const { return m_elapsed; }
-
-private:
-    int64_t             m_counter = 0;
-    double              m_elapsed = 0.0;
-
-    static const double ms_frequency;
 };
-
-const double Timer::ms_frequency = static_cast<double>(bx::getHPFrequency());
 
 
 // -----------------------------------------------------------------------------
@@ -4517,7 +4510,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, static_cast<float>(g_ctx.total_time.elapsed()));
+                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, static_cast<float>(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_KEY_REPEATED:
@@ -4529,7 +4522,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 break;
 
             case GLEQ_BUTTON_PRESSED:
-                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, static_cast<float>(g_ctx.total_time.elapsed()));
+                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, static_cast<float>(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_BUTTON_RELEASED:
@@ -4839,7 +4832,7 @@ int mouse_clicked(int button)
 
 float mouse_held_time(int button)
 {
-    return mnm::g_ctx.mouse.held_time(button, static_cast<float>(mnm::g_ctx.total_time.elapsed()));
+    return mnm::g_ctx.mouse.held_time(button, static_cast<float>(mnm::g_ctx.total_time.elapsed));
 }
 
 float scroll_x(void)
@@ -4874,7 +4867,7 @@ int key_up(int key)
 
 float key_held_time(int key)
 {
-    return mnm::g_ctx.keyboard.held_time(key, static_cast<float>(mnm::g_ctx.total_time.elapsed()));
+    return mnm::g_ctx.keyboard.held_time(key, static_cast<float>(mnm::g_ctx.total_time.elapsed));
 }
 
 unsigned int codepoint(void)
@@ -4900,12 +4893,12 @@ unsigned int codepoint(void)
 
 double elapsed(void)
 {
-    return mnm::g_ctx.total_time.elapsed();
+    return mnm::g_ctx.total_time.elapsed;
 }
 
 double dt(void)
 {
-    return mnm::g_ctx.frame_time.elapsed();
+    return mnm::g_ctx.frame_time.elapsed;
 }
 
 void sleep_for(double seconds)
