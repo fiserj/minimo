@@ -3611,73 +3611,53 @@ struct Timer
 
 struct Window
 {
-    GLFWwindow* handle                  = nullptr;
-
-    int         framebuffer_width       = 0;
-    int         framebuffer_height      = 0;
-
-    float       dpi_invariant_width     = 0.0f;
-    float       dpi_invariant_height    = 0.0f;
-
-    float       position_scale_x        = 0.0f;
-    float       position_scale_y        = 0.0f;
-
-    float       display_scale_x         = 0.0f;
-    float       display_scale_y         = 0.0f;
-    bool        display_scale_x_changed = false;
+    GLFWwindow* handle                = nullptr;
+    i32         framebuffer_size[2]   = {};
+    f32         invariant_size[2]     = {};
+    f32         position_scale[2]     = {};
+    f32         display_scale[2]      = {};
+    f32         display_aspect        = 0.0f;
+    bool        display_scale_changed = false;
 
     void update_size_info()
     {
         ASSERT(handle);
 
-        int         window_width         = 0;
-        int         window_height        = 0;
-        const float prev_display_scale_x = display_scale_x;
+        i32 window_size[2];
+        glfwGetWindowSize(handle, &window_size[0], &window_size[1]);
 
-        glfwGetWindowSize        (handle, &window_width     , &window_height     );
-        glfwGetFramebufferSize   (handle, &framebuffer_width, &framebuffer_height);
-        glfwGetWindowContentScale(handle, &display_scale_x  , &display_scale_y   );
+        glfwGetFramebufferSize(handle, &framebuffer_size[0], &framebuffer_size[1]);
+        display_aspect = f32(framebuffer_size[0]) / framebuffer_size[1];
 
-        display_scale_x_changed = display_scale_x != prev_display_scale_x;
+        const f32 prev_display_scale = display_scale[0];
+        glfwGetWindowContentScale(handle, &display_scale[0], &display_scale[1]);
 
-        adjust_dimension(display_scale_x, window_width , framebuffer_width , dpi_invariant_width , position_scale_x);
-        adjust_dimension(display_scale_y, window_height, framebuffer_height, dpi_invariant_height, position_scale_y);
-    }
+        display_scale_changed = prev_display_scale != display_scale[0];
 
-private:
-    static void adjust_dimension
-    (
-        float  scale,
-        int    window_size,
-        int    framebuffer_size,
-        float& out_invariant_size,
-        float& out_position_scale
-    )
-    {
-        if (scale != 1.0 && window_size * scale != static_cast<float>(framebuffer_size))
+        for (i32 i = 0; i < 2; i++)
         {
-            out_invariant_size = framebuffer_size / scale;
-            out_position_scale = 1.0f / scale;
-        }
-        else
-        {
-            out_invariant_size = static_cast<float>(window_size);
-            out_position_scale = 1.0f;
+            if (display_scale[i] != 1.0 &&
+                window_size[i] * display_scale[i] != f32(framebuffer_size[i]))
+            {
+                invariant_size[i] = framebuffer_size[i] / display_scale[i];
+                position_scale[i] = 1.0f / display_scale[i];
+            }
+            else
+            {
+                invariant_size[i] = f32(window_size[i]);
+                position_scale[i] = 1.0f;
+            }
         }
     }
 };
 
-static void resize_window(GLFWwindow* window, int width, int height, int flags)
+static void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
 {
-    // TODO : The DEFAULT and MIN sizes should include the DPI scale.
-
     ASSERT(window);
     ASSERT(flags >= 0);
 
-    // Current monitor.
     GLFWmonitor* monitor = glfwGetWindowMonitor(window);
 
-    // Activate full screen mode, or adjust its resolution.
     if (flags & WINDOW_FULL_SCREEN)
     {
         if (!monitor)
@@ -3692,8 +3672,6 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
 
         glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
     }
-
-    // If in full screen mode, jump out of it.
     else if (monitor)
     {
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -3701,8 +3679,8 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
         if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
         if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
 
-        const int x = (mode->width  - width ) / 2;
-        const int y = (mode->height - height) / 2;
+        const i32 x = (mode->width  - width ) / 2;
+        const i32 y = (mode->height - height) / 2;
 
         monitor = nullptr;
 
@@ -3715,13 +3693,11 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
         return;
     }
 
-    // Size.
     if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
     if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
 
     glfwSetWindowSize(window, width, height);
 
-    // Fixed aspect ratio.
     if (flags & WINDOW_FIXED_ASPECT)
     {
         glfwSetWindowAspectRatio(window, width, height);
@@ -3731,8 +3707,7 @@ static void resize_window(GLFWwindow* window, int width, int height, int flags)
         glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
     }
 
-    // Resize-ability (we might want to first check the current value).
-    const int resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
+    const i32 resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
     glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
 }
 
@@ -3868,8 +3843,8 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
         double y = 0.0;
         glfwGetCursorPos(window.handle, &x, &y);
 
-        curr[0] = static_cast<float>(window.position_scale_x * x);
-        curr[1] = static_cast<float>(window.position_scale_y * y);
+        curr[0] = static_cast<float>(window.position_scale[0] * x);
+        curr[1] = static_cast<float>(window.position_scale[1] * y);
     }
 
     void update_position_delta()
@@ -4331,10 +4306,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         //        call the code in the block exectured when
         //        `g_ctx.reset_back_buffer` is true.
         bgfx::Init init;
-        init.platformData           = create_platform_data (g_ctx.window.handle, init.type );
-        init.resolution.width       = static_cast<uint32_t>(g_ctx.window.framebuffer_width );
-        init.resolution.height      = static_cast<uint32_t>(g_ctx.window.framebuffer_height);
-        init.limits.transientVbSize = static_cast<uint32_t>(g_ctx.transient_memory         );
+        init.platformData           = create_platform_data (g_ctx.window.handle, init.type  );
+        init.resolution.width       = static_cast<uint32_t>(g_ctx.window.framebuffer_size[0]);
+        init.resolution.height      = static_cast<uint32_t>(g_ctx.window.framebuffer_size[1]);
+        init.limits.transientVbSize = static_cast<uint32_t>(g_ctx.transient_memory          );
 
         if (!bgfx::init(init))
         {
@@ -4563,8 +4538,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             g_ctx.window.update_size_info();
 
-            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.framebuffer_width );
-            const uint16_t height = static_cast<uint16_t>(g_ctx.window.framebuffer_height);
+            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.framebuffer_size[0] );
+            const uint16_t height = static_cast<uint16_t>(g_ctx.window.framebuffer_size[1]);
 
             const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
@@ -4684,12 +4659,12 @@ int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void
 void size(int width, int height, int flags)
 {
     ASSERT(mnm::t_ctx->is_main_thread);
-    ASSERT(mnm::g_ctx.window.display_scale_x);
-    ASSERT(mnm::g_ctx.window.display_scale_y);
+    ASSERT(mnm::g_ctx.window.display_scale[0]);
+    ASSERT(mnm::g_ctx.window.display_scale[1]);
 
     // TODO : Round instead?
-    if (mnm::g_ctx.window.position_scale_x != 1.0f) { width  = static_cast<int>(width  * mnm::g_ctx.window.display_scale_x); }
-    if (mnm::g_ctx.window.position_scale_y != 1.0f) { height = static_cast<int>(height * mnm::g_ctx.window.display_scale_y); }
+    if (mnm::g_ctx.window.position_scale[0] != 1.0f) { width  = static_cast<int>(width  * mnm::g_ctx.window.display_scale[0]); }
+    if (mnm::g_ctx.window.position_scale[1] != 1.0f) { height = static_cast<int>(height * mnm::g_ctx.window.display_scale[1]); }
 
     mnm::resize_window(mnm::g_ctx.window.handle, width, height, flags);
 }
@@ -4718,37 +4693,37 @@ void quit(void)
 
 float width(void)
 {
-    return mnm::g_ctx.window.dpi_invariant_width;
+    return mnm::g_ctx.window.invariant_size[0];
 }
 
 float height(void)
 {
-    return mnm::g_ctx.window.dpi_invariant_height;
+    return mnm::g_ctx.window.invariant_size[1];
 }
 
 float aspect(void)
 {
-    return static_cast<float>(mnm::g_ctx.window.framebuffer_width) / static_cast<float>(mnm::g_ctx.window.framebuffer_height);
+    return static_cast<float>(mnm::g_ctx.window.framebuffer_size[0]) / static_cast<float>(mnm::g_ctx.window.framebuffer_size[1]);
 }
 
 float dpi(void)
 {
-    return mnm::g_ctx.window.display_scale_x;
+    return mnm::g_ctx.window.display_scale[0];
 }
 
 int dpi_changed(void)
 {
-    return mnm::g_ctx.window.display_scale_x_changed || !mnm::g_ctx.frame_number;
+    return mnm::g_ctx.window.display_scale_changed || !mnm::g_ctx.frame_number;
 }
 
 int pixel_width(void)
 {
-    return mnm::g_ctx.window.framebuffer_width;
+    return mnm::g_ctx.window.framebuffer_size[0];
 }
 
 int pixel_height(void)
 {
-    return mnm::g_ctx.window.framebuffer_height;
+    return mnm::g_ctx.window.framebuffer_size[1];
 }
 
 
