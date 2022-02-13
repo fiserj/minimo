@@ -177,7 +177,7 @@ static_assert(
 // TYPE ALIASES
 // -----------------------------------------------------------------------------
 
-template <typename T, uint32_t Size>
+template <typename T, u32 Size>
 using Array = std::array<T, Size>;
 
 template <typename T>
@@ -290,7 +290,7 @@ static inline void assign(const void* src, void* dst)
 {
     struct Block
     {
-        uint8_t bytes[Size];
+        u8 bytes[Size];
     };
 
     ASSERT(is_aligned(src, std::alignment_of<Block>::value));
@@ -300,7 +300,7 @@ static inline void assign(const void* src, void* dst)
 }
 
 template <size_t Size>
-static inline void push_back(Vector<uint8_t>& buffer, const void* data)
+static inline void push_back(Vector<u8>& buffer, const void* data)
 {
     static_assert(Size > 0, "Size must be positive.");
 
@@ -309,7 +309,7 @@ static inline void push_back(Vector<uint8_t>& buffer, const void* data)
     assign<Size>(data, buffer.data() + buffer.size() - Size);
 }
 
-static inline void push_back(Vector<uint8_t>& buffer, const void* data, size_t size)
+static inline void push_back(Vector<u8>& buffer, const void* data, size_t size)
 {
     buffer.resize(buffer.size() + size);
 
@@ -317,7 +317,7 @@ static inline void push_back(Vector<uint8_t>& buffer, const void* data, size_t s
 }
 
 template <typename T>
-static inline void push_back(Vector<uint8_t>& buffer, const T& value)
+static inline void push_back(Vector<u8>& buffer, const T& value)
 {
     push_back<sizeof(T)>(buffer, &value);
 }
@@ -337,9 +337,9 @@ inline void destroy_if_valid(HandleT& handle)
 // HELPER FUNCTIONS
 // -----------------------------------------------------------------------------
 
-static inline uint16_t mesh_type(uint32_t flags)
+static inline u16 mesh_type(u32 flags)
 {
-    constexpr uint16_t types[] =
+    constexpr u16 types[] =
     {
         MESH_STATIC,
         MESH_TRANSIENT,
@@ -351,9 +351,9 @@ static inline uint16_t mesh_type(uint32_t flags)
 }
 
 // NOTE : Currently unused.
-// static inline uint16_t mesh_primitive(uint32_t flags)
+// static inline u16 mesh_primitive(u32 flags)
 // {
-//     constexpr uint16_t primitives[] =
+//     constexpr u16 primitives[] =
 //     {
 //         PRIMITIVE_TRIANGLES,
 //         PRIMITIVE_QUADS,
@@ -366,7 +366,7 @@ static inline uint16_t mesh_type(uint32_t flags)
 //     return primitives[((flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT)];
 // }
 
-static inline uint16_t mesh_attribs(uint32_t flags)
+static inline u16 mesh_attribs(u32 flags)
 {
     return (flags & VERTEX_ATTRIB_MASK);
 }
@@ -490,7 +490,7 @@ public:
         }
     }
 
-    bool add(uint16_t id, uint16_t type, uint16_t count, const char* name)
+    bool add(u16 id, u16 type, u16 count, const char* name)
     {
         constexpr bgfx::UniformType::Enum types[] =
         {
@@ -518,7 +518,7 @@ public:
         return true;
     }
 
-    inline Uniform& operator[](uint16_t id) { return m_uniforms[id]; }
+    inline Uniform& operator[](u16 id) { return m_uniforms[id]; }
 
 private:
     Mutex                        m_mutex;
@@ -536,17 +536,17 @@ struct DrawState
 {
     Mat4                     transform       = HMM_Mat4d(1.0f);
     const InstanceData*      instances       = nullptr;
-    uint32_t                 element_start   = 0;
-    uint32_t                 element_count   = UINT32_MAX;
+    u32                 element_start   = 0;
+    u32                 element_count   = UINT32_MAX;
     bgfx::ViewId             pass            = UINT16_MAX;
     bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle      texture         = BGFX_INVALID_HANDLE; // TODO : More texture slots.
     bgfx::UniformHandle      sampler         = BGFX_INVALID_HANDLE;
-    uint16_t                 texture_size[2] = { 0, 0 };
+    u16                 texture_size[2] = { 0, 0 };
     bgfx::VertexLayoutHandle vertex_alias    = BGFX_INVALID_HANDLE;
-    uint16_t                 flags           = STATE_DEFAULT;
-    uint8_t                  _pad[10];
+    u16                 flags           = STATE_DEFAULT;
+    u8                  _pad[10];
 };
 
 
@@ -578,7 +578,7 @@ public:
         }
     }
 
-    bool add(uint16_t id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, uint32_t attribs = UINT32_MAX)
+    bool add(u16 id, bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment, u32 attribs = UINT32_MAX)
     {
         bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
         if (!bgfx::isValid( program))
@@ -601,7 +601,7 @@ public:
         return true;
     }
 
-    bool add(uint16_t id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, uint32_t attribs = UINT32_MAX)
+    bool add(u16 id, const bgfx::EmbeddedShader* shaders, bgfx::RendererType::Enum renderer, const char* vertex_name, const char* fragment_name, u32 attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createEmbeddedShader(shaders, renderer, vertex_name);
         if (!bgfx::isValid(vertex))
@@ -621,7 +621,7 @@ public:
         return add(id, vertex, fragment, attribs);
     }
 
-    bool add(uint16_t id, const void* vertex_data, uint32_t vertex_size, const void* fragment_data, uint32_t fragment_size, uint32_t attribs = UINT32_MAX)
+    bool add(u16 id, const void* vertex_data, u32 vertex_size, const void* fragment_data, u32 fragment_size, u32 attribs = UINT32_MAX)
     {
         bgfx::ShaderHandle vertex = bgfx::createShader(bgfx::copy(vertex_data, vertex_size));
         if (!bgfx::isValid(vertex))
@@ -641,18 +641,18 @@ public:
         return add(id, vertex, fragment, attribs);
     }
 
-    inline bgfx::ProgramHandle operator[](uint16_t id) const
+    inline bgfx::ProgramHandle operator[](u16 id) const
     {
         return m_handles[id];
     }
 
-    inline bgfx::ProgramHandle builtin(uint32_t attribs) const
+    inline bgfx::ProgramHandle builtin(u32 attribs) const
     {
         return m_builtins[get_index_from_attribs(attribs)];
     }
 
 private:
-    static inline constexpr uint16_t get_index_from_attribs(uint32_t attribs)
+    static inline constexpr u16 get_index_from_attribs(u32 attribs)
     {
         static_assert(
             VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b000111 &&
@@ -670,7 +670,7 @@ private:
     }
 
 private:
-    static constexpr uint32_t                MAX_BUILTINS = 64;
+    static constexpr u32                MAX_BUILTINS = 64;
 
     Mutex                                    m_mutex;
     Array<bgfx::ProgramHandle, MAX_PROGRAMS> m_handles;
@@ -755,7 +755,7 @@ public:
         }
     }
 
-    void set_clear_depth(float depth)
+    void set_clear_depth(f32 depth)
     {
         if (m_clear_depth != depth || !(m_dirty_flags & BGFX_CLEAR_DEPTH) || !(m_clear_flags & BGFX_CLEAR_DEPTH))
         {
@@ -765,7 +765,7 @@ public:
         }
     }
 
-    void set_clear_color(uint32_t rgba)
+    void set_clear_color(u32 rgba)
     {
         if (m_clear_rgba != rgba || !(m_dirty_flags & BGFX_CLEAR_COLOR) || !(m_clear_flags & BGFX_CLEAR_COLOR))
         {
@@ -775,7 +775,7 @@ public:
         }
     }
 
-    inline void set_viewport(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
+    inline void set_viewport(u16 x, u16 y, u16 width, u16 height)
     {
         ASSERT(width < SIZE_EQUAL || width == height);
 
@@ -795,7 +795,7 @@ public:
     inline bgfx::FrameBufferHandle framebuffer() const { return m_framebuffer; }
 
 private:
-    enum : uint8_t
+    enum : u8
     {
         DIRTY_NONE        = 0x00,
         DIRTY_CLEAR       = 0x01,
@@ -809,19 +809,19 @@ private:
     Mat4                    m_view_matrix     = HMM_Mat4d(1.0f);
     Mat4                    m_proj_matrix     = HMM_Mat4d(1.0f);
 
-    uint16_t                m_viewport_x      = 0;
-    uint16_t                m_viewport_y      = 0;
-    uint16_t                m_viewport_width  = SIZE_EQUAL;
-    uint16_t                m_viewport_height = SIZE_EQUAL;
+    u16                m_viewport_x      = 0;
+    u16                m_viewport_y      = 0;
+    u16                m_viewport_width  = SIZE_EQUAL;
+    u16                m_viewport_height = SIZE_EQUAL;
 
     bgfx::FrameBufferHandle m_framebuffer     = BGFX_INVALID_HANDLE;
 
-    uint16_t                m_clear_flags     = BGFX_CLEAR_NONE;
-    float                   m_clear_depth     = 1.0f;
-    uint32_t                m_clear_rgba      = 0x000000ff;
-    uint8_t                 m_clear_stencil   = 0;
+    u16                m_clear_flags     = BGFX_CLEAR_NONE;
+    f32                   m_clear_depth     = 1.0f;
+    u32                m_clear_rgba      = 0x000000ff;
+    u8                 m_clear_stencil   = 0;
 
-    uint8_t                 m_dirty_flags     = DIRTY_CLEAR;
+    u8                 m_dirty_flags     = DIRTY_CLEAR;
 };
 
 class PassCache
@@ -896,33 +896,33 @@ public:
         }
     }
 
-    inline void add(uint32_t flags)
+    inline void add(u32 flags)
     {
-        constexpr uint32_t ATTRIB_MASK = VERTEX_ATTRIB_MASK | TEXCOORD_F32;
+        constexpr u32 ATTRIB_MASK = VERTEX_ATTRIB_MASK | TEXCOORD_F32;
         
         add(flags & ATTRIB_MASK, 0);
     }
 
-    bgfx::VertexLayoutHandle resolve_alias(uint32_t& inout_flags, uint32_t alias_flags)
+    bgfx::VertexLayoutHandle resolve_alias(u32& inout_flags, u32 alias_flags)
     {
-        const uint32_t orig_attribs  = mesh_attribs(inout_flags);
-        const uint32_t alias_attribs = mesh_attribs(alias_flags);
+        const u32 orig_attribs  = mesh_attribs(inout_flags);
+        const u32 alias_attribs = mesh_attribs(alias_flags);
 
-        const uint32_t skips = orig_attribs & (~alias_attribs);
-        const uint32_t idx   = get_index_from_flags(orig_attribs, skips);
+        const u32 skips = orig_attribs & (~alias_attribs);
+        const u32 idx   = get_index_from_flags(orig_attribs, skips);
 
         inout_flags &= ~skips;
 
         return m_handles[idx];
     }
 
-    inline const bgfx::VertexLayout& operator[](uint32_t flags) const
+    inline const bgfx::VertexLayout& operator[](u32 flags) const
     {
         return m_layouts[get_index_from_flags(flags)];
     }
 
 private:
-    static inline constexpr uint32_t get_index_from_flags(uint32_t attribs, uint32_t skips = 0)
+    static inline constexpr u32 get_index_from_flags(u32 attribs, u32 skips = 0)
     {
         static_assert(
             VERTEX_ATTRIB_MASK >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
@@ -950,7 +950,7 @@ private:
             add<HasColor, HasNormal, HasTexCoord, true>();
         }
 
-        constexpr uint16_t Flags =
+        constexpr u16 Flags =
             (HasColor       ? VERTEX_COLOR    : 0) |
             (HasNormal      ? VERTEX_NORMAL   : 0) |
             (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
@@ -959,7 +959,7 @@ private:
         add(Flags);
     }
 
-    void add(uint32_t attribs, uint32_t skips)
+    void add(u32 attribs, u32 skips)
     {
         ASSERT(attribs == (attribs & (VERTEX_ATTRIB_MASK | TEXCOORD_F32)));
         ASSERT(skips == (skips & VERTEX_ATTRIB_MASK));
@@ -979,7 +979,7 @@ private:
 
             if (!!(skips & VERTEX_COLOR))
             {
-                layout.skip(4 * sizeof(uint8_t));
+                layout.skip(4 * sizeof(u8));
             }
             else if (!!(attribs & VERTEX_COLOR))
             {
@@ -988,7 +988,7 @@ private:
 
             if (!!(skips & VERTEX_NORMAL))
             {
-                layout.skip(4 * sizeof(uint8_t));
+                layout.skip(4 * sizeof(u8));
             }
             else if (!!(attribs & VERTEX_NORMAL))
             {
@@ -997,7 +997,7 @@ private:
 
             if (!!(skips & VERTEX_TEXCOORD))
             {
-                layout.skip(2 * (!!(attribs & TEXCOORD_F32) ? sizeof(float) : sizeof(int16_t)));
+                layout.skip(2 * (!!(attribs & TEXCOORD_F32) ? sizeof(f32) : sizeof(int16_t)));
             }
             else if (!!(attribs & VERTEX_TEXCOORD))
             {
@@ -1014,7 +1014,7 @@ private:
             layout.end();
             ASSERT(layout.getStride() % 4 == 0);
 
-            const uint16_t idx = get_index_from_flags(attribs, skips);
+            const u16 idx = get_index_from_flags(attribs, skips);
 
             ASSERT(m_layouts[idx].getStride() == 0);
             ASSERT(!bgfx::isValid(m_handles[idx]));
@@ -1049,13 +1049,13 @@ private:
 
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
-    uint8_t data[32];
+    u8 data[32];
 
-    using PackedColorType    = uint32_t; // As RGBA_u8.
+    using PackedColorType    = u32; // As RGBA_u8.
 
-    using PackedNormalType   = uint32_t; // As RGB_u8.
+    using PackedNormalType   = u32; // As RGB_u8.
 
-    using PackedTexcoordType = uint32_t; // As RG_s16.
+    using PackedTexcoordType = u32; // As RG_s16.
 
     using FullTexcoordType   = Vec2;
 
@@ -1078,7 +1078,7 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
     }
 };
 
-template <uint16_t Flags>
+template <u16 Flags>
 static constexpr size_t vertex_attribs_size()
 {
     size_t size = 0;
@@ -1108,7 +1108,7 @@ static constexpr size_t vertex_attribs_size()
     return size;
 }
 
-template <uint16_t Flags, uint16_t Attrib>
+template <u16 Flags, u16 Attrib>
 static constexpr size_t vertex_attrib_offset()
 {
     static_assert(
@@ -1143,11 +1143,11 @@ static constexpr size_t vertex_attrib_offset()
 
 struct VertexAttribStateFuncSet
 {
-    void (* color)(VertexAttribState&, uint32_t rgba) = nullptr;
+    void (* color)(VertexAttribState&, u32 rgba) = nullptr;
 
-    void (* normal)(VertexAttribState&, float nx, float ny, float nz) = nullptr;
+    void (* normal)(VertexAttribState&, f32 nx, f32 ny, f32 nz) = nullptr;
 
-    void (* texcoord)(VertexAttribState&, float u, float v) = nullptr;
+    void (* texcoord)(VertexAttribState&, f32 u, f32 v) = nullptr;
 };
 
 class VertexAttribStateFuncTable
@@ -1169,13 +1169,13 @@ public:
         add<1, 1, 1>();
     }
 
-    inline const VertexAttribStateFuncSet& operator[](uint16_t flags) const
+    inline const VertexAttribStateFuncSet& operator[](u16 flags) const
     {
         return m_func_sets[get_index_from_flags(flags)];
     }
 
 private:
-    static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+    static inline constexpr u16 get_index_from_flags(u16 flags)
     {
         static_assert(
             VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b0111 &&
@@ -1188,8 +1188,8 @@ private:
             ((flags & TEXCOORD_F32      ) >> 9                  ) ; // Bit 3.
     }
 
-    template <uint16_t Flags>
-    static void color(VertexAttribState& state, uint32_t rgba)
+    template <u16 Flags>
+    static void color(VertexAttribState& state, u32 rgba)
     {
         if constexpr (!!(Flags & VERTEX_COLOR))
         {
@@ -1197,12 +1197,12 @@ private:
         }
     }
 
-    template <uint16_t Flags>
-    static void normal(VertexAttribState& state, float nx, float ny, float nz)
+    template <u16 Flags>
+    static void normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
     {
         if constexpr (!!(Flags & VERTEX_NORMAL))
         {
-            const float normalized[] =
+            const f32 normalized[] =
             {
                 nx * 0.5f + 0.5f,
                 ny * 0.5f + 0.5f,
@@ -1213,8 +1213,8 @@ private:
         }
     }
 
-    template <uint16_t Flags>
-    static void texcoord(VertexAttribState& state, float u, float v)
+    template <u16 Flags>
+    static void texcoord(VertexAttribState& state, f32 u, f32 v)
     {
         if constexpr (!!(Flags & VERTEX_TEXCOORD))
         {
@@ -1224,7 +1224,7 @@ private:
             }
             else
             {
-                const float elems[] = { u, v };
+                const f32 elems[] = { u, v };
                 bx::packRg16S(state.at<VertexAttribState::PackedTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
             }
         }
@@ -1243,7 +1243,7 @@ private:
             add<HasColor, HasNormal, HasTexCoord, true>();
         }
 
-        constexpr uint16_t Flags =
+        constexpr u16 Flags =
             (HasColor       ? VERTEX_COLOR    : 0) |
             (HasNormal      ? VERTEX_NORMAL   : 0) |
             (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
@@ -1255,7 +1255,7 @@ private:
         func_set.normal   = normal  <Flags>;
         func_set.texcoord = texcoord<Flags>;
 
-        constexpr uint16_t idx = get_index_from_flags(Flags);
+        constexpr u16 idx = get_index_from_flags(Flags);
 
         ASSERT(m_func_sets[idx].color == nullptr);
 
@@ -1274,7 +1274,7 @@ private:
 class MeshRecorder
 {
 public:
-    void begin(uint16_t id, uint32_t flags, uint32_t extra_data = 0)
+    void begin(u16 id, u32 flags, u32 extra_data = 0)
     {
         ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT32_MAX));
 
@@ -1305,35 +1305,35 @@ public:
         (* m_vertex_func)(*this, position);
     }
 
-    inline void color(uint32_t rgba)
+    inline void color(u32 rgba)
     {
         ASSERT(is_recording());
 
         m_attrib_funcs->color(m_attrib_state, rgba);
     }
 
-    inline void normal(float nx, float ny, float nz)
+    inline void normal(f32 nx, f32 ny, f32 nz)
     {
         ASSERT(is_recording());
 
         m_attrib_funcs->normal(m_attrib_state, nx, ny, nz);
     }
 
-    inline void texcoord(float u, float v)
+    inline void texcoord(f32 u, f32 v)
     {
         ASSERT(is_recording());
 
         m_attrib_funcs->texcoord(m_attrib_state, u, v);
     }
 
-    inline const Vector<uint8_t>& attrib_buffer() const
+    inline const Vector<u8>& attrib_buffer() const
     {
         ASSERT(is_recording());
 
         return m_attrib_buffer;
     }
 
-    inline const Vector<uint8_t>& position_buffer() const
+    inline const Vector<u8>& position_buffer() const
     {
         ASSERT(is_recording());
 
@@ -1342,13 +1342,13 @@ public:
 
     inline bool is_recording() const { return m_id != UINT16_MAX; }
 
-    inline uint16_t id() const { return m_id; }
+    inline u16 id() const { return m_id; }
 
-    inline uint32_t flags() const { return m_flags; }
+    inline u32 flags() const { return m_flags; }
 
-    inline uint32_t extra_data() const { return m_extra_data; }
+    inline u32 extra_data() const { return m_extra_data; }
 
-    inline uint32_t vertex_count() const { return m_vertex_count; }
+    inline u32 vertex_count() const { return m_vertex_count; }
 
 private:
     using VertexPushFunc = void (*)(MeshRecorder&, const Vec3&);
@@ -1374,13 +1374,13 @@ private:
             add<1, 1, 1>();
         }
 
-        inline const VertexPushFunc& operator[](uint32_t flags) const
+        inline const VertexPushFunc& operator[](u32 flags) const
         {
-            return m_funcs[get_index_from_flags(static_cast<uint16_t>(flags))];
+            return m_funcs[get_index_from_flags(u16(flags))];
         }
 
     private:
-        static inline constexpr uint16_t get_index_from_flags(uint16_t flags)
+        static inline constexpr u16 get_index_from_flags(u16 flags)
         {
             static_assert(
                 VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
@@ -1396,7 +1396,7 @@ private:
         }
 
         template <size_t Size>
-        static inline void emulate_quad(Vector<uint8_t>& buffer)
+        static inline void emulate_quad(Vector<u8>& buffer)
         {
             static_assert(Size > 0, "Size must be positive.");
 
@@ -1406,7 +1406,7 @@ private:
 
             buffer.resize(buffer.size() + 2 * Size);
 
-            uint8_t* end = buffer.data() + buffer.size();
+            u8* end = buffer.data() + buffer.size();
 
             // Assuming the last triangle has relative indices
             // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
@@ -1414,7 +1414,7 @@ private:
             assign<Size>(end - 3 * Size, end - 1 * Size);
         }
 
-        template <uint16_t Flags>
+        template <u16 Flags>
         static void vertex(MeshRecorder& mesh_recorder, const Vec3& position)
         {
             if constexpr (!!(Flags & (PRIMITIVE_QUADS)))
@@ -1463,7 +1463,7 @@ private:
                 add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
             }
 
-            constexpr uint16_t Flags =
+            constexpr u16 Flags =
                 (HasColor          ? VERTEX_COLOR    : 0) |
                 (HasNormal         ? VERTEX_NORMAL   : 0) |
                 (HasTexCoord       ? VERTEX_TEXCOORD : 0) |
@@ -1479,16 +1479,16 @@ private:
     };
 
 protected:
-    Vector<uint8_t>                         m_attrib_buffer;
-    Vector<uint8_t>                         m_position_buffer;
+    Vector<u8>                         m_attrib_buffer;
+    Vector<u8>                         m_position_buffer;
     VertexAttribState                       m_attrib_state;
     const VertexAttribStateFuncSet*         m_attrib_funcs     = nullptr;
     VertexPushFunc                          m_vertex_func      = nullptr;
-    uint32_t                                m_vertex_count     = 0;
-    uint32_t                                m_invocation_count = 0;
-    uint32_t                                m_extra_data       = 0;
-    uint32_t                                m_flags            = UINT32_MAX;
-    uint16_t                                m_id               = UINT16_MAX;
+    u32                                m_vertex_count     = 0;
+    u32                                m_invocation_count = 0;
+    u32                                m_extra_data       = 0;
+    u32                                m_flags            = UINT32_MAX;
+    u16                                m_id               = UINT16_MAX;
 
     static const VertexAttribStateFuncTable ms_attrib_state_func_table;
     static const VertexPushFuncTable        ms_vertex_push_func_table;
@@ -1506,11 +1506,11 @@ const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
 class InstanceRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t type)
+    void begin(u16 id, u16 type)
     {
         ASSERT(!is_recording() || (id == UINT16_MAX && type == UINT16_MAX));
 
-        constexpr uint16_t type_sizes[] =
+        constexpr u16 type_sizes[] =
         {
             sizeof(Mat4), // INSTANCE_TRANSFORM
             16,           // INSTANCE_DATA_16
@@ -1544,30 +1544,30 @@ public:
         push_back(m_buffer, data, m_instance_size);
     }
 
-    inline const Vector<uint8_t>& buffer() const
+    inline const Vector<u8>& buffer() const
     {
         ASSERT(is_recording());
 
         return m_buffer;
     }
 
-    inline uint32_t instance_count() const
+    inline u32 instance_count() const
     {
-        return static_cast<uint32_t>(m_buffer.size() / m_instance_size);
+        return u32(m_buffer.size() / m_instance_size);
     }
 
     inline bool is_recording() const { return m_id != UINT16_MAX; }
 
-    inline uint16_t id() const { return m_id; }
+    inline u16 id() const { return m_id; }
 
-    inline uint16_t instance_size() const { return m_instance_size; }
+    inline u16 instance_size() const { return m_instance_size; }
 
     inline bool is_transform() const { return m_is_transform; }
 
 private:
-    Vector<uint8_t> m_buffer;
-    uint16_t        m_id            = UINT16_MAX;
-    uint16_t        m_instance_size = 0;
+    Vector<u8> m_buffer;
+    u16        m_id            = UINT16_MAX;
+    u16        m_instance_size = 0;
     bool            m_is_transform  = false;
 };
 
@@ -1578,29 +1578,29 @@ private:
 
 union VertexBufferUnion
 {
-    uint16_t                        transient_index = bgfx::kInvalidHandle;
+    u16                        transient_index = bgfx::kInvalidHandle;
     bgfx::VertexBufferHandle        static_buffer;
     bgfx::DynamicVertexBufferHandle dynamic_buffer;
 };
 
 union IndexBufferUnion
 {
-    uint16_t                       transient_index = bgfx::kInvalidHandle;
+    u16                       transient_index = bgfx::kInvalidHandle;
     bgfx::IndexBufferHandle        static_buffer;
     bgfx::DynamicIndexBufferHandle dynamic_buffer;
 };
 
 struct Mesh
 {
-    uint32_t          element_count = 0;
-    uint32_t          extra_data    = 0;
-    uint32_t          flags         = MESH_INVALID;
+    u32          element_count = 0;
+    u32          extra_data    = 0;
+    u32          flags         = MESH_INVALID;
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
-    uint8_t           _pad[2];
+    u8           _pad[2];
 
-    inline uint16_t type() const
+    inline u16 type() const
     {
         return mesh_type(flags);
     }
@@ -1645,7 +1645,7 @@ public:
 
         Mesh& mesh = m_meshes[recorder.id()];
 
-        const uint16_t new_type = mesh_type(recorder.flags());
+        const u16 new_type = mesh_type(recorder.flags());
 
         if (new_type == MESH_INVALID)
         {
@@ -1694,7 +1694,7 @@ public:
     {
         MutexScope lock(m_mutex);
 
-        for (uint16_t idx : m_transient_idxs)
+        for (u16 idx : m_transient_idxs)
         {
             ASSERT(m_meshes[idx].type() == MESH_TRANSIENT);
 
@@ -1707,9 +1707,9 @@ public:
         m_transient_exhausted = false;
     }
 
-    inline Mesh& operator[](uint16_t id) { return m_meshes[id]; }
+    inline Mesh& operator[](u16 id) { return m_meshes[id]; }
 
-    inline const Mesh& operator[](uint16_t id) const { return m_meshes[id]; }
+    inline const Mesh& operator[](u16 id) const { return m_meshes[id]; }
 
     inline const Vector<bgfx::TransientVertexBuffer>& transient_buffers() const
     {
@@ -1717,7 +1717,7 @@ public:
     }
 
 private:
-    bool add_transient_buffer(const Vector<uint8_t>& data, const bgfx::VertexLayout& layout, uint16_t& dst_index)
+    bool add_transient_buffer(const Vector<u8>& data, const bgfx::VertexLayout& layout, u16& dst_index)
     {
         ASSERT(layout.getStride() > 0);
 
@@ -1732,7 +1732,7 @@ private:
             return false;
         }
 
-        const uint32_t count = static_cast<uint32_t>(data.size() / layout.getStride());
+        const u32 count = u32(data.size() / layout.getStride());
 
         if (bgfx::getAvailTransientVertexBuffer(count, layout) < count)
         {
@@ -1742,7 +1742,7 @@ private:
 
         ASSERT(m_transient_buffers.size() < UINT16_MAX);
 
-        dst_index = static_cast<uint16_t>(m_transient_buffers.size());
+        dst_index = u16(m_transient_buffers.size());
         m_transient_buffers.resize(m_transient_buffers.size() + 1);
 
         bgfx::allocTransientVertexBuffer(&m_transient_buffers.back(), count, layout);
@@ -1788,11 +1788,11 @@ private:
         }
 
         Vector<unsigned int> remap_table(mesh.element_count);
-        uint32_t             indexed_vertex_count = 0;
+        u32             indexed_vertex_count = 0;
 
         if (has_attribs)
         {
-            indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemapMulti(
+            indexed_vertex_count = u32(meshopt_generateVertexRemapMulti(
                 remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
             ));
 
@@ -1811,7 +1811,7 @@ private:
         }
         else
         {
-            indexed_vertex_count = static_cast<uint32_t>(meshopt_generateVertexRemap(
+            indexed_vertex_count = u32(meshopt_generateVertexRemap(
                 remap_table.data(), nullptr, mesh.element_count, streams[0].data, mesh.element_count, streams[0].size
             ));
         }
@@ -1839,7 +1839,7 @@ private:
                 indexed_vertex_count,
                 remap_table,
                 optimize_geometry,
-                static_cast<float*>(vertex_positions),
+                static_cast<f32*>(vertex_positions),
                 mesh.indices.static_buffer
             );
         }
@@ -1850,7 +1850,7 @@ private:
                 indexed_vertex_count,
                 remap_table,
                 optimize_geometry,
-                static_cast<float*>(vertex_positions),
+                static_cast<f32*>(vertex_positions),
                 mesh.indices.dynamic_buffer
             );
         }
@@ -1861,8 +1861,8 @@ private:
     (
         const meshopt_Stream&       stream,
         const bgfx::VertexLayout&   layout,
-        uint32_t                    vertex_count,
-        uint32_t                    indexed_vertex_count,
+        u32                    vertex_count,
+        u32                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
         BufferT&                    dst_buffer_handle,
         void**                      dst_remapped_memory = nullptr
@@ -1874,7 +1874,7 @@ private:
             "Unsupported vertex buffer type for update."
         );
 
-        const bgfx::Memory* memory = bgfx::alloc(static_cast<uint32_t>(indexed_vertex_count * stream.size));
+        const bgfx::Memory* memory = bgfx::alloc(u32(indexed_vertex_count * stream.size));
         ASSERT(memory && memory->data);
 
         meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data());
@@ -1900,11 +1900,11 @@ private:
     template <typename T>
     inline static void remap_index_buffer
     (
-        uint32_t                    vertex_count,
-        uint32_t                    indexed_vertex_count,
+        u32                    vertex_count,
+        u32                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
         bool                        optimize,
-        const float*                vertex_positions,
+        const f32*                vertex_positions,
         T*                          dst_indices
     )
     {
@@ -1914,20 +1914,20 @@ private:
         {
             meshopt_optimizeVertexCache<T>(dst_indices, dst_indices, vertex_count, indexed_vertex_count);
 
-            meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float), 1.05f);
+            meshopt_optimizeOverdraw(dst_indices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(f32), 1.05f);
 
-            // meshopt_optimizeVertexFetch(vertices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(float));
+            // meshopt_optimizeVertexFetch(vertices, dst_indices, vertex_count, vertex_positions, indexed_vertex_count, 3 * sizeof(f32));
         }
     }
 
     template <typename BufferT>
     inline static void update_persistent_index_buffer
     (
-        uint32_t                    vertex_count,
-        uint32_t                    indexed_vertex_count,
+        u32                    vertex_count,
+        u32                    indexed_vertex_count,
         const Vector<unsigned int>& remap_table,
         bool                        optimize,
-        const float*                vertex_positions,
+        const f32*                vertex_positions,
         BufferT&                    dst_buffer_handle
     )
     {
@@ -1937,21 +1937,21 @@ private:
             "Unsupported index buffer type for update."
         );
 
-        uint16_t buffer_flags = BGFX_BUFFER_NONE;
-        uint32_t type_size    = sizeof(uint16_t);
+        u16 buffer_flags = BGFX_BUFFER_NONE;
+        u32 type_size    = sizeof(u16);
 
         if (indexed_vertex_count > UINT16_MAX)
         {
             buffer_flags = BGFX_BUFFER_INDEX32;
-            type_size    = sizeof(uint32_t);
+            type_size    = sizeof(u32);
         }
 
         const bgfx::Memory* memory = bgfx::alloc(vertex_count * type_size);
         ASSERT(memory && memory->data);
 
-        type_size == sizeof(uint16_t)
-            ? remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint16_t*>(memory->data))
-            : remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<uint32_t*>(memory->data));
+        type_size == sizeof(u16)
+            ? remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<u16*>(memory->data))
+            : remap_index_buffer(vertex_count, indexed_vertex_count, remap_table, optimize, vertex_positions, reinterpret_cast<u32*>(memory->data));
 
         if constexpr (std::is_same<BufferT, bgfx::IndexBufferHandle>::value)
         {
@@ -1969,7 +1969,7 @@ private:
 private:
     Mutex                               m_mutex;
     Array<Mesh, MAX_MESHES>             m_meshes;
-    Vector<uint16_t>                    m_transient_idxs;
+    Vector<u16>                    m_transient_idxs;
     Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
     bool                                m_transient_exhausted = false;
 };
@@ -1983,7 +1983,7 @@ struct InstanceData
 {
     bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
     bool                     is_transform = false;
-    uint8_t                  _pad[7];
+    u8                  _pad[7];
 };
 
 class InstanceCache
@@ -1995,9 +1995,9 @@ public:
 
         MutexScope lock(m_mutex);
 
-        const uint32_t count     = recorder.instance_count();
-        const uint16_t stride    = recorder.instance_size ();
-        const uint32_t available = bgfx::getAvailInstanceDataBuffer(count, stride);
+        const u32 count     = recorder.instance_count();
+        const u16 stride    = recorder.instance_size ();
+        const u32 available = bgfx::getAvailInstanceDataBuffer(count, stride);
 
         if (available < count)
         {
@@ -2013,7 +2013,7 @@ public:
         return true;
     }
 
-    inline const InstanceData& operator[](uint16_t id) const
+    inline const InstanceData& operator[](u16 id) const
     {
         return m_data[id];
     }
@@ -2028,7 +2028,7 @@ private:
 // GEOMETRY SUBMISSION
 // -----------------------------------------------------------------------------
 
-static inline uint64_t translate_draw_state_flags(uint16_t flags)
+static inline u64 translate_draw_state_flags(u16 flags)
 {
     if (flags == STATE_DEFAULT)
     {
@@ -2053,16 +2053,16 @@ static inline uint64_t translate_draw_state_flags(uint16_t flags)
         return BGFX_STATE_DEFAULT;
     }
 
-    constexpr uint32_t BLEND_STATE_MASK       = STATE_BLEND_ADD | STATE_BLEND_ALPHA | STATE_BLEND_MAX | STATE_BLEND_MIN;
-    constexpr uint32_t BLEND_STATE_SHIFT      = 0;
+    constexpr u32 BLEND_STATE_MASK       = STATE_BLEND_ADD | STATE_BLEND_ALPHA | STATE_BLEND_MAX | STATE_BLEND_MIN;
+    constexpr u32 BLEND_STATE_SHIFT      = 0;
 
-    constexpr uint32_t CULL_STATE_MASK        = STATE_CULL_CCW | STATE_CULL_CW;
-    constexpr uint32_t CULL_STATE_SHIFT       = 4;
+    constexpr u32 CULL_STATE_MASK        = STATE_CULL_CCW | STATE_CULL_CW;
+    constexpr u32 CULL_STATE_SHIFT       = 4;
 
-    constexpr uint32_t DEPTH_TEST_STATE_MASK  = STATE_DEPTH_TEST_GEQUAL | STATE_DEPTH_TEST_GREATER | STATE_DEPTH_TEST_LEQUAL | STATE_DEPTH_TEST_LESS;
-    constexpr uint32_t DEPTH_TEST_STATE_SHIFT = 6;
+    constexpr u32 DEPTH_TEST_STATE_MASK  = STATE_DEPTH_TEST_GEQUAL | STATE_DEPTH_TEST_GREATER | STATE_DEPTH_TEST_LEQUAL | STATE_DEPTH_TEST_LESS;
+    constexpr u32 DEPTH_TEST_STATE_SHIFT = 6;
 
-    constexpr uint64_t blend_table[] =
+    constexpr u64 blend_table[] =
     {
         0,
         BGFX_STATE_BLEND_ADD,
@@ -2071,14 +2071,14 @@ static inline uint64_t translate_draw_state_flags(uint16_t flags)
         BGFX_STATE_BLEND_DARKEN,
     };
 
-    constexpr uint64_t cull_table[] =
+    constexpr u64 cull_table[] =
     {
         0,
         BGFX_STATE_CULL_CCW,
         BGFX_STATE_CULL_CW,
     };
 
-    constexpr uint64_t depth_test_table[] =
+    constexpr u64 depth_test_table[] =
     {
         0,
         BGFX_STATE_DEPTH_TEST_GEQUAL,
@@ -2107,7 +2107,7 @@ static void submit_mesh
     bgfx::Encoder&                             encoder
 )
 {
-    static const uint64_t primitive_flags[] =
+    static const u64 primitive_flags[] =
     {
         0, // Triangles.
         0, // Quads (for users, triangles internally).
@@ -2148,12 +2148,12 @@ static void submit_mesh
 
     if (mesh.flags & VERTEX_PIXCOORD)
     {
-        const float data[] =
+        const f32 data[] =
         {
-            static_cast<float>(state.texture_size[0]),
-            static_cast<float>(state.texture_size[1]),
-            static_cast<float>(state.texture_size[0]) ? 1.0f / static_cast<float>(state.texture_size[0]) : 0.0f,
-            static_cast<float>(state.texture_size[1]) ? 1.0f / static_cast<float>(state.texture_size[1]) : 0.0f
+            f32(state.texture_size[0]),
+            f32(state.texture_size[1]),
+            f32(state.texture_size[0]) ? 1.0f / f32(state.texture_size[0]) : 0.0f,
+            f32(state.texture_size[1]) ? 1.0f / f32(state.texture_size[1]) : 0.0f
         };
 
         encoder.setUniform(default_uniforms.texture_size, data);
@@ -2161,7 +2161,7 @@ static void submit_mesh
 
     encoder.setTransform(&transform);
 
-    uint64_t flags = translate_draw_state_flags(state.flags);
+    u64 flags = translate_draw_state_flags(state.flags);
 
     flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
 
@@ -2180,9 +2180,9 @@ struct Texture
 {
     bgfx::TextureFormat::Enum   format      = bgfx::TextureFormat::Count;
     bgfx::BackbufferRatio::Enum ratio       = bgfx::BackbufferRatio::Count;
-    uint32_t                    read_frame  = UINT32_MAX;
-    uint16_t                    width       = 0;
-    uint16_t                    height      = 0;
+    u32                    read_frame  = UINT32_MAX;
+    u16                    width       = 0;
+    u16                    height      = 0;
     bgfx::TextureHandle         blit_handle = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle         handle      = BGFX_INVALID_HANDLE;
 
@@ -2216,7 +2216,7 @@ public:
         }
     }
 
-    void add_texture(uint16_t id, uint16_t flags, uint16_t width, uint16_t height, uint16_t stride, const void* data)
+    void add_texture(u16 id, u16 flags, u16 width, u16 height, u16 stride, const void* data)
     {
         ASSERT(id < m_textures.size());
 
@@ -2225,20 +2225,20 @@ public:
         Texture& texture = m_textures[id];
         texture.destroy();
 
-        static const uint64_t sampling_flags[] =
+        static const u64 sampling_flags[] =
         {
             BGFX_SAMPLER_NONE,
             BGFX_SAMPLER_POINT,
         };
 
-        static const uint64_t border_flags[] =
+        static const u64 border_flags[] =
         {
             BGFX_SAMPLER_NONE,
             BGFX_SAMPLER_UVW_MIRROR,
             BGFX_SAMPLER_UVW_CLAMP,
         };
 
-        static const uint64_t target_flags[] =
+        static const u64 target_flags[] =
         {
             BGFX_TEXTURE_NONE,
             BGFX_TEXTURE_RT,
@@ -2246,7 +2246,7 @@ public:
 
         static const struct Format
         {
-            uint32_t                  size;
+            u32                  size;
             bgfx::TextureFormat::Enum type;
 
         } formats[] =
@@ -2276,10 +2276,10 @@ public:
             }
             else
             {
-                const uint8_t* src = static_cast<const uint8_t*>(data);
-                uint8_t*       dst = memory->data;
+                const u8* src = static_cast<const u8*>(data);
+                u8*       dst = memory->data;
 
-                for (uint16_t y = 0; y < height; y++)
+                for (u16 y = 0; y < height; y++)
                 {
                     (void)memcpy(dst, src, width * format.size);
 
@@ -2289,7 +2289,7 @@ public:
             }
         }
 
-        const uint64_t texture_flags =
+        const u64 texture_flags =
             sampling_flags[(flags & TEXTURE_SAMPLING_MASK) >> TEXTURE_SAMPLING_SHIFT] |
             border_flags  [(flags & TEXTURE_BORDER_MASK  ) >> TEXTURE_BORDER_SHIFT  ] |
             target_flags  [(flags & TEXTURE_TARGET_MASK  ) >> TEXTURE_TARGET_SHIFT  ] ;
@@ -2311,7 +2311,7 @@ public:
         texture.height = height;
     }
 
-    void destroy_texture(uint16_t id)
+    void destroy_texture(u16 id)
     {
         ASSERT(id < m_textures.size());
 
@@ -2320,7 +2320,7 @@ public:
         m_textures[id].destroy();
     }
 
-    void schedule_read(uint16_t id, bgfx::ViewId pass, bgfx::Encoder* encoder, void* data)
+    void schedule_read(u16 id, bgfx::ViewId pass, bgfx::Encoder* encoder, void* data)
     {
         MutexScope lock(m_mutex);
 
@@ -2329,7 +2329,7 @@ public:
 
         if (!bgfx::isValid(texture.blit_handle))
         {
-            constexpr uint64_t flags =
+            constexpr u64 flags =
                 BGFX_TEXTURE_BLIT_DST  |
                 BGFX_TEXTURE_READ_BACK |
                 BGFX_SAMPLER_MIN_POINT |
@@ -2350,7 +2350,7 @@ public:
         texture.read_frame = bgfx::readTexture(texture.blit_handle, data);
     }
 
-    inline const Texture& operator[](uint16_t id) const { return m_textures[id]; }
+    inline const Texture& operator[](u16 id) const { return m_textures[id]; }
 
 private:
     Mutex                        m_mutex;
@@ -2365,8 +2365,8 @@ private:
 struct Framebuffer
 {
     bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-    uint16_t                width  = 0;
-    uint16_t                height = 0;
+    u16                width  = 0;
+    u16                height = 0;
 
     void destroy()
     {
@@ -2381,7 +2381,7 @@ struct Framebuffer
 class FramebufferRecorder
 {
 public:
-    inline void begin(uint16_t id)
+    inline void begin(u16 id)
     {
         ASSERT(!is_recording() || id == UINT16_MAX);
 
@@ -2422,7 +2422,7 @@ public:
 
         if (!m_textures.empty())
         {
-            framebuffer.handle = bgfx::createFrameBuffer(static_cast<uint8_t>(m_textures.size()), m_textures.data(), false);
+            framebuffer.handle = bgfx::createFrameBuffer(u8(m_textures.size()), m_textures.data(), false);
             ASSERT(bgfx::isValid(framebuffer.handle));
 
             framebuffer.width  = m_width;
@@ -2434,13 +2434,13 @@ public:
 
     inline bool is_recording() const { return m_id != UINT16_MAX; }
 
-    inline uint16_t id() const { return m_id; }
+    inline u16 id() const { return m_id; }
 
 private:
     Vector<bgfx::TextureHandle> m_textures;
-    uint16_t                    m_id     = UINT16_MAX;
-    uint16_t                    m_width  = 0;
-    uint16_t                    m_height = 0;
+    u16                    m_id     = UINT16_MAX;
+    u16                    m_width  = 0;
+    u16                    m_height = 0;
 };
 
 class FramebufferCache
@@ -2465,7 +2465,7 @@ public:
         framebuffer = mesh_recorder.create_framebuffer();
     }
 
-    inline const Framebuffer& operator[](uint16_t id) const { return m_framebuffers[id]; }
+    inline const Framebuffer& operator[](u16 id) const { return m_framebuffers[id]; }
 
 private:
     Mutex                                m_mutex;
@@ -2485,7 +2485,7 @@ enum
     UTF8_REJECT,
 };
 
-static constexpr uint8_t s_utf8_data[] =
+static constexpr u8 s_utf8_data[] =
 {
     // The first part of the table maps bytes to character classes that
     // to reduce the size of the transition table and create bitmasks.
@@ -2507,9 +2507,9 @@ static constexpr uint8_t s_utf8_data[] =
     12,36,12,12,12,12,12,12,12,12,12,12,
 };
 
-static inline uint32_t utf8_decode(uint32_t* state, uint32_t* codepoint, uint32_t byte)
+static inline u32 utf8_decode(u32* state, u32* codepoint, u32 byte)
 {
-    uint32_t type = s_utf8_data[byte];
+    u32 type = s_utf8_data[byte];
 
     *codepoint = (*state != UTF8_ACCEPT) ? (byte & 0x3fu) | (*codepoint << 6) : (0xff >> type) & (byte);
 
@@ -2532,12 +2532,12 @@ public:
     }
 
     // TODO : Copy data?
-    inline void add(uint16_t id, const void* data)
+    inline void add(u16 id, const void* data)
     {
         m_data[id] = data;
     }
 
-    inline const void* operator[](uint16_t id) const
+    inline const void* operator[](u16 id) const
     {
         return m_data[id];
     }
@@ -2549,7 +2549,7 @@ private:
 class Atlas
 {
 public:
-    inline float font_size() const { return m_font_size; }
+    inline f32 font_size() const { return m_font_size; }
 
     inline bool is_free() const { return m_flags & ATLAS_FREE; }
 
@@ -2561,7 +2561,7 @@ public:
 
     inline bool does_not_require_thread_safety() const { return m_flags & ATLAS_NOT_THREAD_SAFE; }
 
-    void reset(uint16_t texture, uint16_t flags, const void* font, float size, TextureCache& textures)
+    void reset(u16 texture, u16 flags, const void* font, f32 size, TextureCache& textures)
     {
         MutexScope lock(m_mutex);
 
@@ -2590,7 +2590,7 @@ public:
         m_flags         = flags;
 
         // TODO : Check return value.
-        (void)stbtt_InitFont(&m_font_info, static_cast<const uint8_t*>(font), 0);
+        (void)stbtt_InitFont(&m_font_info, static_cast<const u8*>(font), 0);
 
         if (const int table = stbtt__find_table(m_font_info.data, m_font_info.fontstart, "OS/2"))
         {
@@ -2603,7 +2603,7 @@ public:
         }
     }
 
-    void add_glyph_range(uint32_t first, uint32_t last)
+    void add_glyph_range(u32 first, u32 last)
     {
         if (!is_updatable() && is_locked())
         {
@@ -2616,7 +2616,7 @@ public:
         size_t i = m_requests.size();
         m_requests.resize(i + static_cast<size_t>(last - first + 1));
 
-        for (uint32_t codepoint = first; codepoint <= last; codepoint++, i++)
+        for (u32 codepoint = first; codepoint <= last; codepoint++, i++)
         {
             if (!m_codepoints.count(codepoint))
             {
@@ -2633,12 +2633,12 @@ public:
             return;
         }
 
-        uint32_t codepoint;
-        uint32_t state = 0;
+        u32 codepoint;
+        u32 state = 0;
 
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const u8*>(string)))
             {
                 if (!m_codepoints.count(codepoint))
                 {
@@ -2683,7 +2683,7 @@ public:
         range.v_oversample                = vertical_oversampling  ();
         range.chardata_for_range          = m_char_quads.data() + offset;
         range.array_of_unicode_codepoints = reinterpret_cast<int*>(m_requests.data());
-        range.num_chars                   = static_cast<int>(m_requests.size());
+        range.num_chars                   = int(m_requests.size());
 
         (void)stbtt_PackFontRangesGatherRects(
             &ctx,
@@ -2693,15 +2693,15 @@ public:
             m_pack_rects.data() + offset
         );
 
-        uint32_t pack_size[] = { m_bitmap_width, m_bitmap_height };
+        u32 pack_size[] = { m_bitmap_width, m_bitmap_height };
         pack_rects(offset, count, pack_size);
 
         if (m_bitmap_width  != pack_size[0] ||
             m_bitmap_height != pack_size[1])
         {
-            Vector<uint8_t> data(pack_size[0] * pack_size[1], 0);
+            Vector<u8> data(pack_size[0] * pack_size[1], 0);
 
-            for (uint32_t y = 0, src_offset = 0, dst_offset = 0; y < m_bitmap_height; y++)
+            for (u32 y = 0, src_offset = 0, dst_offset = 0; y < m_bitmap_height; y++)
             {
                 memcpy(data.data() + dst_offset, m_bitmap_data.data() + src_offset, m_bitmap_width);
 
@@ -2740,7 +2740,7 @@ public:
 
         for (size_t i = 0; i < m_requests.size(); i++)
         {
-            m_codepoints.insert({ m_requests[i], static_cast<uint16_t>(offset + i) });
+            m_codepoints.insert({ m_requests[i], u16(offset + i) });
         }
 
         m_requests.clear();
@@ -2751,7 +2751,7 @@ public:
         }
     }
 
-    using QuadPackFunc = void (*)(const stbtt_packedchar&, float, float, float&, stbtt_aligned_quad&);
+    using QuadPackFunc = void (*)(const stbtt_packedchar&, f32, f32, f32&, stbtt_aligned_quad&);
 
     QuadPackFunc get_quad_pack_func(bool align_to_integer, bool y_axis_down)
     {
@@ -2785,21 +2785,21 @@ public:
     (
         const char* start,
         const char* end,
-        float       line_height_factor,
-        float*      out_width,
-        float*      out_height
+        f32       line_height_factor,
+        f32*      out_width,
+        f32*      out_height
     )
     {
-        float       line_width  = 0.0f;
-        const float line_height = roundf(font_size() * line_height_factor);
-        float       box_width   = 0.0f;
-        float       box_height  = font_size();
-        uint32_t    codepoint   = 0;
-        uint32_t    state       = 0;
+        f32       line_width  = 0.0f;
+        const f32 line_height = roundf(font_size() * line_height_factor);
+        f32       box_width   = 0.0f;
+        f32       box_height  = font_size();
+        u32    codepoint   = 0;
+        u32    state       = 0;
 
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const u8*>(string)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -2839,29 +2839,29 @@ public:
     (
         const char*   start,
         const char*   end,
-        float         line_height_factor,
-        uint16_t      h_alignment,
-        uint16_t      v_alignment,
+        f32         line_height_factor,
+        u16      h_alignment,
+        u16      v_alignment,
         bool          align_to_integer,
         bool          y_axis_down,
         const Mat4&   transform,
         MeshRecorder& out_recorder
     )
     {
-        Vector<float> line_widths; // TODO : Candidate for stack-based allocator usage.
-        const float   line_sign         = y_axis_down ? 1.0f : -1.0f;
-        const float   line_height       = roundf(font_size() * line_height_factor);
-        float         line_width        = 0.0f;
-        float         box_width         = 0.0f;
-        float         box_height        = font_size();
-        uint32_t      codepoint         = 0;
-        uint32_t      state             = 0;
+        Vector<f32> line_widths; // TODO : Candidate for stack-based allocator usage.
+        const f32   line_sign         = y_axis_down ? 1.0f : -1.0f;
+        const f32   line_height       = roundf(font_size() * line_height_factor);
+        f32         line_width        = 0.0f;
+        f32         box_width         = 0.0f;
+        f32         box_height        = font_size();
+        u32      codepoint         = 0;
+        u32      state             = 0;
         const bool    needs_line_widths = h_alignment != TEXT_H_ALIGN_LEFT;
 
         // Pass 1: Gather info about text, signal missing glyphs.
         for (const char* string = start; end ? string < end : *string; string++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(string)))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const u8*>(string)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -2914,7 +2914,7 @@ public:
 
         // Pass 2: Submit quads to the recorder.
         Vec3     offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
-        uint16_t line_idx = 0;
+        u16 line_idx = 0;
 
         switch (v_alignment)
         {
@@ -2967,16 +2967,16 @@ private:
     static void pack_quad
     (
         const stbtt_packedchar& char_info,
-        float                   inv_width,
-        float                   inv_height,
-        float&                  inout_xpos,
+        f32                   inv_width,
+        f32                   inv_height,
+        f32&                  inout_xpos,
         stbtt_aligned_quad&     out_quad
     )
     {
         if constexpr (AlignToInteger)
         {
-            const float x = floorf(inout_xpos + char_info.xoff + 0.5f);
-            const float y = floorf(             char_info.yoff + 0.5f);
+            const f32 x = floorf(inout_xpos + char_info.xoff + 0.5f);
+            const f32 y = floorf(             char_info.yoff + 0.5f);
 
             out_quad.x0 = x;
             out_quad.x1 = x + char_info.xoff2 - char_info.xoff;
@@ -3045,16 +3045,16 @@ private:
     {
         // NOTE : This routine assumes all needed glyphs are loaded!
 
-        uint32_t           codepoint;
-        uint32_t           state      = 0;
-        const float        inv_width  = 1.0f / static_cast<float>(m_bitmap_width );
-        const float        inv_height = 1.0f / static_cast<float>(m_bitmap_height);
-        float              x          = 0.0f;
+        u32           codepoint;
+        u32           state      = 0;
+        const f32        inv_width  = 1.0f / f32(m_bitmap_width );
+        const f32        inv_height = 1.0f / f32(m_bitmap_height);
+        f32              x          = 0.0f;
         stbtt_aligned_quad quad       = {};
 
         for (; end ? start < end : *start; start++)
         {
-            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const uint8_t*>(start)))
+            if (UTF8_ACCEPT == utf8_decode(&state, &codepoint, *reinterpret_cast<const u8*>(start)))
             {
                 if (codepoint == '\n') // TODO : Other line terminators?
                 {
@@ -3102,7 +3102,7 @@ private:
         return 0;
     }
 
-    inline float font_scale() const
+    inline f32 font_scale() const
     {
         int ascent, descent;
         stbtt_GetFontVMetrics(&m_font_info, &ascent, &descent, nullptr);
@@ -3110,38 +3110,38 @@ private:
         return (ascent - descent) * m_font_size / cap_height();
     }
 
-    inline uint8_t horizontal_oversampling() const
+    inline u8 horizontal_oversampling() const
     {
-        constexpr uint32_t H_OVERSAMPLE_MASK  = ATLAS_H_OVERSAMPLE_2X | ATLAS_H_OVERSAMPLE_3X | ATLAS_H_OVERSAMPLE_4X;
-        constexpr uint32_t H_OVERSAMPLE_SHIFT = 3;
+        constexpr u32 H_OVERSAMPLE_MASK  = ATLAS_H_OVERSAMPLE_2X | ATLAS_H_OVERSAMPLE_3X | ATLAS_H_OVERSAMPLE_4X;
+        constexpr u32 H_OVERSAMPLE_SHIFT = 3;
 
-        const uint8_t value = static_cast<uint8_t>(((m_flags & H_OVERSAMPLE_MASK) >> H_OVERSAMPLE_SHIFT) + 1);
+        const u8 value = u8(((m_flags & H_OVERSAMPLE_MASK) >> H_OVERSAMPLE_SHIFT) + 1);
         ASSERT(value >= 1 && value <= 4);
 
         return value;
     }
 
-    inline uint8_t vertical_oversampling() const
+    inline u8 vertical_oversampling() const
     {
-        constexpr uint32_t V_OVERSAMPLE_MASK  = ATLAS_V_OVERSAMPLE_2X;
-        constexpr uint32_t V_OVERSAMPLE_SHIFT = 6;
+        constexpr u32 V_OVERSAMPLE_MASK  = ATLAS_V_OVERSAMPLE_2X;
+        constexpr u32 V_OVERSAMPLE_SHIFT = 6;
 
-        const uint8_t value = static_cast<uint8_t>(((m_flags & V_OVERSAMPLE_MASK) >> V_OVERSAMPLE_SHIFT) + 1);
+        const u8 value = u8(((m_flags & V_OVERSAMPLE_MASK) >> V_OVERSAMPLE_SHIFT) + 1);
         ASSERT(value >= 1 && value <= 2);
 
         return value;
     }
 
-    bool pick_next_size(uint32_t min_area, uint32_t* inout_pack_size) const
+    bool pick_next_size(u32 min_area, u32* inout_pack_size) const
     {
-        const uint32_t max_size = bgfx::getCaps()->limits.maxTextureSize;
-        uint32_t       size[2]  = { 64, 64 };
+        const u32 max_size = bgfx::getCaps()->limits.maxTextureSize;
+        u32       size[2]  = { 64, 64 };
 
         for (int j = 0;; j = (j + 1) % 2)
         {
             if (size[0] > inout_pack_size[0] || size[1] > inout_pack_size[1])
             {
-                const uint32_t area = (size[0] - m_padding) * (size[1] - m_padding);
+                const u32 area = (size[0] - m_padding) * (size[1] - m_padding);
 
                 if (area >= min_area * 1.075f) // 7.5 % extra space, as the packing won't be perfect.
                 {
@@ -3164,17 +3164,17 @@ private:
         return true;
     }
 
-    void pack_rects(size_t offset, size_t count, uint32_t* inout_pack_size)
+    void pack_rects(size_t offset, size_t count, u32* inout_pack_size)
     {
-        uint32_t    min_area   = 0;
-        const float extra_area = 1.05f;
+        u32    min_area   = 0;
+        const f32 extra_area = 1.05f;
 
         for (const stbrp_rect& rect : m_pack_rects)
         {
-            min_area += static_cast<uint32_t>(rect.w * rect.h);
+            min_area += u32(rect.w * rect.h);
         }
 
-        min_area = static_cast<uint32_t>(static_cast<float>(min_area) * extra_area);
+        min_area = u32(f32(min_area) * extra_area);
 
         for (;;)
         {
@@ -3189,7 +3189,7 @@ private:
                 if (1 == stbrp_pack_rects(
                     &m_pack_ctx,
                     m_pack_rects.data() + offset,
-                    static_cast<int>(count)
+                    int(count)
                 ))
                 {
                     break;
@@ -3216,7 +3216,7 @@ private:
                         inout_pack_size[0] - m_padding,
                         inout_pack_size[1] - m_padding,
                         m_pack_nodes.data(),
-                        static_cast<int>(m_pack_nodes.size())
+                        int(m_pack_nodes.size())
                     );
                 }
                 else
@@ -3282,7 +3282,7 @@ private:
     }
 #endif // NDEBUG
 
-    void patch_stbrp_context(uint32_t width, uint32_t height)
+    void patch_stbrp_context(u32 width, u32 height)
     {
 #ifndef NDEBUG
         check_stbrp_context_validity(m_pack_ctx, m_pack_nodes);
@@ -3290,9 +3290,9 @@ private:
 
         // When changing only height, number of nodes or the sentinel node don't
         // change.
-        if (width - m_padding == static_cast<uint32_t>(m_pack_ctx.width))
+        if (width - m_padding == u32(m_pack_ctx.width))
         {
-            m_pack_ctx.height = static_cast<int>(height - m_padding);
+            m_pack_ctx.height = int(height - m_padding);
 
             return;
         }
@@ -3317,10 +3317,10 @@ private:
 
         stbrp_init_target(
             &ctx,
-            static_cast<int>(width  - m_padding),
-            static_cast<int>(height - m_padding),
+            int(width  - m_padding),
+            int(height - m_padding),
             nodes.data(),
-            static_cast<int>(nodes.size())
+            int(nodes.size())
         );
 
         ctx.active_head   = find_node(m_pack_ctx.active_head  );
@@ -3358,9 +3358,9 @@ private:
     Mutex                       m_mutex;
 
     stbtt_fontinfo              m_font_info     = {};
-    float                       m_font_size     = 0.0f; // Cap height, in pixels.
+    f32                       m_font_size     = 0.0f; // Cap height, in pixels.
 
-    Vector<uint32_t>            m_requests;
+    Vector<u32>            m_requests;
 
     // Packing.
     stbrp_context               m_pack_ctx      = {};
@@ -3369,16 +3369,16 @@ private:
 
     // Packed data.
     Vector<stbtt_packedchar>    m_char_quads;
-    HashMap<uint32_t, uint16_t> m_codepoints;
+    HashMap<u32, u16> m_codepoints;
 
     // Bitmap.
-    Vector<uint8_t>             m_bitmap_data;
-    uint16_t                    m_bitmap_width  = 0;
-    uint16_t                    m_bitmap_height = 0;
+    Vector<u8>             m_bitmap_data;
+    u16                    m_bitmap_width  = 0;
+    u16                    m_bitmap_height = 0;
 
-    uint16_t                    m_texture       = UINT16_MAX;
-    uint16_t                    m_flags         = ATLAS_FREE;
-    uint8_t                     m_padding       = 1;
+    u16                    m_texture       = UINT16_MAX;
+    u16                    m_flags         = ATLAS_FREE;
+    u8                     m_padding       = 1;
     bool                        m_locked        = false;
 };
 
@@ -3390,12 +3390,12 @@ public:
         m_indices.fill(UINT16_MAX);
     }
 
-    inline Atlas* get(uint16_t id)
+    inline Atlas* get(u16 id)
     {
         return m_indices[id] != UINT16_MAX ? &m_atlases[m_indices[id]] : nullptr;
     }
 
-    Atlas* get_or_create(uint16_t id)
+    Atlas* get_or_create(u16 id)
     {
         if (m_indices[id] != UINT16_MAX)
         {
@@ -3408,7 +3408,7 @@ public:
         {
             if (m_atlases[i].is_free())
             {
-                m_indices[id] = static_cast<uint16_t>(i);
+                m_indices[id] = u16(i);
 
                 return &m_atlases[i];
             }
@@ -3422,7 +3422,7 @@ public:
 private:
     Mutex                             m_mutex;
     Array<Atlas, MAX_TEXTURE_ATLASES> m_atlases;
-    Array<uint16_t, MAX_TEXTURES>     m_indices;
+    Array<u16, MAX_TEXTURES>     m_indices;
 };
 
 
@@ -3433,7 +3433,7 @@ private:
 class TextRecorder
 {
 public:
-    void begin(uint16_t id, uint16_t flags, uint16_t atlas_id, Atlas* atlas, MeshRecorder* recorder)
+    void begin(u16 id, u16 flags, u16 atlas_id, Atlas* atlas, MeshRecorder* recorder)
     {
         ASSERT(!m_atlas);
         ASSERT(!m_recorder);
@@ -3442,7 +3442,7 @@ public:
         ASSERT(recorder);
         ASSERT(!recorder->is_recording());
 
-        const uint32_t mesh_flags =
+        const u32 mesh_flags =
             TEXT_MESH       |
             PRIMITIVE_QUADS |
             VERTEX_POSITION |
@@ -3468,7 +3468,7 @@ public:
         *this = {};
     }
 
-    void set_alignment(uint16_t flags)
+    void set_alignment(u16 flags)
     {
         ASSERT(m_recorder);
 
@@ -3483,7 +3483,7 @@ public:
         }
     }
 
-    void set_line_height(float factor)
+    void set_line_height(f32 factor)
     {
         ASSERT(m_recorder);
 
@@ -3526,9 +3526,9 @@ public:
     }
 
 private:
-    inline uint16_t h_alignment() const
+    inline u16 h_alignment() const
     {
-        constexpr uint16_t alignment[] =
+        constexpr u16 alignment[] =
         {
             TEXT_H_ALIGN_LEFT  ,
             TEXT_H_ALIGN_CENTER,
@@ -3538,9 +3538,9 @@ private:
         return alignment[(m_flags & TEXT_H_ALIGN_MASK) >> TEXT_H_ALIGN_SHIFT];
     }
 
-    inline uint16_t v_alignment() const
+    inline u16 v_alignment() const
     {
-        constexpr uint16_t alignment[] =
+        constexpr u16 alignment[] =
         {
             TEXT_V_ALIGN_BASELINE  ,
             TEXT_V_ALIGN_MIDDLE    ,
@@ -3550,9 +3550,9 @@ private:
         return alignment[(m_flags & TEXT_V_ALIGN_MASK) >> TEXT_V_ALIGN_SHIFT];
     }
 
-    inline uint16_t y_axis() const
+    inline u16 y_axis() const
     {
-        constexpr uint16_t alignment[] =
+        constexpr u16 alignment[] =
         {
             TEXT_Y_AXIS_DOWN,
             TEXT_Y_AXIS_UP  ,
@@ -3569,8 +3569,8 @@ private:
 private:
     MeshRecorder* m_recorder    = nullptr;
     Atlas*        m_atlas       = nullptr;
-    float         m_line_height = 2.0f;
-    uint16_t      m_flags       = 0;
+    f32         m_line_height = 2.0f;
+    u16      m_flags       = 0;
 };
 
 
@@ -3719,7 +3719,7 @@ static void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
 template <int MAX_INPUTS, typename T>
 struct InputState
 {
-    enum Flag : uint8_t
+    enum Flag : u8
     {
         DOWN     = 0x01,
         UP       = 0x02,
@@ -3730,8 +3730,8 @@ struct InputState
     static constexpr int INPUT_COUNT            = MAX_INPUTS;
     static constexpr int INVALID_INPUT          =  -1;
 
-    uint8_t              states    [MAX_INPUTS] = { 0    };
-    float                timestamps[MAX_INPUTS] = { 0.0f };
+    u8              states    [MAX_INPUTS] = { 0    };
+    f32                timestamps[MAX_INPUTS] = { 0.0f };
 
     inline bool is(int app_input, int flag) const
     {
@@ -3742,7 +3742,7 @@ struct InputState
             : false;
     }
 
-    inline float held_time(int app_input, float timestamp) const
+    inline f32 held_time(int app_input, f32 timestamp) const
     {
         const int input = T::translate_app_input(app_input);
 
@@ -3758,7 +3758,7 @@ struct InputState
         return -1.0f;
     }
 
-    void update_input_state(int input, Flag flag, float timestamp = 0.0f)
+    void update_input_state(int input, Flag flag, f32 timestamp = 0.0f)
     {
         if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
         {
@@ -3793,12 +3793,12 @@ struct InputState
 
 struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 {
-    static constexpr float REPEATED_CLICK_DELAY = 0.5f; // NOTE : Could be configurable.
+    static constexpr f32 REPEATED_CLICK_DELAY = 0.5f; // NOTE : Could be configurable.
 
-    float                  curr  [2]            = { 0.0f };
-    float                  prev  [2]            = { 0.0f };
-    float                  delta [2]            = { 0.0f };
-    float                  scroll[2]            = { 0.0f };
+    f32                  curr  [2]            = { 0.0f };
+    f32                  prev  [2]            = { 0.0f };
+    f32                  delta [2]            = { 0.0f };
+    f32                  scroll[2]            = { 0.0f };
     int                    clicks[INPUT_COUNT]  = { 0    };
 
     inline int repeated_click_count(int app_input) const
@@ -3815,7 +3815,7 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
         return 0;
     }
 
-    void update_input_state(int input, Flag flag, float timestamp = 0.0f)
+    void update_input_state(int input, Flag flag, f32 timestamp = 0.0f)
     {
         if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
         {
@@ -3839,12 +3839,11 @@ struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
 
     void update_position(const Window& window)
     {
-        double x = 0.0;
-        double y = 0.0;
+        f64 x, y;
         glfwGetCursorPos(window.handle, &x, &y);
 
-        curr[0] = static_cast<float>(window.position_scale[0] * x);
-        curr[1] = static_cast<float>(window.position_scale[1] * y);
+        curr[0] = f32(window.position_scale[0] * x);
+        curr[1] = f32(window.position_scale[1] * y);
     }
 
     void update_position_delta()
@@ -3915,7 +3914,7 @@ struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
 
         int glfw_key = INVALID_INPUT;
 
-        if (app_key >= 0 && app_key < static_cast<int>(BX_COUNTOF(special_app_keys)))
+        if (app_key >= 0 && app_key < int(BX_COUNTOF(special_app_keys)))
         {
             glfw_key = special_app_keys[app_key];
         }
@@ -3945,7 +3944,7 @@ struct Task : enki::ITaskSet
     void*     data         = nullptr;
     TaskPool* pool         = nullptr;
 
-    void ExecuteRange(enki::TaskSetPartition, uint32_t) override;
+    void ExecuteRange(enki::TaskSetPartition, u32) override;
 };
 
 class TaskPool
@@ -3953,7 +3952,7 @@ class TaskPool
 public:
     TaskPool()
     {
-        for (uint8_t i = 0; i < MAX_TASKS; i++)
+        for (u8 i = 0; i < MAX_TASKS; i++)
         {
             m_tasks[i].pool = this;
             m_nexts[i]      = i + 1;
@@ -3968,7 +3967,7 @@ public:
 
         if (m_head < MAX_TASKS)
         {
-            const uint32_t i = m_head;
+            const u32 i = m_head;
 
             task       = &m_tasks[i];
             m_head     =  m_nexts[i];
@@ -3990,19 +3989,19 @@ public:
         m_tasks[i].func = nullptr;
         m_tasks[i].data = nullptr;
         m_nexts[i]      = m_head;
-        m_head          = static_cast<uint8_t>(i);
+        m_head          = u8(i);
     }
 
 private:
     Mutex   m_mutex;
     Task    m_tasks[MAX_TASKS];
-    uint8_t m_nexts[MAX_TASKS];
-    uint8_t m_head = 0;
+    u8 m_nexts[MAX_TASKS];
+    u8 m_head = 0;
 
     static_assert(MAX_TASKS <= UINT8_MAX, "MAX_TASKS too big, change the type.");
 };
 
-void Task::ExecuteRange(enki::TaskSetPartition, uint32_t)
+void Task::ExecuteRange(enki::TaskSetPartition, u32)
 {
     // ASSERT(t_ctx);
 
@@ -4042,7 +4041,7 @@ public:
     {
         int      image_width  = 0;
         int      image_height = 0;
-        uint8_t* image_data   = stbi_load(file_name, &image_width, &image_height, nullptr, channels);
+        u8* image_data   = stbi_load(file_name, &image_width, &image_height, nullptr, channels);
 
         if (!image_data)
         {
@@ -4059,7 +4058,7 @@ public:
             *height = image_height;
         }
 
-        Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
+        Vector<u8> buffer(image_data, image_data + image_width * image_height * channels);
         stbi_image_free(image_data);
 
         unsigned char* content = buffer.data();
@@ -4076,7 +4075,7 @@ public:
     {
         int      image_width  = 0;
         int      image_height = 0;
-        uint8_t* image_data   = stbi_load_from_memory(data, bytes, &image_width, &image_height, nullptr, channels);
+        u8* image_data   = stbi_load_from_memory(data, bytes, &image_width, &image_height, nullptr, channels);
 
         if (!image_data)
         {
@@ -4093,7 +4092,7 @@ public:
             *height = image_height;
         }
 
-        Vector<uint8_t> buffer(image_data, image_data + image_width * image_height * channels);
+        Vector<u8> buffer(image_data, image_data + image_width * image_height * channels);
         stbi_image_free(image_data);
 
         unsigned char* content = buffer.data();
@@ -4135,7 +4134,7 @@ private:
                 const long length = ftell(f);
                 fseek(f, 0, SEEK_SET);
 
-                Vector<uint8_t> buffer(length + (type == STRING));
+                Vector<u8> buffer(length + (type == STRING));
 
                 if (fread(buffer.data(), 1, length, f) == static_cast<size_t>(length))
                 {
@@ -4148,7 +4147,7 @@ private:
 
                     if (bytes_read)
                     {
-                        *bytes_read = static_cast<int>(length);
+                        *bytes_read = int(length);
                     }
 
                     {
@@ -4168,7 +4167,7 @@ private:
 
 private:
     Mutex                           m_mutex;
-    HashMap<void*, Vector<uint8_t>> m_contents;
+    HashMap<void*, Vector<u8>> m_contents;
 };
 
 
@@ -4209,7 +4208,7 @@ struct GlobalContext
     UniformCache        uniform_cache;
     MemoryCache         memory_cache;
     FontDataRegistry    font_data_registry;
-    Vector<uint32_t>    codepoint_queue; // TODO : Make thread safe.
+    Vector<u32>    codepoint_queue; // TODO : Make thread safe.
 
     GLFWcursor*         cursors[6] = { nullptr };
     Window              window;
@@ -4218,8 +4217,8 @@ struct GlobalContext
     Timer               frame_time;
 
     int                 active_cursor     = 0;
-    uint32_t            frame_number      = 0;
-    uint32_t            bgfx_frame_number = 0;
+    u32            frame_number      = 0;
+    u32            bgfx_frame_number = 0;
 
     Atomic<int>         transient_memory  = 32 << 20;
 
@@ -4307,9 +4306,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         //        `g_ctx.reset_back_buffer` is true.
         bgfx::Init init;
         init.platformData           = create_platform_data (g_ctx.window.handle, init.type  );
-        init.resolution.width       = static_cast<uint32_t>(g_ctx.window.framebuffer_size[0]);
-        init.resolution.height      = static_cast<uint32_t>(g_ctx.window.framebuffer_size[1]);
-        init.limits.transientVbSize = static_cast<uint32_t>(g_ctx.transient_memory          );
+        init.resolution.width       = u32(g_ctx.window.framebuffer_size[0]);
+        init.resolution.height      = u32(g_ctx.window.framebuffer_size[1]);
+        init.limits.transientVbSize = u32(g_ctx.transient_memory          );
 
         if (!bgfx::init(init))
         {
@@ -4331,7 +4330,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         struct PinnedTask : enki::IPinnedTask
         {
-            PinnedTask(uint32_t idx)
+            PinnedTask(u32 idx)
                 : enki::IPinnedTask(idx)
             {
             }
@@ -4348,7 +4347,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         t_ctxs.resize(g_ctx.task_scheduler.GetNumTaskThreads());
         t_ctx = &t_ctxs[0];
 
-        for (uint32_t i = 0; i < g_ctx.task_scheduler.GetNumTaskThreads(); i++)
+        for (u32 i = 0; i < g_ctx.task_scheduler.GetNumTaskThreads(); i++)
         {
             t_ctxs[i].is_main_thread = i == 0;
 
@@ -4370,7 +4369,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.bgfx_frame_number = bgfx::frame();
 
-    uint32_t debug_state = BGFX_DEBUG_NONE;
+    u32 debug_state = BGFX_DEBUG_NONE;
     bgfx::setDebug(debug_state);
 
     const bgfx::RendererType::Enum    type        = bgfx::getRendererType();
@@ -4399,7 +4398,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     {
         const struct
         {
-            uint32_t    attribs;
+            u32    attribs;
             const char* vs_name;
             const char* fs_name = nullptr;
         }
@@ -4485,7 +4484,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, static_cast<float>(g_ctx.total_time.elapsed));
+                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, f32(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_KEY_REPEATED:
@@ -4497,7 +4496,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 break;
 
             case GLEQ_BUTTON_PRESSED:
-                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, static_cast<float>(g_ctx.total_time.elapsed));
+                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, f32(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_BUTTON_RELEASED:
@@ -4529,8 +4528,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             gleqFreeEvent(&event);
         }
 
-        g_ctx.mouse.scroll[0] = static_cast<float>(scroll_accumulator[0]);
-        g_ctx.mouse.scroll[1] = static_cast<float>(scroll_accumulator[1]);
+        g_ctx.mouse.scroll[0] = f32(scroll_accumulator[0]);
+        g_ctx.mouse.scroll[1] = f32(scroll_accumulator[1]);
 
         if (g_ctx.reset_back_buffer)
         {
@@ -4538,10 +4537,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             g_ctx.window.update_size_info();
 
-            const uint16_t width  = static_cast<uint16_t>(g_ctx.window.framebuffer_size[0] );
-            const uint16_t height = static_cast<uint16_t>(g_ctx.window.framebuffer_size[1]);
+            const u16 width  = u16(g_ctx.window.framebuffer_size[0] );
+            const u16 height = u16(g_ctx.window.framebuffer_size[1]);
 
-            const uint32_t vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
+            const u32 vsync  = g_ctx.vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
 
@@ -4643,6 +4642,24 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
 
 // -----------------------------------------------------------------------------
+// TEMPORARY TYPEDEFS IN GLOBAL NAMESPACE
+// -----------------------------------------------------------------------------
+
+using u8  = mnm::u8;
+using u16 = mnm::u16;
+using u32 = mnm::u32;
+using u64 = mnm::u64;
+
+using i8  = mnm::i8;
+using i16 = mnm::i16;
+using i32 = mnm::i32;
+using i64 = mnm::i64;
+
+using f32 = mnm::f32;
+using f64 = mnm::f64;
+
+
+// -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY FROM C
 // -----------------------------------------------------------------------------
 
@@ -4663,8 +4680,8 @@ void size(int width, int height, int flags)
     ASSERT(mnm::g_ctx.window.display_scale[1]);
 
     // TODO : Round instead?
-    if (mnm::g_ctx.window.position_scale[0] != 1.0f) { width  = static_cast<int>(width  * mnm::g_ctx.window.display_scale[0]); }
-    if (mnm::g_ctx.window.position_scale[1] != 1.0f) { height = static_cast<int>(height * mnm::g_ctx.window.display_scale[1]); }
+    if (mnm::g_ctx.window.position_scale[0] != 1.0f) { width  = int(width  * mnm::g_ctx.window.display_scale[0]); }
+    if (mnm::g_ctx.window.position_scale[1] != 1.0f) { height = int(height * mnm::g_ctx.window.display_scale[1]); }
 
     mnm::resize_window(mnm::g_ctx.window.handle, width, height, flags);
 }
@@ -4703,7 +4720,7 @@ float height(void)
 
 float aspect(void)
 {
-    return static_cast<float>(mnm::g_ctx.window.framebuffer_size[0]) / static_cast<float>(mnm::g_ctx.window.framebuffer_size[1]);
+    return f32(mnm::g_ctx.window.framebuffer_size[0]) / f32(mnm::g_ctx.window.framebuffer_size[1]);
 }
 
 float dpi(void)
@@ -4807,7 +4824,7 @@ int mouse_clicked(int button)
 
 float mouse_held_time(int button)
 {
-    return mnm::g_ctx.mouse.held_time(button, static_cast<float>(mnm::g_ctx.total_time.elapsed));
+    return mnm::g_ctx.mouse.held_time(button, f32(mnm::g_ctx.total_time.elapsed));
 }
 
 float scroll_x(void)
@@ -4842,7 +4859,7 @@ int key_up(int key)
 
 float key_held_time(int key)
 {
-    return mnm::g_ctx.keyboard.held_time(key, static_cast<float>(mnm::g_ctx.total_time.elapsed));
+    return mnm::g_ctx.keyboard.held_time(key, f32(mnm::g_ctx.total_time.elapsed));
 }
 
 unsigned int codepoint(void)
@@ -4903,8 +4920,8 @@ void begin_mesh(int id, int flags)
     ASSERT(!mnm::t_ctx->mesh_recorder.is_recording());
 
     mnm::t_ctx->mesh_recorder.begin(
-        static_cast<uint16_t>(id),
-        static_cast<uint16_t>(flags) // NOTE : User exposed flags fit within 16 bits.
+        u16(id),
+        u16(flags) // NOTE : User exposed flags fit within 16 bits.
     );
 }
 
@@ -4955,7 +4972,7 @@ void mesh(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_MESHES);
+    ASSERT(id > 0 && u16(id) < MAX_MESHES);
     ASSERT(!t_ctx->mesh_recorder.is_recording());
 
     DrawState& state = t_ctx->draw_state;
@@ -4964,8 +4981,8 @@ void mesh(int id)
 
     state.framebuffer = g_ctx.pass_cache[t_ctx->active_pass].framebuffer();
 
-    const Mesh& mesh       = g_ctx.mesh_cache[static_cast<uint16_t>(id)];
-    uint32_t    mesh_flags = mesh.flags;
+    const Mesh& mesh       = g_ctx.mesh_cache[u16(id)];
+    u32    mesh_flags = mesh.flags;
 
     if (!t_ctx->encoder)
     {
@@ -5042,20 +5059,20 @@ void mesh(int id)
 
 void alias(int flags)
 {
-    mnm::t_ctx->draw_state.vertex_alias = { static_cast<uint16_t>(flags) };
+    mnm::t_ctx->draw_state.vertex_alias = { u16(flags) };
 }
 
 void range(int start, int count)
 {
     ASSERT(start >= 0);
 
-    mnm::t_ctx->draw_state.element_start =              static_cast<uint32_t>(start) ;
-    mnm::t_ctx->draw_state.element_count = count >= 0 ? static_cast<uint32_t>(count) : UINT32_MAX;
+    mnm::t_ctx->draw_state.element_start =              u32(start) ;
+    mnm::t_ctx->draw_state.element_count = count >= 0 ? u32(count) : UINT32_MAX;
 }
 
 void state(int flags)
 {
-    mnm::t_ctx->draw_state.flags = static_cast<uint16_t>(flags);
+    mnm::t_ctx->draw_state.flags = u16(flags);
 }
 
 void scissor(int x, int y, int width, int height)
@@ -5074,10 +5091,10 @@ void scissor(int x, int y, int width, int height)
     }
 
     t_ctx->encoder->setScissor(
-        static_cast<uint16_t>(x),
-        static_cast<uint16_t>(y),
-        static_cast<uint16_t>(width ),
-        static_cast<uint16_t>(height)
+        u16(x),
+        u16(y),
+        u16(width ),
+        u16(height)
     );
 }
 
@@ -5088,18 +5105,18 @@ void scissor(int x, int y, int width, int height)
 
 void load_texture(int id, int flags, int width, int height, int stride, const void* data)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_TEXTURES);
     ASSERT(width > 0);
     ASSERT(height > 0);
     ASSERT((width < SIZE_EQUAL && height < SIZE_EQUAL) || (width <= SIZE_DOUBLE && width == height));
     ASSERT(stride >= 0);
 
     mnm::g_ctx.texture_cache.add_texture(
-        static_cast<uint16_t>(id),
-        static_cast<uint16_t>(flags),
-        static_cast<uint16_t>(width),
-        static_cast<uint16_t>(height),
-        static_cast<uint16_t>(stride),
+        u16(id),
+        u16(flags),
+        u16(width),
+        u16(height),
+        u16(stride),
         data
     );
 }
@@ -5113,13 +5130,13 @@ void texture(int id)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
+    ASSERT(id > 0 && u16(id) < MAX_TEXTURES);
 
     if (!t_ctx->framebuffer_recorder.is_recording())
     {
         // TODO : Samplers should be set by default state and only overwritten when
         //        non-default shader is used.
-        const Texture& texture = g_ctx.texture_cache[static_cast<uint16_t>(id)];
+        const Texture& texture = g_ctx.texture_cache[u16(id)];
 
         t_ctx->draw_state.texture         = texture.handle;
         t_ctx->draw_state.sampler         = g_ctx.default_uniforms.default_sampler(texture.format);
@@ -5128,7 +5145,7 @@ void texture(int id)
     }
     else
     {
-        t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[static_cast<uint16_t>(id)]);
+        t_ctx->framebuffer_recorder.add_texture(g_ctx.texture_cache[u16(id)]);
     }
 }
 
@@ -5141,7 +5158,7 @@ void read_texture(int id, void* data)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
+    ASSERT(id > 0 && u16(id) < MAX_TEXTURES);
 
     if (!t_ctx->encoder)
     {
@@ -5150,7 +5167,7 @@ void read_texture(int id, void* data)
     }
 
     g_ctx.texture_cache.schedule_read(
-        static_cast<uint16_t>(id),
+        u16(id),
         t_ctx->active_pass + MAX_PASSES, // TODO : It might be better to let the user specify the pass explicitly.
         t_ctx->encoder,
         data
@@ -5159,10 +5176,10 @@ void read_texture(int id, void* data)
 
 int readable(int id)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_TEXTURES);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_TEXTURES);
 
     // TODO : This needs to compare value returned from `bgfx::frame`.
-    return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[static_cast<uint16_t>(id)].read_frame;
+    return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[u16(id)].read_frame;
 }
 
 
@@ -5174,12 +5191,12 @@ void begin_instancing(int id, int type)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && u16(id) < MAX_INSTANCE_BUFFERS);
     ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
 
     ASSERT(!t_ctx->instance_recorder.is_recording());
 
-    t_ctx->instance_recorder.begin(static_cast<uint16_t>(id), static_cast<uint16_t>(type));
+    t_ctx->instance_recorder.begin(u16(id), u16(type));
 }
 
 void end_instancing(void)
@@ -5208,10 +5225,10 @@ void instances(int id)
 {
     using namespace mnm;
 
-    ASSERT(id >= 0 && static_cast<uint16_t>(id) < MAX_INSTANCE_BUFFERS);
+    ASSERT(id >= 0 && u16(id) < MAX_INSTANCE_BUFFERS);
 
     // TODO : Assert that instance ID is active in the cache in the current frame.
-    t_ctx->draw_state.instances = &g_ctx.instance_cache[static_cast<uint16_t>(id)];
+    t_ctx->draw_state.instances = &g_ctx.instance_cache[u16(id)];
 }
 
 
@@ -5221,10 +5238,10 @@ void instances(int id)
 
 void create_font(int id, const void* data)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FONTS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_FONTS);
     ASSERT(data);
 
-    mnm::g_ctx.font_data_registry.add(static_cast<uint16_t>(id), data);
+    mnm::g_ctx.font_data_registry.add(u16(id), data);
 }
 
 void begin_atlas(int id, int flags, int font, float size)
@@ -5232,16 +5249,16 @@ void begin_atlas(int id, int flags, int font, float size)
     using namespace mnm;
 
     // TODO : Check `flags`.
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_TEXTURES);
-    ASSERT(font > 0 && static_cast<uint16_t>(font) < MAX_FONTS);
+    ASSERT(id > 0 && u16(id) < MAX_TEXTURES);
+    ASSERT(font > 0 && u16(font) < MAX_FONTS);
     ASSERT(size >= 5.0f && size <= 4096.0f);
 
     // TODO : Signal error if can't get an atlas.
-    if ((t_ctx->active_atlas = g_ctx.atlas_cache.get_or_create(static_cast<uint16_t>(id))))
+    if ((t_ctx->active_atlas = g_ctx.atlas_cache.get_or_create(u16(id))))
     {
         t_ctx->active_atlas->reset(
-            static_cast<uint16_t>(id),
-            static_cast<uint16_t>(flags),
+            u16(id),
+            u16(flags),
             g_ctx.font_data_registry[font],
             size,
             g_ctx.texture_cache
@@ -5266,7 +5283,7 @@ void glyph_range(int first, int last)
     ASSERT(last  <= UINT16_MAX);
     ASSERT(mnm::t_ctx->active_atlas);
 
-    mnm::t_ctx->active_atlas->add_glyph_range(static_cast<uint32_t>(first), static_cast<uint32_t>(last));
+    mnm::t_ctx->active_atlas->add_glyph_range(u32(first), u32(last));
 }
 
 void glyphs_from_string(const char* string)
@@ -5289,10 +5306,10 @@ void begin_text(int id, int atlas, int flags)
     ASSERT(!t_ctx->text_recorder.mesh_recorder());
 
     t_ctx->text_recorder.begin(
-        static_cast<uint16_t>(id),
-        static_cast<uint16_t>(flags),
-        static_cast<uint16_t>(atlas),
-        g_ctx.atlas_cache.get(static_cast<uint16_t>(atlas)),
+        u16(id),
+        u16(flags),
+        u16(atlas),
+        g_ctx.atlas_cache.get(u16(atlas)),
         &t_ctx->mesh_recorder
     );
 }
@@ -5313,7 +5330,7 @@ void alignment(int flags)
 {
     ASSERT(mnm::t_ctx->text_recorder.mesh_recorder());
 
-    mnm::t_ctx->text_recorder.set_alignment(static_cast<uint16_t>(flags));
+    mnm::t_ctx->text_recorder.set_alignment(u16(flags));
 }
 
 void line_height(float factor)
@@ -5346,7 +5363,7 @@ void text_size(int atlas, const char* start, const char* end, float line_height,
     if (height) { *height = 0.0f; }
 
     // TODO : Add warning if the ID doesn't correspond to a valid atlas.
-    if (Atlas* ptr = g_ctx.atlas_cache.get(static_cast<uint16_t>(atlas)))
+    if (Atlas* ptr = g_ctx.atlas_cache.get(u16(atlas)))
     {
         if (!ptr->get_text_size(start, end, line_height, width, height) &&
              ptr->is_updatable())
@@ -5368,9 +5385,9 @@ void text_size(int atlas, const char* start, const char* end, float line_height,
 
 void pass(int id)
 {
-    ASSERT(id >= 0 && static_cast<uint16_t>(id) < mnm::MAX_PASSES);
+    ASSERT(id >= 0 && u16(id) < mnm::MAX_PASSES);
 
-    mnm::t_ctx->active_pass = static_cast<uint16_t>(id);
+    mnm::t_ctx->active_pass = u16(id);
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].touch();
 }
 
@@ -5396,10 +5413,10 @@ void no_framebuffer(void)
 
 void framebuffer(int id)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_FRAMEBUFFERS);
 
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_framebuffer(
-        mnm::g_ctx.framebuffer_cache[static_cast<uint16_t>(id)].handle
+        mnm::g_ctx.framebuffer_cache[u16(id)].handle
     );
 }
 
@@ -5411,10 +5428,10 @@ void viewport(int x, int y, int width, int height)
     ASSERT(height >  0);
 
     mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_viewport(
-        static_cast<uint16_t>(x),
-        static_cast<uint16_t>(y),
-        static_cast<uint16_t>(width),
-        static_cast<uint16_t>(height)
+        u16(x),
+        u16(y),
+        u16(width),
+        u16(height)
     );
 }
 
@@ -5430,9 +5447,9 @@ void full_viewport(void)
 
 void begin_framebuffer(int id)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_FRAMEBUFFERS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_FRAMEBUFFERS);
 
-    mnm::t_ctx->framebuffer_recorder.begin(static_cast<uint16_t>(id));
+    mnm::t_ctx->framebuffer_recorder.begin(u16(id));
 }
 
 void end_framebuffer(void)
@@ -5448,15 +5465,15 @@ void end_framebuffer(void)
 
 void create_uniform(int id, int type, int count, const char* name)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_UNIFORMS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_UNIFORMS);
     ASSERT(type > 0 && type <= UNIFORM_SAMPLER);
     ASSERT(count > 0);
     ASSERT(name);
 
     (void)mnm::g_ctx.uniform_cache.add(
-        static_cast<uint16_t>(id),
-        static_cast<uint16_t>(type),
-        static_cast<uint16_t>(count),
+        u16(id),
+        u16(type),
+        u16(count),
         name
     );
 }
@@ -5465,7 +5482,7 @@ void uniform(int id, const void* value)
 {
     using namespace mnm;
 
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < MAX_UNIFORMS);
+    ASSERT(id > 0 && u16(id) < MAX_UNIFORMS);
     ASSERT(value);
 
     if (!t_ctx->encoder)
@@ -5474,31 +5491,31 @@ void uniform(int id, const void* value)
         ASSERT(t_ctx->encoder);
     }
 
-    t_ctx->encoder->setUniform(g_ctx.uniform_cache[static_cast<uint16_t>(id)].handle, value, UINT16_MAX);
+    t_ctx->encoder->setUniform(g_ctx.uniform_cache[u16(id)].handle, value, UINT16_MAX);
 }
 
 void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_PROGRAMS);
     ASSERT(vs_data);
     ASSERT(vs_size > 0);
     ASSERT(fs_data);
     ASSERT(fs_size > 0);
 
     (void)mnm::g_ctx.program_cache.add(
-        static_cast<uint16_t>(id),
+        u16(id),
         vs_data,
-        static_cast<uint32_t>(vs_size),
+        u32(vs_size),
         fs_data,
-        static_cast<uint32_t>(fs_size)
+        u32(fs_size)
     );
 }
 
 void shader(int id)
 {
-    ASSERT(id > 0 && static_cast<uint16_t>(id) < mnm::MAX_PROGRAMS);
+    ASSERT(id > 0 && u16(id) < mnm::MAX_PROGRAMS);
 
-    mnm::t_ctx->draw_state.program = mnm::g_ctx.program_cache[static_cast<uint16_t>(id)];
+    mnm::t_ctx->draw_state.program = mnm::g_ctx.program_cache[u16(id)];
 }
 
 
@@ -5691,7 +5708,7 @@ void save_string(const char* file_name, const char* string)
     ASSERT(file_name);
     ASSERT(string);
 
-    save_bytes(file_name, string, static_cast<int>(strlen(string)));
+    save_bytes(file_name, string, int(strlen(string)));
 }
 
 void unload(void* file_content)
@@ -5746,7 +5763,7 @@ void transient_memory(int megabytes)
 
 int frame(void)
 {
-    return static_cast<int>(mnm::g_ctx.frame_number);
+    return int(mnm::g_ctx.frame_number);
 }
 
 
