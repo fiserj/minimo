@@ -322,6 +322,16 @@ static inline void push_back(Vector<u8>& buffer, const T& value)
     push_back<sizeof(T)>(buffer, &value);
 }
 
+template <size_t Size>
+static inline void push_back(DynamicArray<u8>& buffer, const void* data)
+{
+    static_assert(Size > 0, "Size must be positive.");
+
+    buffer.resize(buffer.size + Size);
+
+    assign<Size>(data, buffer.data + buffer.size - Size);
+}
+
 static inline void push_back(DynamicArray<u8>& buffer, const void* data, u32 size)
 {
     buffer.resize(buffer.size + size);
@@ -1284,24 +1294,23 @@ private:
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
-class MeshRecorder
+struct MeshRecorder
 {
-public:
-    void begin(u16 id, u32 flags, u32 extra_data = 0)
+    void begin(u16 id_, u32 flags_, u32 extra_data_ = 0)
     {
-        ASSERT(!is_recording() || (id == UINT16_MAX && flags == UINT32_MAX));
+        ASSERT(!is_recording() || (id_ == UINT16_MAX && flags_ == UINT32_MAX));
 
-        m_id         = id;
-        m_flags      = flags;
-        m_extra_data = extra_data;
+        id         = id_;
+        flags      = flags_;
+        extra_data = extra_data_;
 
-        m_position_buffer.clear();
-        m_attrib_buffer  .clear();
+        position_buffer.clear();
+        attrib_buffer  .clear();
 
-        m_attrib_funcs     = flags != UINT32_MAX ? &ms_attrib_state_func_table[flags] : nullptr;
-        m_vertex_func      = flags != UINT32_MAX ?  ms_vertex_push_func_table [flags] : nullptr;
-        m_vertex_count     = 0;
-        m_invocation_count = 0;
+        attrib_funcs     = flags != UINT32_MAX ? &s_attrib_state_func_table[flags] : nullptr;
+        vertex_func      = flags != UINT32_MAX ?  s_vertex_push_func_table [flags] : nullptr;
+        vertex_count     = 0;
+        invocation_count = 0;
     }
 
     void end()
@@ -1315,63 +1324,43 @@ public:
     {
         ASSERT(is_recording());
 
-        (* m_vertex_func)(*this, position);
+        (* vertex_func)(*this, position);
     }
 
     inline void color(u32 rgba)
     {
         ASSERT(is_recording());
 
-        m_attrib_funcs->color(m_attrib_state, rgba);
+        attrib_funcs->color(attrib_state, rgba);
     }
 
     inline void normal(f32 nx, f32 ny, f32 nz)
     {
         ASSERT(is_recording());
 
-        m_attrib_funcs->normal(m_attrib_state, nx, ny, nz);
+        attrib_funcs->normal(attrib_state, nx, ny, nz);
     }
 
     inline void texcoord(f32 u, f32 v)
     {
         ASSERT(is_recording());
 
-        m_attrib_funcs->texcoord(m_attrib_state, u, v);
+        attrib_funcs->texcoord(attrib_state, u, v);
     }
 
-    inline const Vector<u8>& attrib_buffer() const
+    inline bool is_recording() const
     {
-        ASSERT(is_recording());
-
-        return m_attrib_buffer;
+        return id != UINT16_MAX;
     }
-
-    inline const Vector<u8>& position_buffer() const
-    {
-        ASSERT(is_recording());
-
-        return m_position_buffer;
-    }
-
-    inline bool is_recording() const { return m_id != UINT16_MAX; }
-
-    inline u16 id() const { return m_id; }
-
-    inline u32 flags() const { return m_flags; }
-
-    inline u32 extra_data() const { return m_extra_data; }
-
-    inline u32 vertex_count() const { return m_vertex_count; }
 
 private:
     using VertexPushFunc = void (*)(MeshRecorder&, const Vec3&);
 
-    class VertexPushFuncTable
+    struct VertexPushFuncTable
     {
-    public:
         VertexPushFuncTable()
         {
-            m_funcs.fill(nullptr);
+            funcs.fill(nullptr);
 
             //  +-------------------------- VERTEX_COLOR
             //  |  +----------------------- VERTEX_NORMAL
@@ -1389,7 +1378,7 @@ private:
 
         inline const VertexPushFunc& operator[](u32 flags) const
         {
-            return m_funcs[get_index_from_flags(u16(flags))];
+            return funcs[get_index_from_flags(u16(flags))];
         }
 
     private:
@@ -1408,18 +1397,18 @@ private:
                 ((flags & PRIMITIVE_QUADS   )                       ) ; // Bit 4.
         }
 
-        template <size_t Size>
-        static inline void emulate_quad(Vector<u8>& buffer)
+        template <u32 Size>
+        static inline void emulate_quad(DynamicArray<u8>& buffer)
         {
             static_assert(Size > 0, "Size must be positive.");
 
-            ASSERT(!buffer.empty());
-            ASSERT( buffer.size() % Size      == 0);
-            ASSERT((buffer.size() / Size) % 3 == 0);
+            ASSERT(!buffer.is_empty());
+            ASSERT( buffer.size % Size      == 0);
+            ASSERT((buffer.size / Size) % 3 == 0);
 
-            buffer.resize(buffer.size() + 2 * Size);
+            buffer.resize(buffer.size + 2 * Size);
 
-            u8* end = buffer.data() + buffer.size();
+            u8* end = buffer.data + buffer.size;
 
             // Assuming the last triangle has relative indices
             // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
@@ -1432,28 +1421,28 @@ private:
         {
             if constexpr (!!(Flags & (PRIMITIVE_QUADS)))
             {
-                if ((mesh_recorder.m_invocation_count & 3) == 3)
+                if ((mesh_recorder.invocation_count & 3) == 3)
                 {
-                    emulate_quad<sizeof(position)>(mesh_recorder.m_position_buffer);
+                    emulate_quad<sizeof(position)>(mesh_recorder.position_buffer);
 
                     if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
                     {
-                        emulate_quad<vertex_attribs_size<Flags>()>(mesh_recorder.m_attrib_buffer);
+                        emulate_quad<vertex_attribs_size<Flags>()>(mesh_recorder.attrib_buffer);
                     }
 
-                    mesh_recorder.m_vertex_count += 2;
+                    mesh_recorder.vertex_count += 2;
                 }
 
-                mesh_recorder.m_invocation_count++;
+                mesh_recorder.invocation_count++;
             }
 
-            mesh_recorder.m_vertex_count++;
+            mesh_recorder.vertex_count++;
 
-            push_back(mesh_recorder.m_position_buffer, position);
+            push_back(mesh_recorder.position_buffer, position);
 
             if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
             {
-                push_back<vertex_attribs_size<Flags>()>(mesh_recorder.m_attrib_buffer, mesh_recorder.m_attrib_state.data);
+                push_back<vertex_attribs_size<Flags>()>(mesh_recorder.attrib_buffer, mesh_recorder.attrib_state.data);
             }
         }
 
@@ -1484,32 +1473,33 @@ private:
                 (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
 
             // NOTE : We do insert few elements multiple times.
-            m_funcs[get_index_from_flags(Flags)] = vertex<Flags>;
+            funcs[get_index_from_flags(Flags)] = vertex<Flags>;
         }
 
     private:
-        Array<VertexPushFunc, 32> m_funcs;
+        Array<VertexPushFunc, 32> funcs;
     };
 
-protected:
-    Vector<u8>                         m_attrib_buffer;
-    Vector<u8>                         m_position_buffer;
-    VertexAttribState                       m_attrib_state;
-    const VertexAttribStateFuncSet*         m_attrib_funcs     = nullptr;
-    VertexPushFunc                          m_vertex_func      = nullptr;
-    u32                                m_vertex_count     = 0;
-    u32                                m_invocation_count = 0;
-    u32                                m_extra_data       = 0;
-    u32                                m_flags            = UINT32_MAX;
-    u16                                m_id               = UINT16_MAX;
+public:
+    DynamicArray<u8>                attrib_buffer;
+    DynamicArray<u8>                position_buffer;
+    VertexAttribState               attrib_state;
+    const VertexAttribStateFuncSet* attrib_funcs     = nullptr;
+    VertexPushFunc                  vertex_func      = nullptr;
+    u32                             vertex_count     = 0;
+    u32                             invocation_count = 0;
+    u32                             extra_data       = 0;
+    u32                             flags            = UINT32_MAX;
+    u16                             id               = UINT16_MAX;
 
-    static const VertexAttribStateFuncTable ms_attrib_state_func_table;
-    static const VertexPushFuncTable        ms_vertex_push_func_table;
+private:
+    static const VertexAttribStateFuncTable s_attrib_state_func_table;
+    static const VertexPushFuncTable        s_vertex_push_func_table;
 };
 
-const VertexAttribStateFuncTable MeshRecorder::ms_attrib_state_func_table;
+const VertexAttribStateFuncTable MeshRecorder::s_attrib_state_func_table;
 
-const MeshRecorder::VertexPushFuncTable MeshRecorder::ms_vertex_push_func_table;
+const MeshRecorder::VertexPushFuncTable MeshRecorder::s_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
@@ -1640,13 +1630,13 @@ struct MeshCache
 public:
     bool add_mesh(const MeshRecorder& recorder, const VertexLayoutCache& layouts)
     {
-        ASSERT(recorder.id() < m_meshes.size());
+        ASSERT(recorder.id < m_meshes.size());
 
         MutexScope lock(m_mutex);
 
-        Mesh& mesh = m_meshes[recorder.id()];
+        Mesh& mesh = m_meshes[recorder.id];
 
-        const u16 new_type = mesh_type(recorder.flags());
+        const u16 new_type = mesh_type(recorder.flags);
 
         if (new_type == MESH_INVALID)
         {
@@ -1656,9 +1646,9 @@ public:
 
         mesh.destroy();
 
-        mesh.element_count = recorder.vertex_count();
-        mesh.extra_data    = recorder.extra_data();
-        mesh.flags         = recorder.flags();
+        mesh.element_count = recorder.vertex_count;
+        mesh.extra_data    = recorder.extra_data;
+        mesh.flags         = recorder.flags;
 
         switch (new_type)
         {
@@ -1670,7 +1660,7 @@ public:
         case MESH_TRANSIENT:
             if (add_transient_mesh(mesh, recorder, layouts))
             {
-                m_transient_idxs.push_back(recorder.id());
+                m_transient_idxs.push_back(recorder.id);
             }
             break;
 
@@ -1718,22 +1708,22 @@ public:
     }
 
 private:
-    bool add_transient_buffer(const Vector<u8>& data, const bgfx::VertexLayout& layout, u16& dst_index)
+    bool add_transient_buffer(const DynamicArray<u8>& data, const bgfx::VertexLayout& layout, u16& dst_index)
     {
         ASSERT(layout.getStride() > 0);
 
-        if (data.empty())
+        if (data.is_empty())
         {
             return true;
         }
 
-        if (data.size() % layout.getStride() != 0)
+        if (data.size % layout.getStride() != 0)
         {
             ASSERT(false && "Layout does not match data size.");
             return false;
         }
 
-        const u32 count = u32(data.size() / layout.getStride());
+        const u32 count = u32(data.size / layout.getStride());
 
         if (bgfx::getAvailTransientVertexBuffer(count, layout) < count)
         {
@@ -1747,19 +1737,19 @@ private:
         m_transient_buffers.resize(m_transient_buffers.size() + 1);
 
         bgfx::allocTransientVertexBuffer(&m_transient_buffers.back(), count, layout);
-        (void)memcpy(m_transient_buffers.back().data, data.data(), data.size());
+        (void)memcpy(m_transient_buffers.back().data, data.data, data.size);
 
         return true;
     }
 
     bool add_transient_mesh(Mesh& mesh, const MeshRecorder& recorder, const VertexLayoutCache& layouts)
     {
-        ASSERT(!recorder.position_buffer().empty());
+        ASSERT(!recorder.position_buffer.is_empty());
 
         if (!m_transient_exhausted)
         {
-            if (!add_transient_buffer(recorder.position_buffer(), layouts[VERTEX_POSITION], mesh.positions.transient_index) ||
-                !add_transient_buffer(recorder.attrib_buffer  (), layouts[mesh.flags     ], mesh.attribs  .transient_index)
+            if (!add_transient_buffer(recorder.position_buffer, layouts[VERTEX_POSITION], mesh.positions.transient_index) ||
+                !add_transient_buffer(recorder.attrib_buffer  , layouts[mesh.flags     ], mesh.attribs  .transient_index)
             )
             {
                 m_transient_exhausted = true;
@@ -1778,14 +1768,14 @@ private:
         const bgfx::VertexLayout* layouts[2];
 
         layouts[0] = &layout_cache[VERTEX_POSITION]; // TODO : Eventually add support for 2D position.
-        streams[0] = { recorder.position_buffer().data(), layouts[0]->getStride(), layouts[0]->getStride() };
+        streams[0] = { recorder.position_buffer.data, layouts[0]->getStride(), layouts[0]->getStride() };
 
         const bool has_attribs = (mesh_attribs(mesh.flags) & VERTEX_ATTRIB_MASK);
 
         if (has_attribs)
         {
             layouts[1] = &layout_cache[mesh.flags];
-            streams[1] = { recorder.attrib_buffer().data(), layouts[1]->getStride(), layouts[1]->getStride() };
+            streams[1] = { recorder.attrib_buffer.data, layouts[1]->getStride(), layouts[1]->getStride() };
         }
 
         Vector<unsigned int> remap_table(mesh.element_count);
@@ -4944,7 +4934,7 @@ void vertex(float x, float y, float z)
 
     // TODO : We should measure whether branch prediction minimizes the cost of
     //        having a condition in here.
-    if (!(t_ctx->mesh_recorder.flags() & NO_VERTEX_TRANSFORM))
+    if (!(t_ctx->mesh_recorder.flags & NO_VERTEX_TRANSFORM))
     {
         t_ctx->mesh_recorder.vertex((t_ctx->matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
     }
