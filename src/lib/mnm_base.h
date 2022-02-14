@@ -23,11 +23,20 @@ using f64 = double;
 constexpr u16 U16_MAX = UINT16_MAX;
 constexpr u32 U32_MAX = UINT32_MAX;
 
-using Allocator = bx::AllocatorI;
+using Allocator  = bx::AllocatorI;
+using Mutex      = bx::Mutex;
+using MutexScope = bx::MutexScope;
 
 using Mat4 = hmm_mat4;
 using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 using Vec4 = hmm_vec4;
+
+template <typename T>
+constexpr bool is_pod()
+{
+    // `std::is_pod` is being deprecated as of C++20.
+    return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
+}
 
 } // namespace mnm

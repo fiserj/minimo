@@ -52,7 +52,7 @@ struct InputCache
 
     void update_states()
     {
-        for (u16 i = 0; i < Size; i++)
+        for (u16 i = 0; i < INPUT_SIZE; i++)
         {
             if (states[i] & u8(InputState::UP))
             {

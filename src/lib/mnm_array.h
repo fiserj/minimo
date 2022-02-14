@@ -37,7 +37,7 @@ struct StaticArray
     T data[Size];
 
     static_assert(
-        std::is_trivial<T>::value && std::is_standard_layout<T>::value,
+        is_pod<T>(),
         "`StaticArray` only supports POD-like types."
     );
 
@@ -73,7 +73,7 @@ struct DynamicArray
     bx::AllocatorI* allocator;
 
     static_assert(
-        std::is_trivial<T>::value && std::is_standard_layout<T>::value,
+        is_pod<T>(),
         "`DynamicArray` only supports POD-like types."
     );
 
