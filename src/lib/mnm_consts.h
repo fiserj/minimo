@@ -11,6 +11,7 @@ constexpr u32 ATLAS_FREE             = 0x08000;
 constexpr u32 ATLAS_MONOSPACED       = 0x00002;
 constexpr u32 MESH_INVALID           = 0x00006;
 constexpr u32 VERTEX_POSITION        = 0x00000;
+constexpr u32 VERTEX_TEXCOORD_F32    = VERTEX_TEXCOORD | TEXCOORD_F32;
 
 // These have to be cross-checked against regular mesh flags (see later).
 constexpr u32 INSTANCING_SUPPORTED   = 0x10000;

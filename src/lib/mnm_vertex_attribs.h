@@ -3,6 +3,12 @@
 namespace mnm
 {
 
+template <u16 Flags>
+constexpr u32 vertex_attribs_size();
+
+template <u16 Flags, u16 Attrib>
+constexpr u32 vertex_attrib_offset();
+
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
     u8 data[32];
@@ -15,24 +21,50 @@ BX_ALIGN_DECL_16(struct) VertexAttribState
 
     using FullTexcoordType   = Vec2;
 
-    template <typename ReturnT, u32 BytesOffset>
-    const ReturnT* at() const
+    template <typename T, u32 BytesOffset>
+    inline constexpr const T* at() const
     {
-        static_assert(is_pod<ReturnT>(),
-            "`ReturnT` must be POD type.");
+        static_assert(is_pod<T>(),
+            "`T` must be POD type.");
 
-        static_assert(BytesOffset % std::alignment_of<ReturnT>::value == 0,
-            "`BytesOffset` must be multiple of alignment of `ReturnT`.");
+        static_assert(BytesOffset % std::alignment_of<T>::value == 0,
+            "`BytesOffset` must be multiple of alignment of return type `T`.");
 
-        return reinterpret_cast<const ReturnT*>(data + BytesOffset);
+        return reinterpret_cast<const T*>(data + BytesOffset);
     }
 
-    template <typename ReturnT, u32 BytesOffset>
-    ReturnT* at()
+    template <typename T, u32 BytesOffset>
+    inline constexpr T* at()
     {
-        return const_cast<ReturnT*>(
-            static_cast<const VertexAttribState&>(*this).at<ReturnT, BytesOffset>()
+        return const_cast<T*>(
+            static_cast<const VertexAttribState&>(*this).at<T, BytesOffset>()
         );
+    }
+
+    template <u16 Flags, u16 Attrib>
+    inline constexpr auto get()
+    {
+        constexpr u32 offset = vertex_attrib_offset<Flags, Attrib>();
+
+        if constexpr (Attrib == VERTEX_COLOR)
+        {
+            return at<VertexAttribState::PackedColorType, offset>();
+        };
+
+        if constexpr (Attrib == VERTEX_NORMAL)
+        {
+            return at<VertexAttribState::PackedNormalType, offset>();
+        };
+
+        if constexpr (Attrib == VERTEX_TEXCOORD)
+        {
+            return at<VertexAttribState::PackedTexcoordType, offset>();
+        };
+
+        if constexpr (Attrib == VERTEX_TEXCOORD_F32)
+        {
+            return at<VertexAttribState::FullTexcoordType, offset>();
+        }
     }
 };
 
@@ -70,15 +102,15 @@ template <u16 Flags, u16 Attrib>
 constexpr u32 vertex_attrib_offset()
 {
     static_assert(
-        Attrib ==  VERTEX_COLOR    ||
-        Attrib ==  VERTEX_NORMAL   ||
-        Attrib ==  VERTEX_TEXCOORD ||
-        Attrib == (VERTEX_TEXCOORD | TEXCOORD_F32),
+        Attrib == VERTEX_COLOR    ||
+        Attrib == VERTEX_NORMAL   ||
+        Attrib == VERTEX_TEXCOORD ||
+        Attrib == VERTEX_TEXCOORD_F32,
         "Invalid `Attrib`."
     );
 
     static_assert(
-        Flags & Attrib,
+        Attrib == (Flags & Attrib),
         "`Attrib` must be part of `Flags`."
     );
 
@@ -104,10 +136,7 @@ void store_color(VertexAttribState& state, u32 rgba)
 {
     if constexpr (!!(Flags & VERTEX_COLOR))
     {
-        *state.at<
-            VertexAttribState::PackedColorType,
-            vertex_attrib_offset<Flags, VERTEX_COLOR>()
-        >() = bx::endianSwap(rgba);
+        *state.get<Flags, VERTEX_COLOR>() = bx::endianSwap(rgba);
     }
 }
 
@@ -123,13 +152,7 @@ void store_normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
             nz * 0.5f + 0.5f,
         };
 
-        bx::packRgb8(
-            state.at<
-                VertexAttribState::PackedNormalType,
-                vertex_attrib_offset<Flags, VERTEX_NORMAL>()
-            >(),
-            normalized
-        );
+        bx::packRgb8(state.get<Flags, VERTEX_NORMAL>(), normalized);
     }
 }
 
@@ -140,21 +163,12 @@ void store_texcoord(VertexAttribState& state, f32 u, f32 v)
     {
         if constexpr (!!(Flags & TEXCOORD_F32))
         {
-            *state.at<
-                VertexAttribState::FullTexcoordType,
-                vertex_attrib_offset<Flags, VERTEX_TEXCOORD | TEXCOORD_F32>()
-            >() = HMM_Vec2(u, v);
+            *state.get<Flags, VERTEX_TEXCOORD_F32>() = HMM_Vec2(u, v);
         }
         else
         {
             const f32 elems[] = { u, v };
-            bx::packRg16S(
-                state.at<
-                    VertexAttribState::PackedTexcoordType,
-                    vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()
-                >(),
-                elems
-            );
+            bx::packRg16S(state.get<Flags, VERTEX_TEXCOORD>(), elems);
         }
     }
 }
@@ -168,16 +182,17 @@ struct VertexAttribStateFuncSet
     void (* texcoord)(VertexAttribState&, f32 u, f32 v);
 };
 
-struct VertexAttribStateFuncTable
+class VertexAttribStateFuncTable
 {
-    StaticArray<VertexAttribStateFuncSet, 16> table;
+    StaticArray<VertexAttribStateFuncSet, 16> m_table;
 
+public:
     void init()
     {
-        //  +-------------------------- VERTEX_COLOR
-        //  |  +----------------------- VERTEX_NORMAL
-        //  |  |  +-------------------- VERTEX_TEXCOORD
-        //  |  |  |
+        //      +---------- VERTEX_COLOR
+        //      |  +------- VERTEX_NORMAL
+        //      |  |  +---- VERTEX_TEXCOORD
+        //      |  |  |
         variant<0, 0, 0>();
         variant<1, 0, 0>();
         variant<0, 1, 0>();
@@ -190,7 +205,7 @@ struct VertexAttribStateFuncTable
 
     inline VertexAttribStateFuncSet operator[](u16 flags) const
     {
-        return table[index(flags)];
+        return m_table[index(flags)];
     }
 
 private:
@@ -232,7 +247,7 @@ private:
         funcs.normal   = store_normal  <Flags>;
         funcs.texcoord = store_texcoord<Flags>;
 
-        table[index(Flags)] = funcs;
+        m_table[index(Flags)] = funcs;
     }
 };
 
