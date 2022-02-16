@@ -108,6 +108,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #include "mnm_input.h"
 #include "mnm_window.h"
 #include "mnm_stack.h"
+#include "mnm_vertex_attribs.h"
 
 namespace mnm
 {
@@ -942,230 +943,6 @@ private:
 
 
 // -----------------------------------------------------------------------------
-// VERTEX ATTRIB STATE
-// -----------------------------------------------------------------------------
-
-BX_ALIGN_DECL_16(struct) VertexAttribState
-{
-    u8 data[32];
-
-    using PackedColorType    = u32; // As RGBA_u8.
-
-    using PackedNormalType   = u32; // As RGB_u8.
-
-    using PackedTexcoordType = u32; // As RG_s16.
-
-    using FullTexcoordType   = Vec2;
-
-    template <typename ReturnT, size_t BytesOffset>
-    const ReturnT* at() const
-    {
-        static_assert(is_pod<ReturnT>(),
-            "ReturnT must be POD type.");
-
-        static_assert(BytesOffset % std::alignment_of<ReturnT>::value == 0,
-            "BytesOffset must be multiple of alignment of ReturnT.");
-
-        return reinterpret_cast<const ReturnT*>(data + BytesOffset);
-    }
-
-    template <typename ReturnT, size_t BytesOffset>
-    ReturnT* at()
-    {
-        return const_cast<ReturnT*>(static_cast<const VertexAttribState&>(*this).at<ReturnT, BytesOffset>());
-    }
-};
-
-template <u16 Flags>
-static constexpr size_t vertex_attribs_size()
-{
-    size_t size = 0;
-
-    if constexpr (!!(Flags & VERTEX_COLOR))
-    {
-        size += sizeof(VertexAttribState::PackedColorType);
-    }
-
-    if constexpr (!!(Flags & VERTEX_NORMAL))
-    {
-        size += sizeof(VertexAttribState::PackedNormalType);
-    }
-
-    if constexpr (!!(Flags & VERTEX_TEXCOORD))
-    {
-        if constexpr (!!(Flags & TEXCOORD_F32))
-        {
-            size += sizeof(VertexAttribState::FullTexcoordType);
-        }
-        else
-        {
-            size += sizeof(VertexAttribState::PackedTexcoordType);
-        }
-    }
-
-    return size;
-}
-
-template <u16 Flags, u16 Attrib>
-static constexpr size_t vertex_attrib_offset()
-{
-    static_assert(
-        Attrib ==  VERTEX_COLOR    ||
-        Attrib ==  VERTEX_NORMAL   ||
-        Attrib ==  VERTEX_TEXCOORD ||
-        Attrib == (VERTEX_TEXCOORD | TEXCOORD_F32),
-        "Invalid Attrib."
-    );
-
-    static_assert(
-        Flags & Attrib,
-        "Attrib must be part of Flags."
-    );
-
-    size_t offset = 0;
-
-    // Order: color, normal, texcooord.
-
-    if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
-    {
-        offset += sizeof(VertexAttribState::PackedColorType);
-    }
-
-    if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
-    {
-        offset += sizeof(VertexAttribState::PackedNormalType);
-    }
-
-    return offset;
-}
-
-struct VertexAttribStateFuncSet
-{
-    void (* color)(VertexAttribState&, u32 rgba) = nullptr;
-
-    void (* normal)(VertexAttribState&, f32 nx, f32 ny, f32 nz) = nullptr;
-
-    void (* texcoord)(VertexAttribState&, f32 u, f32 v) = nullptr;
-};
-
-class VertexAttribStateFuncTable
-{
-public:
-    VertexAttribStateFuncTable()
-    {
-        //  +-------------------------- VERTEX_COLOR
-        //  |  +----------------------- VERTEX_NORMAL
-        //  |  |  +-------------------- VERTEX_TEXCOORD
-        //  |  |  |
-        add<0, 0, 0>();
-        add<1, 0, 0>();
-        add<0, 1, 0>();
-        add<0, 0, 1>();
-        add<1, 1, 0>();
-        add<1, 0, 1>();
-        add<0, 1, 1>();
-        add<1, 1, 1>();
-    }
-
-    inline const VertexAttribStateFuncSet& operator[](u16 flags) const
-    {
-        return m_func_sets[get_index_from_flags(flags)];
-    }
-
-private:
-    static inline constexpr u16 get_index_from_flags(u16 flags)
-    {
-        static_assert(
-            VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b0111 &&
-            TEXCOORD_F32       >> 9                   == 0b1000,
-            "Invalid index assumptions in `VertexAttribStateFuncTable::get_index_from_attribs`."
-        );
-
-        return
-            ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
-            ((flags & TEXCOORD_F32      ) >> 9                  ) ; // Bit 3.
-    }
-
-    template <u16 Flags>
-    static void color(VertexAttribState& state, u32 rgba)
-    {
-        if constexpr (!!(Flags & VERTEX_COLOR))
-        {
-            *state.at<VertexAttribState::PackedColorType, vertex_attrib_offset<Flags, VERTEX_COLOR>()>() = bx::endianSwap(rgba);
-        }
-    }
-
-    template <u16 Flags>
-    static void normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
-    {
-        if constexpr (!!(Flags & VERTEX_NORMAL))
-        {
-            const f32 normalized[] =
-            {
-                nx * 0.5f + 0.5f,
-                ny * 0.5f + 0.5f,
-                nz * 0.5f + 0.5f,
-            };
-
-            bx::packRgb8(state.at<VertexAttribState::PackedNormalType, vertex_attrib_offset<Flags, VERTEX_NORMAL>()>(), normalized);
-        }
-    }
-
-    template <u16 Flags>
-    static void texcoord(VertexAttribState& state, f32 u, f32 v)
-    {
-        if constexpr (!!(Flags & VERTEX_TEXCOORD))
-        {
-            if constexpr (!!(Flags & TEXCOORD_F32))
-            {
-                *state.at<VertexAttribState::FullTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD | TEXCOORD_F32>()>() = HMM_Vec2(u, v);
-            }
-            else
-            {
-                const f32 elems[] = { u, v };
-                bx::packRg16S(state.at<VertexAttribState::PackedTexcoordType, vertex_attrib_offset<Flags, VERTEX_TEXCOORD>()>(), elems);
-            }
-        }
-    }
-
-    template <
-        bool HasColor,
-        bool HasNormal,
-        bool HasTexCoord,
-        bool HasTexCoordF32 = false
-    >
-    void add()
-    {
-        if constexpr (HasTexCoord && !HasTexCoordF32)
-        {
-            add<HasColor, HasNormal, HasTexCoord, true>();
-        }
-
-        constexpr u16 Flags =
-            (HasColor       ? VERTEX_COLOR    : 0) |
-            (HasNormal      ? VERTEX_NORMAL   : 0) |
-            (HasTexCoord    ? VERTEX_TEXCOORD : 0) |
-            (HasTexCoordF32 ? TEXCOORD_F32    : 0) ;
-
-        VertexAttribStateFuncSet func_set;
-
-        func_set.color    = color   <Flags>;
-        func_set.normal   = normal  <Flags>;
-        func_set.texcoord = texcoord<Flags>;
-
-        constexpr u16 idx = get_index_from_flags(Flags);
-
-        ASSERT(m_func_sets[idx].color == nullptr);
-
-        m_func_sets[idx] = func_set;
-    }
-
-private:
-    Array<VertexAttribStateFuncSet, 16> m_func_sets;
-};
-
-
-// -----------------------------------------------------------------------------
 // GEOMETRY RECORDING
 // -----------------------------------------------------------------------------
 
@@ -1182,8 +959,8 @@ struct MeshRecorder
         position_buffer.clear();
         attrib_buffer  .clear();
 
-        attrib_funcs     = flags != UINT32_MAX ? &s_attrib_state_func_table[flags] : nullptr;
-        vertex_func      = flags != UINT32_MAX ?  s_vertex_push_func_table [flags] : nullptr;
+        attrib_funcs     = s_attrib_state_func_table[flags];
+        vertex_func      = flags != UINT32_MAX ? s_vertex_push_func_table [flags] : nullptr;
         vertex_count     = 0;
         invocation_count = 0;
     }
@@ -1192,7 +969,8 @@ struct MeshRecorder
     {
         ASSERT(is_recording());
 
-        begin(UINT16_MAX, UINT32_MAX);
+        // TODO : Stop abusing `begin` and just do a "proper" reset here.
+        begin(UINT16_MAX, UINT32_MAX, {});
     }
 
     inline void vertex(const Vec3& position)
@@ -1206,21 +984,21 @@ struct MeshRecorder
     {
         ASSERT(is_recording());
 
-        attrib_funcs->color(attrib_state, rgba);
+        attrib_funcs.color(attrib_state, rgba);
     }
 
     inline void normal(f32 nx, f32 ny, f32 nz)
     {
         ASSERT(is_recording());
 
-        attrib_funcs->normal(attrib_state, nx, ny, nz);
+        attrib_funcs.normal(attrib_state, nx, ny, nz);
     }
 
     inline void texcoord(f32 u, f32 v)
     {
         ASSERT(is_recording());
 
-        attrib_funcs->texcoord(attrib_state, u, v);
+        attrib_funcs.texcoord(attrib_state, u, v);
     }
 
     inline bool is_recording() const
@@ -1359,7 +1137,7 @@ public:
     DynamicArray<u8>                attrib_buffer;
     DynamicArray<u8>                position_buffer;
     VertexAttribState               attrib_state;
-    const VertexAttribStateFuncSet* attrib_funcs     = nullptr;
+    VertexAttribStateFuncSet        attrib_funcs     = {};
     VertexPushFunc                  vertex_func      = nullptr;
     u32                             vertex_count     = 0;
     u32                             invocation_count = 0;
@@ -1367,12 +1145,12 @@ public:
     u32                             flags            = UINT32_MAX;
     u16                             id               = UINT16_MAX;
 
-private:
-    static const VertexAttribStateFuncTable s_attrib_state_func_table;
+// private:
+    static VertexAttribStateFuncTable s_attrib_state_func_table;
     static const VertexPushFuncTable        s_vertex_push_func_table;
 };
 
-const VertexAttribStateFuncTable MeshRecorder::s_attrib_state_func_table;
+VertexAttribStateFuncTable MeshRecorder::s_attrib_state_func_table;
 
 const MeshRecorder::VertexPushFuncTable MeshRecorder::s_vertex_push_func_table;
 
@@ -3730,6 +3508,8 @@ struct GlobalContext
     KeyboardInput        keyboard;
     MouseInput           mouse;
 
+    // VertexAttribStateFuncTable vertex_attrib_funcs = {};
+
     enki::TaskScheduler task_scheduler;
     TaskPool            task_pool;
 
@@ -3898,6 +3678,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     g_ctx.layout_cache.init();
+    // g_ctx.vertex_attrib_funcs.init();
+    MeshRecorder::s_attrib_state_func_table.init();
 
     if (setup)
     {

@@ -203,7 +203,7 @@ public:
         variant<1, 1, 1>();
     }
 
-    inline VertexAttribStateFuncSet operator[](u16 flags) const
+    inline const VertexAttribStateFuncSet& operator[](u16 flags) const
     {
         return m_table[index(flags)];
     }
@@ -214,7 +214,7 @@ private:
         static_assert(
             VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b0111 &&
             TEXCOORD_F32       >> 9                   == 0b1000,
-            "Invalid index assumptions in `VertexAttribStateFuncTable::get_index_from_attribs`."
+            "Invalid index assumptions in `VertexAttribStateFuncTable::index`."
         );
 
         return
