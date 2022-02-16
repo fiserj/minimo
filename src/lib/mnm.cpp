@@ -44,6 +44,7 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <bx/debug.h>             // debugPrintf
 #include <bx/endian.h>            // endianSwap
+#include <bx/mutex.h>
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 BX_PRAGMA_DIAGNOSTIC_POP();
@@ -101,77 +102,13 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include <mnm_shaders.h>          // *_fs, *_vs
 
+#include "mnm_base.h"
+#include "mnm_consts.h"
+
 #include "common.h"
 
 namespace mnm
 {
-
-
-// -----------------------------------------------------------------------------
-// CONSTANTS
-// -----------------------------------------------------------------------------
-
-constexpr i32 DEFAULT_WINDOW_HEIGHT = 600;
-constexpr i32 DEFAULT_WINDOW_WIDTH  = 800;
-constexpr i32 MIN_WINDOW_SIZE       = 240;
-
-constexpr u32 ATLAS_FREE            = 0x08000;
-constexpr u32 ATLAS_MONOSPACED      = 0x00002;
-constexpr u32 MESH_INVALID          = 0x00006;
-constexpr u32 VERTEX_POSITION       = 0x00000;
-
-// These have to be cross-checked against regular mesh flags (see later).
-constexpr u32 INSTANCING_SUPPORTED  = 0x10000;
-constexpr u32 SAMPLER_COLOR_R       = 0x20000;
-constexpr u32 TEXT_MESH             = 0x40000;
-constexpr u32 VERTEX_PIXCOORD       = 0x80000;
-
-
-// -----------------------------------------------------------------------------
-// FLAG MASKS AND SHIFTS
-// -----------------------------------------------------------------------------
-
-constexpr u16 MESH_TYPE_MASK         = MESH_STATIC | MESH_TRANSIENT | MESH_DYNAMIC | MESH_INVALID;
-constexpr u16 MESH_TYPE_SHIFT        = 1;
-
-constexpr u16 PRIMITIVE_TYPE_MASK    = PRIMITIVE_TRIANGLES | PRIMITIVE_QUADS | PRIMITIVE_TRIANGLE_STRIP |
-                                       PRIMITIVE_LINES | PRIMITIVE_LINE_STRIP | PRIMITIVE_POINTS;
-constexpr u16 PRIMITIVE_TYPE_SHIFT   = 4;
-
-constexpr u16 TEXT_H_ALIGN_MASK      = TEXT_H_ALIGN_LEFT | TEXT_H_ALIGN_CENTER | TEXT_H_ALIGN_RIGHT;
-constexpr u16 TEXT_H_ALIGN_SHIFT     = 4;
-constexpr u16 TEXT_TYPE_MASK         = TEXT_STATIC | TEXT_TRANSIENT | TEXT_DYNAMIC;
-constexpr u16 TEXT_V_ALIGN_MASK      = TEXT_V_ALIGN_BASELINE | TEXT_V_ALIGN_MIDDLE | TEXT_V_ALIGN_CAP_HEIGHT;
-constexpr u16 TEXT_V_ALIGN_SHIFT     = 7;
-constexpr u16 TEXT_Y_AXIS_MASK       = TEXT_Y_AXIS_UP | TEXT_Y_AXIS_DOWN;
-constexpr u16 TEXT_Y_AXIS_SHIFT      = 10;
-
-constexpr u16 TEXTURE_BORDER_MASK    = TEXTURE_MIRROR | TEXTURE_CLAMP;
-constexpr u16 TEXTURE_BORDER_SHIFT   = 1;
-constexpr u16 TEXTURE_FORMAT_MASK    = TEXTURE_R8 | TEXTURE_D24S8 | TEXTURE_D32F;
-constexpr u16 TEXTURE_FORMAT_SHIFT   = 3;
-constexpr u16 TEXTURE_SAMPLING_MASK  = TEXTURE_NEAREST;
-constexpr u16 TEXTURE_SAMPLING_SHIFT = 0;
-constexpr u16 TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
-constexpr u16 TEXTURE_TARGET_SHIFT   = 6;
-
-constexpr u16 VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
-constexpr u16 VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
-
-constexpr u32 USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 |
-                                       OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY;
-constexpr u32 INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
-
-static_assert(
-    0 == (INTERNAL_MESH_FLAGS & USER_MESH_FLAGS),
-    "Internal mesh flags interfere with the user-exposed ones."
-);
-
-static_assert(
-    bx::isPowerOf2(PRIMITIVE_QUADS),
-    "`PRIMITIVE_QUADS` must be power of two."
-);
-
 
 // -----------------------------------------------------------------------------
 // TYPE ALIASES
@@ -182,10 +119,6 @@ using Array = std::array<T, Size>;
 
 template <typename T>
 using Atomic = std::atomic<T>;
-
-using Mutex = std::mutex;
-
-using MutexScope = std::lock_guard<std::mutex>;
 
 template <typename Key, typename T>
 using HashMap = std::unordered_map<Key, T>;
@@ -271,13 +204,6 @@ inline void hash_combine(size_t& seed, const T& value)
 {
     std::hash<T> hasher;
     seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-template <typename T>
-constexpr bool is_pod()
-{
-    // Since std::is_pod is being deprecated as of C++20.
-    return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
 }
 
 static inline bool is_aligned(const void* ptr, size_t alignment)

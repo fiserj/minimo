@@ -8,50 +8,8 @@
 #include <bx/allocator.h> // AllocatorI
 #include <bx/bx.h>        // max, mem*
 
-
 namespace mnm
 {
-
-// -----------------------------------------------------------------------------
-// UTILITY MACROS
-// -----------------------------------------------------------------------------
-
-#define ASSERT(cond) assert(cond)
-
-
-// -----------------------------------------------------------------------------
-// BASIC TYPES
-// -----------------------------------------------------------------------------
-
-using u8  = uint8_t;
-using u16 = uint16_t;
-using u32 = uint32_t;
-using u64 = uint64_t;
-
-using i8  = int8_t;
-using i16 = int16_t;
-using i32 = int32_t;
-using i64 = int64_t;
-
-using f32 = float;
-using f64 = double;
-
-
-// -----------------------------------------------------------------------------
-// RESOURCE LIMITS
-// -----------------------------------------------------------------------------
-
-constexpr u32 MAX_FONTS             = 128;
-constexpr u32 MAX_FRAMEBUFFERS      = 128;
-constexpr u32 MAX_INSTANCE_BUFFERS  = 16;
-constexpr u32 MAX_MESHES            = 4096;
-constexpr u32 MAX_PASSES            = 64;
-constexpr u32 MAX_PROGRAMS          = 128;
-constexpr u32 MAX_TASKS             = 64;
-constexpr u32 MAX_TEXTURES          = 1024;
-constexpr u32 MAX_TEXTURE_ATLASES   = 32;
-constexpr u32 MAX_UNIFORMS          = 256;
-
 
 // -----------------------------------------------------------------------------
 // DYNAMIC ARRAY
