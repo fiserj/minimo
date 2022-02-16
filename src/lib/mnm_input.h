@@ -60,7 +60,7 @@ struct InputCache
             }
             else if (states[i] & u8(InputState::DOWN))
             {
-                states[i] = InputState::HELD;
+                states[i] = u8(InputState::HELD);
             }
             else
             {

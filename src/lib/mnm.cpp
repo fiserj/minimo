@@ -105,6 +105,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #include "mnm_base.h"
 #include "mnm_consts.h"
 #include "mnm_array.h"
+#include "mnm_input.h"
 
 namespace mnm
 {
@@ -3627,226 +3628,6 @@ static void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
 
 
 // -----------------------------------------------------------------------------
-// INPUT
-// -----------------------------------------------------------------------------
-
-template <int MAX_INPUTS, typename T>
-struct InputState
-{
-    enum Flag : u8
-    {
-        DOWN     = 0x01,
-        UP       = 0x02,
-        HELD     = 0x04,
-        REPEATED = 0x08,
-    };
-
-    static constexpr int INPUT_COUNT            = MAX_INPUTS;
-    static constexpr int INVALID_INPUT          =  -1;
-
-    u8              states    [MAX_INPUTS] = { 0    };
-    f32                timestamps[MAX_INPUTS] = { 0.0f };
-
-    inline bool is(int app_input, int flag) const
-    {
-        const int input = T::translate_app_input(app_input);
-
-        return (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
-            ? states[input] & flag
-            : false;
-    }
-
-    inline f32 held_time(int app_input, f32 timestamp) const
-    {
-        const int input = T::translate_app_input(app_input);
-
-        if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
-        {
-            if (states[input] & (DOWN | HELD))
-            {
-                ASSERT(timestamp >= timestamps[input]);
-                return timestamp -  timestamps[input];
-            }
-        }
-
-        return -1.0f;
-    }
-
-    void update_input_state(int input, Flag flag, f32 timestamp = 0.0f)
-    {
-        if (BX_LIKELY(input > INVALID_INPUT && input < MAX_INPUTS))
-        {
-            states[input] |= flag;
-
-            if (flag == DOWN)
-            {
-                timestamps[input] = timestamp;
-            }
-        }
-    }
-
-    void update_state_flags()
-    {
-        for (int i = 0; i < MAX_INPUTS; i++)
-        {
-            if (states[i] & UP)
-            {
-                states[i] = 0;
-            }
-            else if (states[i] & DOWN)
-            {
-                states[i] = HELD;
-            }
-            else
-            {
-                states[i] &= ~REPEATED;
-            }
-        }
-    }
-};
-
-struct Mouse : InputState<GLFW_MOUSE_BUTTON_LAST, Mouse>
-{
-    static constexpr f32 REPEATED_CLICK_DELAY = 0.5f; // NOTE : Could be configurable.
-
-    f32                  curr  [2]            = { 0.0f };
-    f32                  prev  [2]            = { 0.0f };
-    f32                  delta [2]            = { 0.0f };
-    f32                  scroll[2]            = { 0.0f };
-    int                    clicks[INPUT_COUNT]  = { 0    };
-
-    inline int repeated_click_count(int app_input) const
-    {
-        const int input = translate_app_input(app_input);
-
-        if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
-        {
-            return (states[input] & DOWN)
-                ? clicks[input]
-                : 0;
-        }
-
-        return 0;
-    }
-
-    void update_input_state(int input, Flag flag, f32 timestamp = 0.0f)
-    {
-        if (BX_LIKELY(input > INVALID_INPUT && input < INPUT_COUNT))
-        {
-            states[input] |= flag;
-
-            if (flag == DOWN)
-            {
-                if (timestamp - timestamps[input] <= REPEATED_CLICK_DELAY)
-                {
-                    clicks[input]++;
-                }
-                else
-                {
-                    clicks[input] = 1;
-                }
-
-                timestamps[input] = timestamp;
-            }
-        }
-    }
-
-    void update_position(const Window& window)
-    {
-        f64 x, y;
-        glfwGetCursorPos(window.handle, &x, &y);
-
-        curr[0] = f32(window.position_scale[0] * x);
-        curr[1] = f32(window.position_scale[1] * y);
-    }
-
-    void update_position_delta()
-    {
-        delta[0] = curr[0] - prev[0];
-        delta[1] = curr[1] - prev[1];
-
-        prev[0] = curr[0];
-        prev[1] = curr[1];
-    }
-
-    static int translate_app_input(int app_button)
-    {
-        switch (app_button)
-        {
-        case MOUSE_LEFT:
-            return GLFW_MOUSE_BUTTON_LEFT;
-        case MOUSE_RIGHT:
-            return GLFW_MOUSE_BUTTON_RIGHT;
-        case MOUSE_MIDDLE:
-            return GLFW_MOUSE_BUTTON_MIDDLE;
-        default:
-            return INVALID_INPUT;
-        }
-    }
-};
-
-struct Keyboard : InputState<GLFW_KEY_LAST, Keyboard>
-{
-    static int translate_app_input(int app_key)
-    {
-        static const int special_app_keys[] =
-        {
-            0,                     // KEY_ANY
-
-            GLFW_KEY_LEFT_ALT,     // KEY_ALT_LEFT
-            GLFW_KEY_RIGHT_ALT,    // KEY_ALT_RIGHT
-            GLFW_KEY_BACKSPACE,    // KEY_BACKSPACE
-            GLFW_KEY_LEFT_CONTROL, // KEY_CONTROL_LEFT
-            GLFW_KEY_RIGHT_CONTROL, // KEY_CONTROL_RIGHT
-            GLFW_KEY_DELETE,        // KEY_DELETE
-            GLFW_KEY_DOWN,          // KEY_DOWN
-            GLFW_KEY_ENTER,         // KEY_ENTER
-            GLFW_KEY_ESCAPE,        // KEY_ESCAPE
-            GLFW_KEY_LEFT,          // KEY_LEFT
-            GLFW_KEY_RIGHT,         // KEY_RIGHT
-            GLFW_KEY_LEFT_SHIFT,    // KEY_SHIFT_LEFT
-            GLFW_KEY_RIGHT_SHIFT,   // KEY_SHIFT_RIGHT
-            GLFW_KEY_SPACE,         // KEY_SPACE
-            GLFW_KEY_LEFT_SUPER,    // KEY_SUPER_LEFT
-            GLFW_KEY_RIGHT_SUPER,   // KEY_SUPER_RIGHT
-            GLFW_KEY_TAB,           // KEY_TAB
-            GLFW_KEY_UP,            // KEY_UP
-
-            GLFW_KEY_F1,            // KEY_F1
-            GLFW_KEY_F2,            // KEY_F2
-            GLFW_KEY_F3,            // KEY_F3
-            GLFW_KEY_F4,            // KEY_F4
-            GLFW_KEY_F5,            // KEY_F5
-            GLFW_KEY_F6,            // KEY_F6
-            GLFW_KEY_F7,            // KEY_F7
-            GLFW_KEY_F8,            // KEY_F8
-            GLFW_KEY_F9,            // KEY_F9
-            GLFW_KEY_F10,           // KEY_F10
-            GLFW_KEY_F11,           // KEY_F11
-            GLFW_KEY_F12,           // KEY_F12
-        };
-
-        int glfw_key = INVALID_INPUT;
-
-        if (app_key >= 0 && app_key < int(BX_COUNTOF(special_app_keys)))
-        {
-            glfw_key = special_app_keys[app_key];
-        }
-        else if (app_key >= 'A' && app_key <= 'Z')
-        {
-            glfw_key = app_key + (GLFW_KEY_A - 'A');
-        }
-        else if (app_key >= 'a' && app_key <= 'z')
-        {
-            glfw_key = app_key + (GLFW_KEY_A - 'a');
-        }
-
-        return glfw_key;
-    }
-};
-
-
-// -----------------------------------------------------------------------------
 // TASK POOL
 // -----------------------------------------------------------------------------
 
@@ -4104,8 +3885,8 @@ extern bgfx::PlatformData create_platform_data
 
 struct GlobalContext
 {
-    Keyboard            keyboard;
-    Mouse               mouse;
+    KeyboardInput        keyboard;
+    MouseInput           mouse;
 
     enki::TaskScheduler task_scheduler;
     TaskPool            task_pool;
@@ -4370,7 +4151,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.pass_cache[0].set_viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
 
-    g_ctx.mouse.update_position(g_ctx.window);
+    g_ctx.mouse.update_position(
+        g_ctx.window.handle,
+        HMM_Vec2(g_ctx.window.position_scale[0], g_ctx.window.position_scale[1])
+    );
 
     g_ctx.total_time.tic();
     g_ctx.frame_time.tic();
@@ -4379,8 +4163,8 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     while (!glfwWindowShouldClose(g_ctx.window.handle))
     {
-        g_ctx.keyboard.update_state_flags();
-        g_ctx.mouse   .update_state_flags();
+        g_ctx.keyboard.update_states();
+        g_ctx.mouse   .update_states();
 
         g_ctx.total_time.toc();
         g_ctx.frame_time.toc(true);
@@ -4398,23 +4182,23 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             switch (event.type)
             {
             case GLEQ_KEY_PRESSED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::DOWN, f32(g_ctx.total_time.elapsed));
+                g_ctx.keyboard.update_input(event.keyboard.key, InputState::DOWN, f32(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_KEY_REPEATED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::REPEATED);
+                g_ctx.keyboard.update_input(event.keyboard.key, InputState::REPEATED);
                 break;
 
             case GLEQ_KEY_RELEASED:
-                g_ctx.keyboard.update_input_state(event.keyboard.key, Keyboard::UP);
+                g_ctx.keyboard.update_input(event.keyboard.key, InputState::UP);
                 break;
 
             case GLEQ_BUTTON_PRESSED:
-                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::DOWN, f32(g_ctx.total_time.elapsed));
+                g_ctx.mouse.update_input(event.mouse.button, InputState::DOWN, f32(g_ctx.total_time.elapsed));
                 break;
 
             case GLEQ_BUTTON_RELEASED:
-                g_ctx.mouse.update_input_state(event.mouse.button, Mouse::UP);
+                g_ctx.mouse.update_input(event.mouse.button, InputState::UP);
                 break;
 
             case GLEQ_CURSOR_MOVED:
@@ -4463,7 +4247,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
         if (update_cursor_position)
         {
-            g_ctx.mouse.update_position(g_ctx.window);
+            g_ctx.mouse.update_position(
+                g_ctx.window.handle,
+                HMM_Vec2(g_ctx.window.position_scale[0], g_ctx.window.position_scale[1])
+            );
         }
 
         g_ctx.mouse.update_position_delta();
@@ -4698,12 +4485,12 @@ void cursor(int type)
 
 float mouse_x(void)
 {
-    return mnm::g_ctx.mouse.curr[0];
+    return mnm::g_ctx.mouse.current[0];
 }
 
 float mouse_y(void)
 {
-    return mnm::g_ctx.mouse.curr[1];
+    return mnm::g_ctx.mouse.current[1];
 }
 
 float mouse_dx(void)
@@ -4718,17 +4505,17 @@ float mouse_dy(void)
 
 int mouse_down(int button)
 {
-    return mnm::g_ctx.mouse.is(button, mnm::Mouse::DOWN);
+    return mnm::g_ctx.mouse.is(button, mnm::InputState::DOWN);
 }
 
 int mouse_held(int button)
 {
-    return mnm::g_ctx.mouse.is(button, mnm::Mouse::HELD);
+    return mnm::g_ctx.mouse.is(button, mnm::InputState::HELD);
 }
 
 int mouse_up(int button)
 {
-    return mnm::g_ctx.mouse.is(button, mnm::Mouse::UP);
+    return mnm::g_ctx.mouse.is(button, mnm::InputState::UP);
 }
 
 int mouse_clicked(int button)
@@ -4753,22 +4540,22 @@ float scroll_y(void)
 
 int key_down(int key)
 {
-    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::DOWN);
+    return mnm::g_ctx.keyboard.is(key, mnm::InputState::DOWN);
 }
 
 int key_repeated(int key)
 {
-    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::REPEATED);
+    return mnm::g_ctx.keyboard.is(key, mnm::InputState::REPEATED);
 }
 
 int key_held(int key)
 {
-    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::HELD);
+    return mnm::g_ctx.keyboard.is(key, mnm::InputState::HELD);
 }
 
 int key_up(int key)
 {
-    return mnm::g_ctx.keyboard.is(key, mnm::Keyboard::UP);
+    return mnm::g_ctx.keyboard.is(key, mnm::InputState::UP);
 }
 
 float key_held_time(int key)
