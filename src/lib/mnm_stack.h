@@ -27,17 +27,24 @@ struct StaticStack
     }
 };
 
-template <u32 Capacity = 16>
+template <u32 Capacity>
 struct MatrixStack : StaticStack<Mat4, Capacity>
 {
+    using Parent = StaticStack<Mat4, Capacity>;
+
+    MatrixStack()
+    {
+        reset();
+    }
+
     inline void reset()
     {
-        reset(HMM_Mat4d(1.0f));
+        Parent::reset(HMM_Mat4d(1.0f));
     }
 
     inline void multiply_top(const Mat4& matrix)
     {
-        top = matrix * top;
+        Parent::top = matrix * Parent::top;
     }
 };
 

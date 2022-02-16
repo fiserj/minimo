@@ -107,6 +107,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #include "mnm_array.h"
 #include "mnm_input.h"
 #include "mnm_window.h"
+#include "mnm_stack.h"
 
 namespace mnm
 {
@@ -320,59 +321,6 @@ static inline u16 mesh_attribs(u32 flags)
 {
     return (flags & VERTEX_ATTRIB_MASK);
 }
-
-
-// -----------------------------------------------------------------------------
-// STACK VARIANTS
-// -----------------------------------------------------------------------------
-
-template <typename T>
-class Stack
-{
-public:
-    inline Stack(const T& top = T())
-        : m_top(top)
-    {
-    }
-
-    inline void push()
-    {
-        m_data.push_back(m_top);
-    }
-
-    inline void pop()
-    {
-        m_top = m_data.back();
-        m_data.pop_back();
-    }
-
-    inline void clear() { m_data.clear(); }
-
-    inline size_t size() const { return m_data.size(); }
-
-    inline T& top() { return m_top; }
-
-    inline const T& top() const { return m_top; }
-
-    inline const Vector<T>& data() const { return data; }
-
-protected:
-    T         m_top;
-    Vector<T> m_data;
-};
-
-class MatrixStack : public Stack<Mat4>
-{
-public:
-    inline MatrixStack()
-        : Stack<Mat4>(HMM_Mat4d(1.0f))
-    {}
-
-    inline void multiply_top(const Mat4& matrix)
-    {
-        m_top = matrix * m_top;
-    }
-};
 
 
 // -----------------------------------------------------------------------------
@@ -3825,7 +3773,7 @@ struct LocalContext
 
     DrawState           draw_state;
 
-    MatrixStack         matrix_stack;
+    MatrixStack<16>     matrix_stack;
 
     Timer               stop_watch;
     Timer               frame_time;
@@ -4540,7 +4488,7 @@ void vertex(float x, float y, float z)
     //        having a condition in here.
     if (!(t_ctx->mesh_recorder.flags & NO_VERTEX_TRANSFORM))
     {
-        t_ctx->mesh_recorder.vertex((t_ctx->matrix_stack.top() * HMM_Vec4(x, y, z, 1.0f)).XYZ);
+        t_ctx->mesh_recorder.vertex((t_ctx->matrix_stack.top * HMM_Vec4(x, y, z, 1.0f)).XYZ);
     }
     else
     {
@@ -4642,7 +4590,7 @@ void mesh(int id)
 
     submit_mesh(
         mesh,
-        t_ctx->matrix_stack.top(),
+        t_ctx->matrix_stack.top,
         state,
         g_ctx.mesh_cache.transient_buffers(),
         g_ctx.default_uniforms,
@@ -4813,7 +4761,7 @@ void instance(const void* data)
     ASSERT(t_ctx->instance_recorder.is_recording());
     ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform));
 
-    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform ? &t_ctx->matrix_stack.top() : data);
+    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform ? &t_ctx->matrix_stack.top : data);
 }
 
 void instances(int id)
@@ -4942,7 +4890,7 @@ void text(const char* start, const char* end)
     ASSERT(start);
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
-    t_ctx->text_recorder.add_text(start, end, t_ctx->matrix_stack.top(), g_ctx.texture_cache);
+    t_ctx->text_recorder.add_text(start, end, t_ctx->matrix_stack.top, g_ctx.texture_cache);
 }
 
 void text_size(int atlas, const char* start, const char* end, float line_height, float* width, float* height)
@@ -5120,12 +5068,12 @@ void shader(int id)
 
 void view(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_view(mnm::t_ctx->matrix_stack.top());
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_view(mnm::t_ctx->matrix_stack.top);
 }
 
 void projection(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_projection(mnm::t_ctx->matrix_stack.top());
+    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_projection(mnm::t_ctx->matrix_stack.top);
 }
 
 void push(void)
@@ -5140,7 +5088,7 @@ void pop(void)
 
 void identity(void)
 {
-    mnm::t_ctx->matrix_stack.top() = HMM_Mat4d(1.0f);
+    mnm::t_ctx->matrix_stack.top = HMM_Mat4d(1.0f);
 }
 
 void ortho(float left, float right, float bottom, float top, float near_, float far_)
