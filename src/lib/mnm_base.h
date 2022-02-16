@@ -32,6 +32,12 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 using Vec4 = hmm_vec4;
 
+internal Allocator* default_allocator()
+{
+    static bx::DefaultAllocator s_allocator;
+    return &s_allocator;
+}
+
 template <typename T>
 constexpr bool is_pod()
 {

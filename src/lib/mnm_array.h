@@ -77,6 +77,35 @@ struct DynamicArray
         "`DynamicArray` only supports POD-like types."
     );
 
+    // TODO vvvv : Retire these in favor of a delayed init method ?-------------
+    DynamicArray(bx::AllocatorI* allocator = default_allocator())
+        : allocator(allocator)
+    {
+    }
+
+    DynamicArray(const DynamicArray<T>& other)
+        : allocator(other.allocator)
+    {
+        operator=(other);
+    }
+
+    DynamicArray<T>& operator=(const DynamicArray<T>& other)
+    {
+        clear();
+
+        resize(other.size);
+
+        bx::memCopy(data, other.data, other.size * sizeof(T));
+
+        return *this;
+    }
+
+    ~DynamicArray()
+    {
+        BX_FREE(allocator, data);
+    }
+    // TODO ^^^^ : Retire these in favor of a delayed init method ?-------------
+
     inline const T& operator[](u32 i) const
     {
         ASSERT(data && i < size);
@@ -92,6 +121,11 @@ struct DynamicArray
     inline void clear()
     {
         size = 0;
+    }
+
+    inline bool is_empty() const
+    {
+        return size == 0;
     }
 
     inline void reserve(u32 new_capacity)

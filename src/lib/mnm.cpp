@@ -104,8 +104,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include "mnm_base.h"
 #include "mnm_consts.h"
-
-#include "common.h"
+#include "mnm_array.h"
 
 namespace mnm
 {
