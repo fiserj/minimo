@@ -103,7 +103,7 @@ private:
             VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
             TEXCOORD_F32       >> 9                   == 0b01000 &&
             PRIMITIVE_QUADS                           == 0b10000,
-            "Invalid index assumptions in `VertexPushFuncTable::index`."
+            "Invalid index assumptions in `VertexStoreFuncTable::index`."
         );
 
         return

@@ -110,6 +110,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #include "mnm_stack.h"
 #include "mnm_vertex_attribs.h"
 #include "mnm_vertex_submission.h"
+#include "mnm_mesh_recorder.h"
 
 namespace mnm
 {
@@ -899,99 +900,6 @@ private:
     Array<bgfx::VertexLayout, 128>       m_layouts;
     Array<bgfx::VertexLayoutHandle, 128> m_handles;
 };
-
-
-// -----------------------------------------------------------------------------
-// GEOMETRY RECORDING
-// -----------------------------------------------------------------------------
-
-struct MeshRecorder
-{
-    void begin(u16 id_, u32 flags_, u32 extra_data_ = 0)
-    {
-        ASSERT(!is_recording() || (id_ == UINT16_MAX && flags_ == UINT32_MAX));
-
-        id         = id_;
-        flags      = flags_;
-        extra_data = extra_data_;
-
-        position_buffer.clear();
-        attrib_buffer  .clear();
-
-        attrib_funcs     = s_attrib_state_func_table[flags];
-        vertex_func      = flags != UINT32_MAX ? s_vertex_push_func_table [flags] : nullptr;
-        vertex_count     = 0;
-        invocation_count = 0;
-    }
-
-    void end()
-    {
-        ASSERT(is_recording());
-
-        // TODO : Stop abusing `begin` and just do a "proper" reset here.
-        begin(UINT16_MAX, UINT32_MAX, {});
-    }
-
-    inline void vertex(const Vec3& position)
-    {
-        ASSERT(is_recording());
-
-        (* vertex_func)(
-            position,
-            attrib_state,
-            attrib_buffer,
-            position_buffer,
-            vertex_count,
-            invocation_count
-        );
-    }
-
-    inline void color(u32 rgba)
-    {
-        ASSERT(is_recording());
-
-        attrib_funcs.color(attrib_state, rgba);
-    }
-
-    inline void normal(f32 nx, f32 ny, f32 nz)
-    {
-        ASSERT(is_recording());
-
-        attrib_funcs.normal(attrib_state, nx, ny, nz);
-    }
-
-    inline void texcoord(f32 u, f32 v)
-    {
-        ASSERT(is_recording());
-
-        attrib_funcs.texcoord(attrib_state, u, v);
-    }
-
-    inline bool is_recording() const
-    {
-        return id != UINT16_MAX;
-    }
-
-public:
-    DynamicArray<u8>                attrib_buffer;
-    DynamicArray<u8>                position_buffer;
-    VertexAttribState               attrib_state;
-    VertexAttribStateFuncSet        attrib_funcs     = {};
-    VertexStoreFunc                 vertex_func      = nullptr;
-    u32                             vertex_count     = 0;
-    u32                             invocation_count = 0;
-    u32                             extra_data       = 0;
-    u32                             flags            = UINT32_MAX;
-    u16                             id               = UINT16_MAX;
-
-// private:
-    static VertexAttribStateFuncTable s_attrib_state_func_table;
-    static VertexStoreFuncTable       s_vertex_push_func_table;
-};
-
-VertexAttribStateFuncTable MeshRecorder::s_attrib_state_func_table;
-
-VertexStoreFuncTable MeshRecorder::s_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
@@ -2921,7 +2829,6 @@ public:
 
         ASSERT(atlas);
         ASSERT(recorder);
-        ASSERT(!recorder->is_recording());
 
         const u32 mesh_flags =
             TEXT_MESH       |
@@ -2937,14 +2844,12 @@ public:
         m_recorder    = recorder;
         m_line_height = 2.0f;
 
-        m_recorder->begin(id, mesh_flags, atlas_id);
+        m_recorder->reset(id, mesh_flags, atlas_id);
     }
 
     void end()
     {
-        ASSERT(m_recorder);
-
-        m_recorder->end();
+        m_recorder->clear();
 
         *this = {};
     }
@@ -4082,9 +3987,7 @@ double toc(void)
 
 void begin_mesh(int id, int flags)
 {
-    ASSERT(!mnm::t_ctx->mesh_recorder.is_recording());
-
-    mnm::t_ctx->mesh_recorder.begin(
+    mnm::t_ctx->mesh_recorder.reset(
         u16(id),
         u16(flags) // NOTE : User exposed flags fit within 16 bits.
     );
@@ -4094,12 +3997,10 @@ void end_mesh(void)
 {
     using namespace mnm;
 
-    ASSERT(t_ctx->mesh_recorder.is_recording());
-
     // TODO : Figure out error handling - crash or just ignore the submission?
     (void)g_ctx.mesh_cache.add_mesh(t_ctx->mesh_recorder, g_ctx.layout_cache);
 
-    t_ctx->mesh_recorder.end();
+    t_ctx->mesh_recorder.clear();
 }
 
 void vertex(float x, float y, float z)
@@ -4138,7 +4039,7 @@ void mesh(int id)
     using namespace mnm;
 
     ASSERT(id > 0 && u16(id) < MAX_MESHES);
-    ASSERT(!t_ctx->mesh_recorder.is_recording());
+    ASSERT(t_ctx->mesh_recorder.position_buffer.is_empty());
 
     DrawState& state = t_ctx->draw_state;
 
