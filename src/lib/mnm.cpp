@@ -109,6 +109,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 #include "mnm_window.h"
 #include "mnm_stack.h"
 #include "mnm_vertex_attribs.h"
+#include "mnm_vertex_submission.h"
 
 namespace mnm
 {
@@ -209,25 +210,6 @@ inline void hash_combine(size_t& seed, const T& value)
     seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 }
 
-static inline bool is_aligned(const void* ptr, size_t alignment)
-{
-    return reinterpret_cast<uintptr_t>(ptr) % alignment == 0;
-}
-
-template <size_t Size>
-static inline void assign(const void* src, void* dst)
-{
-    struct Block
-    {
-        u8 bytes[Size];
-    };
-
-    ASSERT(is_aligned(src, std::alignment_of<Block>::value));
-    ASSERT(is_aligned(dst, std::alignment_of<Block>::value));
-
-    *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
-}
-
 template <size_t Size>
 static inline void push_back(Vector<u8>& buffer, const void* data)
 {
@@ -247,29 +229,6 @@ static inline void push_back(Vector<u8>& buffer, const void* data, size_t size)
 
 template <typename T>
 static inline void push_back(Vector<u8>& buffer, const T& value)
-{
-    push_back<sizeof(T)>(buffer, &value);
-}
-
-template <size_t Size>
-static inline void push_back(DynamicArray<u8>& buffer, const void* data)
-{
-    static_assert(Size > 0, "Size must be positive.");
-
-    buffer.resize(buffer.size + Size);
-
-    assign<Size>(data, buffer.data + buffer.size - Size);
-}
-
-static inline void push_back(DynamicArray<u8>& buffer, const void* data, u32 size)
-{
-    buffer.resize(buffer.size + size);
-
-    (void)memcpy(buffer.data + buffer.size - size, data, size);
-}
-
-template <typename T>
-static inline void push_back(DynamicArray<u8>& buffer, const T& value)
 {
     push_back<sizeof(T)>(buffer, &value);
 }
@@ -977,7 +936,14 @@ struct MeshRecorder
     {
         ASSERT(is_recording());
 
-        (* vertex_func)(*this, position);
+        (* vertex_func)(
+            position,
+            attrib_state,
+            attrib_buffer,
+            position_buffer,
+            vertex_count,
+            invocation_count
+        );
     }
 
     inline void color(u32 rgba)
@@ -1006,139 +972,12 @@ struct MeshRecorder
         return id != UINT16_MAX;
     }
 
-private:
-    using VertexPushFunc = void (*)(MeshRecorder&, const Vec3&);
-
-    struct VertexPushFuncTable
-    {
-        VertexPushFuncTable()
-        {
-            funcs.fill(nullptr);
-
-            //  +-------------------------- VERTEX_COLOR
-            //  |  +----------------------- VERTEX_NORMAL
-            //  |  |  +-------------------- VERTEX_TEXCOORD
-            //  |  |  |
-            add<0, 0, 0>();
-            add<1, 0, 0>();
-            add<0, 1, 0>();
-            add<0, 0, 1>();
-            add<1, 1, 0>();
-            add<1, 0, 1>();
-            add<0, 1, 1>();
-            add<1, 1, 1>();
-        }
-
-        inline const VertexPushFunc& operator[](u32 flags) const
-        {
-            return funcs[get_index_from_flags(u16(flags))];
-        }
-
-    private:
-        static inline constexpr u16 get_index_from_flags(u16 flags)
-        {
-            static_assert(
-                VERTEX_ATTRIB_MASK >> VERTEX_ATTRIB_SHIFT == 0b00111 &&
-                TEXCOORD_F32       >> 9                   == 0b01000 &&
-                PRIMITIVE_QUADS                           == 0b10000,
-                "Invalid index assumptions in `MeshRecorder::VertexPushFuncTable::get_index_from_attribs`."
-            );
-
-            return
-                ((flags & VERTEX_ATTRIB_MASK) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
-                ((flags & TEXCOORD_F32      ) >> 9                  ) | // Bit 3.
-                ((flags & PRIMITIVE_QUADS   )                       ) ; // Bit 4.
-        }
-
-        template <u32 Size>
-        static inline void emulate_quad(DynamicArray<u8>& buffer)
-        {
-            static_assert(Size > 0, "Size must be positive.");
-
-            ASSERT(!buffer.is_empty());
-            ASSERT( buffer.size % Size      == 0);
-            ASSERT((buffer.size / Size) % 3 == 0);
-
-            buffer.resize(buffer.size + 2 * Size);
-
-            u8* end = buffer.data + buffer.size;
-
-            // Assuming the last triangle has relative indices
-            // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
-            assign<Size>(end - 5 * Size, end - 2 * Size);
-            assign<Size>(end - 3 * Size, end - 1 * Size);
-        }
-
-        template <u16 Flags>
-        static void vertex(MeshRecorder& mesh_recorder, const Vec3& position)
-        {
-            if constexpr (!!(Flags & (PRIMITIVE_QUADS)))
-            {
-                if ((mesh_recorder.invocation_count & 3) == 3)
-                {
-                    emulate_quad<sizeof(position)>(mesh_recorder.position_buffer);
-
-                    if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
-                    {
-                        emulate_quad<vertex_attribs_size<Flags>()>(mesh_recorder.attrib_buffer);
-                    }
-
-                    mesh_recorder.vertex_count += 2;
-                }
-
-                mesh_recorder.invocation_count++;
-            }
-
-            mesh_recorder.vertex_count++;
-
-            push_back(mesh_recorder.position_buffer, position);
-
-            if constexpr (!!(Flags & (VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD)))
-            {
-                push_back<vertex_attribs_size<Flags>()>(mesh_recorder.attrib_buffer, mesh_recorder.attrib_state.data);
-            }
-        }
-
-        template <
-            bool HasColor,
-            bool HasNormal,
-            bool HasTexCoord,
-            bool HasTexCoordF32    = false,
-            bool HasPrimitiveQuads = false
-        >
-        void add()
-        {
-            if constexpr (HasTexCoord && !HasTexCoordF32)
-            {
-                add<HasColor, HasNormal, HasTexCoord, true, HasPrimitiveQuads>();
-            }
-
-            if constexpr (!HasPrimitiveQuads)
-            {
-                add<HasColor, HasNormal, HasTexCoord, HasTexCoordF32, true>();
-            }
-
-            constexpr u16 Flags =
-                (HasColor          ? VERTEX_COLOR    : 0) |
-                (HasNormal         ? VERTEX_NORMAL   : 0) |
-                (HasTexCoord       ? VERTEX_TEXCOORD : 0) |
-                (HasTexCoordF32    ? TEXCOORD_F32    : 0) |
-                (HasPrimitiveQuads ? PRIMITIVE_QUADS : 0) ;
-
-            // NOTE : We do insert few elements multiple times.
-            funcs[get_index_from_flags(Flags)] = vertex<Flags>;
-        }
-
-    private:
-        Array<VertexPushFunc, 32> funcs;
-    };
-
 public:
     DynamicArray<u8>                attrib_buffer;
     DynamicArray<u8>                position_buffer;
     VertexAttribState               attrib_state;
     VertexAttribStateFuncSet        attrib_funcs     = {};
-    VertexPushFunc                  vertex_func      = nullptr;
+    VertexStoreFunc                 vertex_func      = nullptr;
     u32                             vertex_count     = 0;
     u32                             invocation_count = 0;
     u32                             extra_data       = 0;
@@ -1147,12 +986,12 @@ public:
 
 // private:
     static VertexAttribStateFuncTable s_attrib_state_func_table;
-    static const VertexPushFuncTable        s_vertex_push_func_table;
+    static VertexStoreFuncTable       s_vertex_push_func_table;
 };
 
 VertexAttribStateFuncTable MeshRecorder::s_attrib_state_func_table;
 
-const MeshRecorder::VertexPushFuncTable MeshRecorder::s_vertex_push_func_table;
+VertexStoreFuncTable MeshRecorder::s_vertex_push_func_table;
 
 
 // -----------------------------------------------------------------------------
@@ -3680,6 +3519,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     g_ctx.layout_cache.init();
     // g_ctx.vertex_attrib_funcs.init();
     MeshRecorder::s_attrib_state_func_table.init();
+    MeshRecorder::s_vertex_push_func_table.init();
 
     if (setup)
     {

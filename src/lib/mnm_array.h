@@ -229,4 +229,27 @@ inline void destroy(DynamicArray<T>& array)
     array = {};
 }
 
+template <u32 Size>
+inline void push_back(DynamicArray<u8>& buffer, const void* data)
+{
+    static_assert(Size > 0, "Size must be positive.");
+
+    buffer.resize(buffer.size + Size);
+
+    assign<Size>(data, buffer.data + buffer.size - Size);
+}
+
+internal inline void push_back(DynamicArray<u8>& buffer, const void* data, u32 size)
+{
+    buffer.resize(buffer.size + size);
+
+    bx::memCopy(buffer.data + buffer.size - size, data, size);
+}
+
+template <typename T>
+inline void push_back(DynamicArray<u8>& buffer, const T& value)
+{
+    push_back<sizeof(T)>(buffer, &value);
+}
+
 } // namespace mnm

@@ -45,4 +45,23 @@ constexpr bool is_pod()
     return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
 }
 
+internal inline bool is_aligned(const void* ptr, size_t alignment)
+{
+    return reinterpret_cast<uintptr_t>(ptr) % alignment == 0;
+}
+
+template <u32 Size>
+inline void assign(const void* src, void* dst)
+{
+    struct Block
+    {
+        u8 bytes[Size];
+    };
+
+    ASSERT(is_aligned(src, std::alignment_of<Block>::value));
+    ASSERT(is_aligned(dst, std::alignment_of<Block>::value));
+
+    *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
+}
+
 } // namespace mnm
