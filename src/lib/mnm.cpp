@@ -1036,7 +1036,7 @@ public:
         case MESH_TRANSIENT:
             if (add_transient_mesh(mesh, recorder, layouts))
             {
-                m_transient_idxs.push_back(recorder.id);
+                m_transient_idxs.push(recorder.id);
             }
             break;
 
@@ -1061,11 +1061,11 @@ public:
     {
         MutexScope lock(m_mutex);
 
-        for (u16 idx : m_transient_idxs)
+        for (u32 i = 0; i < m_transient_idxs.size; i++)
         {
-            ASSERT(m_meshes[idx].type() == MESH_TRANSIENT);
+            ASSERT(m_meshes[m_transient_idxs[i]].type() == MESH_TRANSIENT);
 
-            m_meshes[idx] = {};
+            m_meshes[m_transient_idxs[i]] = {};
         }
 
         m_transient_idxs   .clear();
@@ -1078,7 +1078,7 @@ public:
 
     inline const Mesh& operator[](u16 id) const { return m_meshes[id]; }
 
-    inline const Vector<bgfx::TransientVertexBuffer>& transient_buffers() const
+    inline const DynamicArray<bgfx::TransientVertexBuffer>& transient_buffers() const
     {
         return m_transient_buffers;
     }
@@ -1099,7 +1099,7 @@ private:
             return false;
         }
 
-        const u32 count = u32(data.size / layout.getStride());
+        const u32 count = data.size / layout.getStride();
 
         if (bgfx::getAvailTransientVertexBuffer(count, layout) < count)
         {
@@ -1107,10 +1107,10 @@ private:
             return false;
         }
 
-        ASSERT(m_transient_buffers.size() < UINT16_MAX);
+        ASSERT(m_transient_buffers.size < UINT16_MAX);
 
-        dst_index = u16(m_transient_buffers.size());
-        m_transient_buffers.resize(m_transient_buffers.size() + 1);
+        dst_index = u16(m_transient_buffers.size);
+        m_transient_buffers.resize(m_transient_buffers.size + 1);
 
         bgfx::allocTransientVertexBuffer(&m_transient_buffers.back(), count, layout);
         (void)memcpy(m_transient_buffers.back().data, data.data, data.size);
@@ -1154,13 +1154,15 @@ private:
             streams[1] = { recorder.attrib_buffer.data, layouts[1]->getStride(), layouts[1]->getStride() };
         }
 
-        Vector<unsigned int> remap_table(mesh.element_count);
-        u32             indexed_vertex_count = 0;
+        DynamicArray<u32> remap_table;
+        remap_table.resize(mesh.element_count);
+
+        u32 indexed_vertex_count = 0;
 
         if (has_attribs)
         {
             indexed_vertex_count = u32(meshopt_generateVertexRemapMulti(
-                remap_table.data(), nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
+                remap_table.data, nullptr, mesh.element_count, mesh.element_count, streams, BX_COUNTOF(streams)
             ));
 
             if (mesh.type() == MESH_STATIC)
@@ -1179,7 +1181,7 @@ private:
         else
         {
             indexed_vertex_count = u32(meshopt_generateVertexRemap(
-                remap_table.data(), nullptr, mesh.element_count, streams[0].data, mesh.element_count, streams[0].size
+                remap_table.data, nullptr, mesh.element_count, streams[0].data, mesh.element_count, streams[0].size
             ));
         }
 
@@ -1230,7 +1232,7 @@ private:
         const bgfx::VertexLayout&   layout,
         u32                    vertex_count,
         u32                    indexed_vertex_count,
-        const Vector<unsigned int>& remap_table,
+        const DynamicArray<u32>& remap_table,
         BufferT&                    dst_buffer_handle,
         void**                      dst_remapped_memory = nullptr
     )
@@ -1244,7 +1246,7 @@ private:
         const bgfx::Memory* memory = bgfx::alloc(u32(indexed_vertex_count * stream.size));
         ASSERT(memory && memory->data);
 
-        meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data());
+        meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table.data);
 
         if (dst_remapped_memory)
         {
@@ -1269,13 +1271,13 @@ private:
     (
         u32                    vertex_count,
         u32                    indexed_vertex_count,
-        const Vector<unsigned int>& remap_table,
+        const DynamicArray<u32>& remap_table,
         bool                        optimize,
         const f32*                vertex_positions,
         T*                          dst_indices
     )
     {
-        meshopt_remapIndexBuffer<T>(dst_indices, nullptr, vertex_count, remap_table.data());
+        meshopt_remapIndexBuffer<T>(dst_indices, nullptr, vertex_count, remap_table.data);
 
         if (optimize && vertex_positions)
         {
@@ -1292,7 +1294,7 @@ private:
     (
         u32                    vertex_count,
         u32                    indexed_vertex_count,
-        const Vector<unsigned int>& remap_table,
+        const DynamicArray<u32>& remap_table,
         bool                        optimize,
         const f32*                vertex_positions,
         BufferT&                    dst_buffer_handle
@@ -1336,8 +1338,8 @@ private:
 private:
     Mutex                               m_mutex;
     Array<Mesh, MAX_MESHES>             m_meshes;
-    Vector<u16>                    m_transient_idxs;
-    Vector<bgfx::TransientVertexBuffer> m_transient_buffers;
+    DynamicArray<u16>                    m_transient_idxs;
+    DynamicArray<bgfx::TransientVertexBuffer> m_transient_buffers;
     bool                                m_transient_exhausted = false;
 };
 
@@ -1467,7 +1469,7 @@ static void submit_mesh
     const Mesh&                                mesh,
     const Mat4&                                transform,
     const DrawState&                           state,
-    const Vector<bgfx::TransientVertexBuffer>& transient_buffers,
+    const DynamicArray<bgfx::TransientVertexBuffer>& transient_buffers,
     const DefaultUniforms&                     default_uniforms,
     bgfx::Encoder&                             encoder
 )

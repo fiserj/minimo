@@ -18,7 +18,7 @@ internal void fill_pattern(void* dst, const void* pattern, u32 size, u32 count)
     }
     else
     {
-        for (u32 i = 0; i < count; i++)
+        for (u32 i = 0, n = count * size; i < n; i += size)
         {
             bx::memCopy(static_cast<u8*>(dst) + i, pattern, size);
         }
@@ -58,6 +58,11 @@ struct StaticArray
         return data[i];
     }
 
+    inline u32 size() const
+    {
+        return Size;
+    }
+
     void fill(const T& value)
     {
         fill_value(data, value, Size);
@@ -67,10 +72,10 @@ struct StaticArray
 template <typename T>
 struct DynamicArray
 {
-    T*              data;
-    u32             size;
-    u32             capacity;
-    bx::AllocatorI* allocator;
+    T*              data      = nullptr;
+    u32             size      = 0;
+    u32             capacity  = 0;
+    bx::AllocatorI* allocator = nullptr;
 
     static_assert(
         is_pod<T>(),
