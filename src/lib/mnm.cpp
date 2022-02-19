@@ -46,6 +46,7 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
+#include <bx/ringbuffer.h>        // RingBufferControl
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -122,22 +123,11 @@ namespace mnm
 template <typename T, u32 Size>
 using Array = std::array<T, Size>;
 
-template <typename T>
-using Atomic = std::atomic<T>;
-
 template <typename Key, typename T>
 using HashMap = std::unordered_map<Key, T>;
 
 template <typename T>
 using Vector = std::vector<T>;
-
-using Mat4 = hmm_mat4;
-
-using Vec2 = hmm_vec2;
-
-using Vec3 = hmm_vec3;
-
-using Vec4 = hmm_vec4;
 
 
 // -----------------------------------------------------------------------------
@@ -3226,6 +3216,53 @@ private:
 
 
 // -----------------------------------------------------------------------------
+// CODEPINT QUEUE
+// -----------------------------------------------------------------------------
+
+template <u32 Capacity>
+class CodepointQueue
+{
+    bx::RingBufferControl      m_ring;
+    StaticArray<u32, Capacity> m_codepoints;
+
+public:
+    CodepointQueue()
+        : m_ring(Capacity)
+    {
+    }
+
+    void flush()
+    {
+        m_ring.reset();
+    }
+
+    void add(u32 codepoint)
+    {
+        while (!m_ring.reserve(1))
+        {
+            next();
+        }
+
+        m_codepoints[m_ring.m_current] = codepoint;
+        m_ring.commit(1);
+    }
+
+    u32 next()
+    {
+        if (m_ring.available())
+        {
+            const u32 codepoint = m_codepoints[m_ring.m_read];
+            m_ring.consume(1);
+
+            return codepoint;
+        }
+
+        return 0;
+    }
+};
+
+
+// -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
@@ -3264,7 +3301,7 @@ struct GlobalContext
     UniformCache        uniform_cache;
     MemoryCache         memory_cache;
     FontDataRegistry    font_data_registry;
-    DynamicArray<u32>    codepoint_queue; // TODO : Make thread safe.
+    CodepointQueue<16>  codepoint_queue;
 
     GLFWcursor*         cursors[6] = { nullptr };
     Window              window;
@@ -3534,7 +3571,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         g_ctx.total_time.toc();
         g_ctx.frame_time.toc(true);
 
-        g_ctx.codepoint_queue.clear();
+        g_ctx.codepoint_queue.flush();
 
         glfwPollEvents();
 
@@ -3576,7 +3613,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 break;
 
             case GLEQ_CODEPOINT_INPUT:
-                g_ctx.codepoint_queue.push(event.codepoint);
+                g_ctx.codepoint_queue.add(event.codepoint);
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
@@ -3930,18 +3967,7 @@ float key_held_time(int key)
 
 unsigned int codepoint(void)
 {
-    using namespace mnm;
-
-    unsigned int value = 0;
-
-    // TODO : Make the queue thread safe.
-    if (!g_ctx.codepoint_queue.is_empty())
-    {
-        value = g_ctx.codepoint_queue.back();
-        g_ctx.codepoint_queue.pop();
-    }
-
-    return value;
+    return mnm::g_ctx.codepoint_queue.next();
 }
 
 

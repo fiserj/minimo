@@ -20,12 +20,16 @@ using i64 = int64_t;
 using f32 = float;
 using f64 = double;
 
+constexpr u8  U8_MAX  = UINT8_MAX;
 constexpr u16 U16_MAX = UINT16_MAX;
 constexpr u32 U32_MAX = UINT32_MAX;
 
 using Allocator  = bx::AllocatorI;
 using Mutex      = bx::Mutex;
 using MutexScope = bx::MutexScope;
+
+template <typename T>
+using Atomic = std::atomic<T>;
 
 using Mat4 = hmm_mat4;
 using Vec2 = hmm_vec2;
