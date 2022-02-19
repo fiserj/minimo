@@ -68,4 +68,14 @@ inline void assign(const void* src, void* dst)
     *static_cast<Block*>(dst) = *static_cast<const Block*>(src);
 }
 
+template <typename HandleT>
+inline void destroy_if_valid(HandleT& handle)
+{
+    if (bgfx::isValid(handle))
+    {
+        bgfx::destroy(handle);
+        handle = BGFX_INVALID_HANDLE;
+    }
+}
+
 } // namespace mnm
