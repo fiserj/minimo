@@ -3264,7 +3264,7 @@ struct GlobalContext
     UniformCache        uniform_cache;
     MemoryCache         memory_cache;
     FontDataRegistry    font_data_registry;
-    Vector<u32>    codepoint_queue; // TODO : Make thread safe.
+    DynamicArray<u32>    codepoint_queue; // TODO : Make thread safe.
 
     GLFWcursor*         cursors[6] = { nullptr };
     Window              window;
@@ -3576,7 +3576,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
                 break;
 
             case GLEQ_CODEPOINT_INPUT:
-                g_ctx.codepoint_queue.push_back(event.codepoint);
+                g_ctx.codepoint_queue.push(event.codepoint);
                 break;
 
             case GLEQ_FRAMEBUFFER_RESIZED:
@@ -3935,10 +3935,10 @@ unsigned int codepoint(void)
     unsigned int value = 0;
 
     // TODO : Make the queue thread safe.
-    if (!g_ctx.codepoint_queue.empty())
+    if (!g_ctx.codepoint_queue.is_empty())
     {
         value = g_ctx.codepoint_queue.back();
-        g_ctx.codepoint_queue.pop_back();
+        g_ctx.codepoint_queue.pop();
     }
 
     return value;
