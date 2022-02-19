@@ -945,23 +945,23 @@ struct InstanceRecorder
 
 union VertexBufferUnion
 {
-    u16                        transient_index = bgfx::kInvalidHandle;
+    u16                        transient_index;// = bgfx::kInvalidHandle;
     bgfx::VertexBufferHandle        static_buffer;
     bgfx::DynamicVertexBufferHandle dynamic_buffer;
 };
 
 union IndexBufferUnion
 {
-    u16                       transient_index = bgfx::kInvalidHandle;
+    u16                       transient_index;// = bgfx::kInvalidHandle;
     bgfx::IndexBufferHandle        static_buffer;
     bgfx::DynamicIndexBufferHandle dynamic_buffer;
 };
 
 struct Mesh
 {
-    u32          element_count = 0;
-    u32          extra_data    = 0;
-    u32          flags         = MESH_INVALID;
+    u32          element_count;// = 0;
+    u32          extra_data;//    = 0;
+    u32          flags;//         = MESH_INVALID;
     VertexBufferUnion positions;
     VertexBufferUnion attribs;
     IndexBufferUnion  indices;
@@ -996,6 +996,17 @@ struct Mesh
     }
 };
 
+constexpr Mesh EMPTY_MESH =
+{
+    0, // u32          element_count;// = 0;
+    0, // u32          extra_data;//    = 0;
+    MESH_INVALID, // u32          flags;//         = MESH_INVALID;
+    BGFX_INVALID_HANDLE, // VertexBufferUnion positions;
+    BGFX_INVALID_HANDLE, // VertexBufferUnion attribs;
+    BGFX_INVALID_HANDLE, // IndexBufferUnion  indices;
+    // u8           _pad[2];
+};
+
 
 // -----------------------------------------------------------------------------
 // MESH CACHE
@@ -1004,6 +1015,11 @@ struct Mesh
 struct MeshCache
 {
 public:
+    void init()
+    {
+        m_meshes.fill(EMPTY_MESH);
+    }
+
     bool add_mesh(const MeshRecorder& recorder, const VertexLayoutCache& layouts)
     {
         ASSERT(recorder.id < m_meshes.size());
@@ -1051,9 +1067,10 @@ public:
     {
         MutexScope lock(m_mutex);
 
-        for (Mesh& mesh : m_meshes)
+        // for (Mesh& mesh : m_meshes)
+        for (u32 i = 0; i < m_meshes.size(); i++)
         {
-            mesh.destroy();
+            m_meshes[i].destroy();
         }
     }
 
@@ -1065,7 +1082,7 @@ public:
         {
             ASSERT(m_meshes[m_transient_idxs[i]].type() == MESH_TRANSIENT);
 
-            m_meshes[m_transient_idxs[i]] = {};
+            m_meshes[m_transient_idxs[i]] = EMPTY_MESH;
         }
 
         m_transient_idxs   .clear();
@@ -1129,7 +1146,7 @@ private:
             )
             {
                 m_transient_exhausted = true;
-                mesh = {};
+                mesh = EMPTY_MESH;
             }
         }
 
@@ -1337,7 +1354,7 @@ private:
 
 private:
     Mutex                               m_mutex;
-    Array<Mesh, MAX_MESHES>             m_meshes;
+    StaticArray<Mesh, MAX_MESHES>             m_meshes;
     DynamicArray<u16>                    m_transient_idxs;
     DynamicArray<bgfx::TransientVertexBuffer> m_transient_buffers;
     bool                                m_transient_exhausted = false;
@@ -3400,6 +3417,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     g_ctx.layout_cache.init();
+    g_ctx.mesh_cache.init();
     // g_ctx.vertex_attrib_funcs.init();
     MeshRecorder::s_attrib_state_func_table.init();
     MeshRecorder::s_vertex_push_func_table.init();
