@@ -508,7 +508,7 @@ public:
         {
             if (m_viewport_width >= SIZE_EQUAL)
             {
-                bgfx::setViewRect(id, m_viewport_x, m_viewport_y, static_cast<bgfx::BackbufferRatio::Enum>(m_viewport_width - SIZE_EQUAL));
+                bgfx::setViewRect(id, m_viewport_x, m_viewport_y, bgfx::BackbufferRatio::Enum(m_viewport_width - SIZE_EQUAL));
             }
             else
             {
@@ -1007,7 +1007,7 @@ public:
 
         if (width >= SIZE_EQUAL && width <= SIZE_DOUBLE && width == height)
         {
-            ratio = static_cast<bgfx::BackbufferRatio::Enum>(width - SIZE_EQUAL);
+            ratio = bgfx::BackbufferRatio::Enum(width - SIZE_EQUAL);
         }
 
         const bgfx::Memory* memory = nullptr;
@@ -1358,7 +1358,7 @@ public:
         ASSERT(last >= first);
 
         size_t i = m_requests.size();
-        m_requests.resize(i + static_cast<size_t>(last - first + 1));
+        m_requests.resize(i + size_t(last - first + 1));
 
         for (u32 codepoint = first; codepoint <= last; codepoint++, i++)
         {
@@ -2550,7 +2550,7 @@ private:
 
                 Vector<u8> buffer(length + (type == STRING));
 
-                if (fread(buffer.data(), 1, length, f) == static_cast<size_t>(length))
+                if (fread(buffer.data(), 1, length, f) == size_t(length))
                 {
                     if (type == STRING)
                     {
@@ -3169,7 +3169,7 @@ void vsync(int vsync)
 {
     ASSERT(mnm::t_ctx->is_main_thread);
 
-    mnm::g_ctx.vsync_on          = static_cast<bool>(vsync);
+    mnm::g_ctx.vsync_on          = bool(vsync);
     mnm::g_ctx.reset_back_buffer = true;
 }
 
@@ -4148,7 +4148,7 @@ void save_bytes(const char* file_name, const void* data, int bytes)
 
     if (FILE* f = fopen(file_name, "wb"))
     {
-        (void)fwrite(data, static_cast<size_t>(bytes), 1, f); // TODO : Check return value and report error.
+        (void)fwrite(data, size_t(bytes), 1, f); // TODO : Check return value and report error.
         fclose(f);
     }
 }
