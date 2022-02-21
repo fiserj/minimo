@@ -37,8 +37,8 @@ struct StaticArray
     T data[Size];
 
     static_assert(
-        is_pod<T>(),
-        "`StaticArray` only supports POD-like types."
+        std::is_trivially_copyable<T>(),
+        "`StaticArray` only supports trivially copyable types."
     );
 
     static_assert(
