@@ -4,8 +4,11 @@ add_library(tree-sitter STATIC
     ${TREE_SITTER_DIR}/src/lib.c
 )
 
-target_include_directories(tree-sitter PUBLIC
-    ${TREE_SITTER_DIR}/include
+target_include_directories(tree-sitter
+    PRIVATE
+        ${TREE_SITTER_DIR}/src
+    PUBLIC
+        ${TREE_SITTER_DIR}/include
 )
 
 set_target_properties(tree-sitter PROPERTIES
