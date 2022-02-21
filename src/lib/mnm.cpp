@@ -2824,7 +2824,6 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     g_ctx.layout_cache.init();
-    g_ctx.mesh_cache.init();
     // g_ctx.vertex_attrib_funcs.init();
     MeshRecorder::s_attrib_state_func_table.init();
     MeshRecorder::s_vertex_push_func_table.init();
