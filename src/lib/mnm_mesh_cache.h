@@ -3,7 +3,7 @@
 namespace mnm
 {
 
-static inline u16 mesh_type(u32 flags)
+internal inline u16 mesh_type(u32 flags)
 {
     constexpr u16 types[] =
     {

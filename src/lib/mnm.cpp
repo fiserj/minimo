@@ -2166,7 +2166,7 @@ public:
 private:
     Mutex                             m_mutex;
     Array<Atlas, MAX_TEXTURE_ATLASES> m_atlases;
-    Array<u16, MAX_TEXTURES>     m_indices;
+    StaticArray<u16, MAX_TEXTURES>    m_indices;
 };
 
 
