@@ -186,6 +186,14 @@ struct DynamicArray
         size--;
     }
 
+    void swap(DynamicArray<T>& other)
+    {
+        bx::swap(data     , other.data     );
+        bx::swap(size     , other.size     );
+        bx::swap(capacity , other.capacity );
+        bx::swap(allocator, other.allocator);
+    }
+
     inline const T& front() const
     {
         return operator[](0);
