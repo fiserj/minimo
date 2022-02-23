@@ -128,6 +128,11 @@ struct DynamicArray
         size = 0;
     }
 
+    inline constexpr u32 type_size() const
+    {
+        return sizeof(T);
+    }
+
     inline bool is_empty() const
     {
         return size == 0;

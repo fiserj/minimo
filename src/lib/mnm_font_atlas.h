@@ -121,9 +121,20 @@ public:
             return;
         }
 
-        // TODO : Remove use of STL ?
         {
-            std::sort(m_requests.data, m_requests.data + m_requests.size);
+            bx::quickSort(
+                m_requests.data,
+                m_requests.size,
+                m_requests.type_size(),
+                [](const void* x, const void* y) -> i32
+                {
+                    return
+                        i32(*reinterpret_cast<const u32*>(x)) -
+                        i32(*reinterpret_cast<const u32*>(y));
+                }
+            );
+
+            // TODO : Remove use of STL ?
             const u32* end = std::unique(m_requests.data, m_requests.data + m_requests.size);
 
             ASSERT(end > m_requests.data && end <= m_requests.data + m_requests.size);
