@@ -3,6 +3,14 @@
 namespace mnm
 {
 
+struct RecordInfo
+{
+    u32  flags;
+    u32  extra_data;
+    u16  id;
+    bool is_transform;
+};
+
 internal inline u16 mesh_type(u32 flags)
 {
     constexpr u16 types[] =
@@ -193,15 +201,20 @@ class MeshCache
     bool                                      m_transient_memory_exhausted = false;
 
 public:
-    bool add_mesh(const MeshRecorder& recorder, const VertexLayoutCache& layouts)
+    bool add_mesh
+    (
+        const RecordInfo&        info,
+        const MeshRecorder&      recorder,
+        const VertexLayoutCache& layouts
+    )
     {
-        ASSERT(recorder.id < m_meshes.size());
+        ASSERT(info.id < m_meshes.size());
 
         MutexScope lock(m_mutex);
 
-        Mesh& mesh = m_meshes[recorder.id];
+        Mesh& mesh = m_meshes[info.id];
 
-        const u16 new_type = mesh_type(recorder.flags);
+        const u16 new_type = mesh_type(info.flags);
 
         if (new_type == MESH_INVALID)
         {
@@ -212,8 +225,8 @@ public:
         mesh.destroy();
 
         mesh.element_count = recorder.vertex_count;
-        mesh.extra_data    = recorder.extra_data;
-        mesh.flags         = recorder.flags;
+        mesh.extra_data    = info.extra_data;
+        mesh.flags         = info.flags;
 
         switch (new_type)
         {
@@ -225,7 +238,7 @@ public:
         case MESH_TRANSIENT:
             if (add_transient_mesh(mesh, recorder, layouts))
             {
-                m_transient_idxs.push(recorder.id);
+                m_transient_idxs.push(info.id);
             }
             break;
 

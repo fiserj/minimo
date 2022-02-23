@@ -1050,35 +1050,19 @@ private:
 class TextRecorder
 {
 public:
-    void begin(u16 id, u16 flags, u16 atlas_id, Atlas* atlas, MeshRecorder* recorder)
+    void reset(u16 flags, Atlas* atlas, MeshRecorder* recorder)
     {
-        ASSERT(!m_atlas);
-        ASSERT(!m_recorder);
-
         ASSERT(atlas);
         ASSERT(recorder);
-
-        const u32 mesh_flags =
-            TEXT_MESH       |
-            PRIMITIVE_QUADS |
-            VERTEX_POSITION |
-            VERTEX_TEXCOORD |
-            VERTEX_COLOR    |
-            (atlas->is_updatable() ? (TEXCOORD_F32 | VERTEX_PIXCOORD) : 0) |
-            (flags & TEXT_TYPE_MASK);
 
         m_flags       = flags;
         m_atlas       = atlas;
         m_recorder    = recorder;
         m_line_height = 2.0f;
-
-        m_recorder->reset(id, mesh_flags, atlas_id);
     }
 
-    void end()
+    void clear()
     {
-        m_recorder->clear();
-
         *this = {};
     }
 
@@ -1567,6 +1551,7 @@ struct LocalContext
     MeshRecorder        mesh_recorder;
     TextRecorder        text_recorder;
     InstanceRecorder    instance_recorder;
+    RecordInfo          record_info;
 
     FramebufferRecorder framebuffer_recorder;
 
@@ -2251,10 +2236,13 @@ double toc(void)
 
 void begin_mesh(int id, int flags)
 {
-    mnm::t_ctx->mesh_recorder.reset(
-        u16(id),
-        u16(flags) // NOTE : User exposed flags fit within 16 bits.
-    );
+    using namespace mnm;
+
+    t_ctx->mesh_recorder.reset(u16(flags)); // NOTE : User exposed flags fit within 16 bits.
+
+    t_ctx->record_info.flags      = u16(flags);
+    t_ctx->record_info.extra_data = 0;
+    t_ctx->record_info.id         = u16(id);
 }
 
 void end_mesh(void)
@@ -2262,7 +2250,11 @@ void end_mesh(void)
     using namespace mnm;
 
     // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.mesh_cache.add_mesh(t_ctx->mesh_recorder, g_ctx.layout_cache);
+    (void)g_ctx.mesh_cache.add_mesh(
+        t_ctx->record_info,
+        t_ctx->mesh_recorder,
+        g_ctx.layout_cache
+    );
 
     t_ctx->mesh_recorder.clear();
 }
@@ -2273,7 +2265,7 @@ void vertex(float x, float y, float z)
 
     // TODO : We should measure whether branch prediction minimizes the cost of
     //        having a condition in here.
-    if (!(t_ctx->mesh_recorder.flags & NO_VERTEX_TRANSFORM))
+    if (!(t_ctx->record_info.flags & NO_VERTEX_TRANSFORM))
     {
         t_ctx->mesh_recorder.vertex((t_ctx->matrix_stack.top * HMM_Vec4(x, y, z, 1.0f)).XYZ);
     }
@@ -2629,19 +2621,30 @@ void glyphs_from_string(const char* string)
 // PUBLIC API IMPLEMENTATION - TEXT MESHES
 // -----------------------------------------------------------------------------
 
-void begin_text(int id, int atlas, int flags)
+void begin_text(int mesh_id, int atlas_id, int flags)
 {
     using namespace mnm;
 
     ASSERT(!t_ctx->text_recorder.mesh_recorder());
 
-    t_ctx->text_recorder.begin(
-        u16(id),
-        u16(flags),
-        u16(atlas),
-        g_ctx.atlas_cache.get(u16(atlas)),
-        &t_ctx->mesh_recorder
-    );
+    Atlas* atlas = g_ctx.atlas_cache.get(u16(atlas_id));
+    ASSERT(atlas);
+
+    const u32 mesh_flags =
+        TEXT_MESH       |
+        PRIMITIVE_QUADS |
+        VERTEX_POSITION |
+        VERTEX_TEXCOORD |
+        VERTEX_COLOR    |
+        (atlas->is_updatable() ? (TEXCOORD_F32 | VERTEX_PIXCOORD) : 0) |
+        (flags & TEXT_TYPE_MASK);
+
+    t_ctx->mesh_recorder.reset(mesh_flags);
+    t_ctx->text_recorder.reset(u16(flags), atlas, &t_ctx->mesh_recorder);
+
+    t_ctx->record_info.flags      = mesh_flags;
+    t_ctx->record_info.extra_data = u16(atlas_id);
+    t_ctx->record_info.id         = u16(mesh_id);
 }
 
 void end_text(void)
@@ -2651,9 +2654,14 @@ void end_text(void)
     ASSERT(t_ctx->text_recorder.mesh_recorder());
 
     // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.mesh_cache.add_mesh(*t_ctx->text_recorder.mesh_recorder(), g_ctx.layout_cache);
+    (void)g_ctx.mesh_cache.add_mesh(
+        t_ctx->record_info,
+        t_ctx->mesh_recorder,
+        g_ctx.layout_cache
+    );
 
-    t_ctx->text_recorder.end();
+    t_ctx->text_recorder.clear();
+    t_ctx->mesh_recorder.clear();
 }
 
 void alignment(int flags)

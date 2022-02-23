@@ -5,12 +5,8 @@ namespace mnm
 
 struct MeshRecorder
 {
-    void reset(u16 id_, u32 flags_, u32 extra_data_ = 0)
+    void reset(u32 flags)
     {
-        id         = id_;
-        flags      = flags_;
-        extra_data = extra_data_;
-
         position_buffer.clear();
         attrib_buffer  .clear();
 
@@ -22,7 +18,7 @@ struct MeshRecorder
 
     inline void clear()
     {
-        reset(0, 0);
+        reset(0);
 
         attrib_funcs = {};
         vertex_func  = {};
@@ -62,11 +58,6 @@ struct MeshRecorder
     VertexStoreFunc          vertex_func;
     u32                      vertex_count;
     u32                      invocation_count;
-
-    // TODO : These should ideally be stored elsewhere.
-    u32                      extra_data;
-    u32                      flags;
-    u16                      id;
 
     static VertexAttribStateFuncTable s_attrib_state_func_table;
     static VertexStoreFuncTable       s_vertex_push_func_table;
