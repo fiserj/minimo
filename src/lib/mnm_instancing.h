@@ -5,11 +5,12 @@ namespace mnm
 
 struct InstanceRecorder
 {
-    void begin(u16 id_, u16 type)
-    {
-        ASSERT(!is_recording() || (id_ == UINT16_MAX && type == UINT16_MAX));
+    DynamicArray<u8> buffer;
+    u16              instance_size = 0;
 
-        constexpr u16 type_sizes[] =
+    void reset(u32 type)
+    {
+        constexpr u32 type_sizes[] =
         {
             sizeof(Mat4), // INSTANCE_TRANSFORM
             16,           // INSTANCE_DATA_16
@@ -21,42 +22,27 @@ struct InstanceRecorder
             112,          // INSTANCE_DATA_112
         };
 
-        id            = id_;
-        instance_size = type_sizes[std::max<size_t>(type, BX_COUNTOF(type_sizes) - 1)];
-        is_transform  = type == INSTANCE_TRANSFORM;
-
         buffer.clear();
+        instance_size = type_sizes[bx::max<u32>(type, BX_COUNTOF(type_sizes) - 1)];
     }
 
-    inline void end()
+    inline void clear()
     {
-        ASSERT(is_recording());
-
-        begin(UINT16_MAX, UINT16_MAX);
+        buffer.clear();
+        instance_size = 0;
     }
 
     inline void instance(const void* data)
     {
         ASSERT(data);
-        ASSERT(is_recording());
 
         push_back(buffer, data, instance_size);
     }
 
     inline u32 instance_count() const
     {
-        return u32(buffer.size / instance_size);
+        return buffer.size / instance_size;
     }
-
-    inline bool is_recording() const
-    {
-        return id != UINT16_MAX;
-    }
-
-    DynamicArray<u8> buffer;
-    u16              id            = UINT16_MAX;
-    u16              instance_size = 0;
-    bool             is_transform  = false;
 };
 
 } // namespace mnm

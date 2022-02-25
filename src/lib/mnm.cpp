@@ -678,9 +678,9 @@ struct InstanceCache
     Mutex                                     mutex;
     Array<InstanceData, MAX_INSTANCE_BUFFERS> data;
 
-    bool add_buffer(const InstanceRecorder& recorder)
+    bool add_buffer(const RecordInfo& info, const InstanceRecorder& recorder)
     {
-        ASSERT(recorder.id < data.size());
+        ASSERT(info.id < data.size());
 
         MutexScope lock(mutex);
 
@@ -694,10 +694,10 @@ struct InstanceCache
             return false;
         }
 
-        InstanceData &instance_data = data[recorder.id];
-        instance_data.is_transform = recorder.is_transform;
+        InstanceData &instance_data = data[info.id];
+        instance_data.is_transform = info.is_transform;
         bgfx::allocInstanceDataBuffer(&instance_data.buffer, count, stride);
-        (void)memcpy(instance_data.buffer.data, recorder.buffer.data, recorder.buffer.size);
+        bx::memCopy(instance_data.buffer.data, recorder.buffer.data, recorder.buffer.size);
 
         return true;
     }
@@ -2516,31 +2516,32 @@ void begin_instancing(int id, int type)
     ASSERT(id >= 0 && u16(id) < MAX_INSTANCE_BUFFERS);
     ASSERT(type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112);
 
-    ASSERT(!t_ctx->instance_recorder.is_recording());
+    t_ctx->instance_recorder.reset(u16(type));
 
-    t_ctx->instance_recorder.begin(u16(id), u16(type));
+    t_ctx->record_info.id           = u16(id);
+    t_ctx->record_info.is_transform = type == INSTANCE_TRANSFORM;
 }
 
 void end_instancing(void)
 {
     using namespace mnm;
 
-    ASSERT(t_ctx->instance_recorder.is_recording());
-
     // TODO : Figure out error handling - crash or just ignore the submission?
-    (void)g_ctx.instance_cache.add_buffer(t_ctx->instance_recorder);
+    (void)g_ctx.instance_cache.add_buffer(
+        t_ctx->record_info,
+        t_ctx->instance_recorder
+    );
 
-    t_ctx->instance_recorder.end();
+    t_ctx->instance_recorder.clear();
 }
 
 void instance(const void* data)
 {
     using namespace mnm;
 
-    ASSERT(t_ctx->instance_recorder.is_recording());
-    ASSERT((data == nullptr) == (t_ctx->instance_recorder.is_transform));
-
-    t_ctx->instance_recorder.instance(t_ctx->instance_recorder.is_transform ? &t_ctx->matrix_stack.top : data);
+    t_ctx->instance_recorder.instance(t_ctx->record_info.is_transform
+        ? &t_ctx->matrix_stack.top : data
+    );
 }
 
 void instances(int id)
