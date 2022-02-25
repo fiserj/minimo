@@ -215,13 +215,6 @@ static inline void push_back(Vector<u8>& buffer, const void* data)
     assign<Size>(data, buffer.data() + buffer.size() - Size);
 }
 
-static inline void push_back(Vector<u8>& buffer, const void* data, size_t size)
-{
-    buffer.resize(buffer.size() + size);
-
-    (void)memcpy(buffer.data() + buffer.size() - size, data, size);
-}
-
 template <typename T>
 static inline void push_back(Vector<u8>& buffer, const T& value)
 {
@@ -596,7 +589,10 @@ public:
         }
     }
 
-    inline bgfx::FrameBufferHandle framebuffer() const { return m_framebuffer; }
+    inline bgfx::FrameBufferHandle framebuffer() const
+    {
+        return m_framebuffer;
+    }
 
 private:
     enum : u8
@@ -613,52 +609,40 @@ private:
     Mat4                    m_view_matrix     = HMM_Mat4d(1.0f);
     Mat4                    m_proj_matrix     = HMM_Mat4d(1.0f);
 
-    u16                m_viewport_x      = 0;
-    u16                m_viewport_y      = 0;
-    u16                m_viewport_width  = SIZE_EQUAL;
-    u16                m_viewport_height = SIZE_EQUAL;
+    u16                     m_viewport_x      = 0;
+    u16                     m_viewport_y      = 0;
+    u16                     m_viewport_width  = SIZE_EQUAL;
+    u16                     m_viewport_height = SIZE_EQUAL;
 
     bgfx::FrameBufferHandle m_framebuffer     = BGFX_INVALID_HANDLE;
 
-    u16                m_clear_flags     = BGFX_CLEAR_NONE;
-    f32                   m_clear_depth     = 1.0f;
-    u32                m_clear_rgba      = 0x000000ff;
-    u8                 m_clear_stencil   = 0;
+    u16                     m_clear_flags     = BGFX_CLEAR_NONE;
+    f32                     m_clear_depth     = 1.0f;
+    u32                     m_clear_rgba      = 0x000000ff;
+    u8                      m_clear_stencil   = 0;
 
-    u8                 m_dirty_flags     = DIRTY_CLEAR;
+    u8                      m_dirty_flags     = DIRTY_CLEAR;
 };
 
-class PassCache
+struct PassCache
 {
-public:
+    Array<Pass, MAX_PASSES> passes;
+    bool                    backbuffer_size_changed = true;
+
     void update(bgfx::Encoder* encoder)
     {
-        MutexScope lock(m_mutex);
-
-        for (bgfx::ViewId id = 0; id < m_passes.size(); id++)
+        for (bgfx::ViewId id = 0; id < passes.size(); id++)
         {
-            m_passes[id].update(id, encoder, m_backbuffer_size_changed);
+            passes[id].update(id, encoder, backbuffer_size_changed);
         }
 
-        m_backbuffer_size_changed = false;
+        backbuffer_size_changed = false;
     }
 
-    void notify_backbuffer_size_changed()
+    inline Pass& operator[](bgfx::ViewId i)
     {
-        m_backbuffer_size_changed = true;
+        return passes[i];
     }
-
-    // Changing pass properties directly is not thread safe, but it seems
-    // super silly to actually attempt to do so from multiple threads.
-
-    inline Pass& operator[](bgfx::ViewId i) { return m_passes[i]; }
-
-    inline const Pass& operator[](bgfx::ViewId i) const { return m_passes[i]; }
-
-private:
-    Mutex                   m_mutex;
-    Array<Pass, MAX_PASSES> m_passes;
-    bool                    m_backbuffer_size_changed = true;
 };
 
 
@@ -864,8 +848,8 @@ static void submit_mesh
 struct Framebuffer
 {
     bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
-    u16                width  = 0;
-    u16                height = 0;
+    u16                     width  = 0;
+    u16                     height = 0;
 
     void destroy()
     {
@@ -921,7 +905,8 @@ public:
 
         if (!m_textures.empty())
         {
-            framebuffer.handle = bgfx::createFrameBuffer(u8(m_textures.size()), m_textures.data(), false);
+            framebuffer.handle = bgfx::createFrameBuffer(u8(m_textures.size()),
+                m_textures.data(), false);
             ASSERT(bgfx::isValid(framebuffer.handle));
 
             framebuffer.width  = m_width;
@@ -964,7 +949,10 @@ public:
         framebuffer = mesh_recorder.create_framebuffer();
     }
 
-    inline const Framebuffer& operator[](u16 id) const { return m_framebuffers[id]; }
+    inline const Framebuffer& operator[](u16 id) const
+    {
+        return m_framebuffers[id];
+    }
 
 private:
     Mutex                                m_mutex;
@@ -1871,7 +1859,7 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
 
-            g_ctx.pass_cache.notify_backbuffer_size_changed();
+            g_ctx.pass_cache.backbuffer_size_changed = true;
         }
 
         if (update_cursor_position)
@@ -2498,10 +2486,12 @@ void read_texture(int id, void* data)
 
 int readable(int id)
 {
-    ASSERT(id > 0 && u16(id) < mnm::MAX_TEXTURES);
+    using namespace mnm;
+
+    ASSERT(id > 0 && u16(id) < MAX_TEXTURES);
 
     // TODO : This needs to compare value returned from `bgfx::frame`.
-    return mnm::g_ctx.bgfx_frame_number >= mnm::g_ctx.texture_cache[u16(id)].read_frame;
+    return g_ctx.bgfx_frame_number >= g_ctx.texture_cache[u16(id)].read_frame;
 }
 
 
@@ -2864,12 +2854,16 @@ void shader(int id)
 
 void view(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_view(mnm::t_ctx->matrix_stack.top);
+    using namespace mnm;
+
+    g_ctx.pass_cache[t_ctx->active_pass].set_view(t_ctx->matrix_stack.top);
 }
 
 void projection(void)
 {
-    mnm::g_ctx.pass_cache[mnm::t_ctx->active_pass].set_projection(mnm::t_ctx->matrix_stack.top);
+    using namespace mnm;
+
+    g_ctx.pass_cache[t_ctx->active_pass].set_projection(t_ctx->matrix_stack.top);
 }
 
 void push(void)
@@ -2889,17 +2883,25 @@ void identity(void)
 
 void ortho(float left, float right, float bottom, float top, float near_, float far_)
 {
-    mnm::t_ctx->matrix_stack.multiply_top(HMM_Orthographic(left, right, bottom, top, near_, far_));
+    mnm::t_ctx->matrix_stack.multiply_top(
+        HMM_Orthographic(left, right, bottom, top, near_, far_)
+    );
 }
 
 void perspective(float fovy, float aspect, float near_, float far_)
 {
-    mnm::t_ctx->matrix_stack.multiply_top(HMM_Perspective(fovy, aspect, near_, far_));
+    mnm::t_ctx->matrix_stack.multiply_top(
+        HMM_Perspective(fovy, aspect, near_, far_)
+    );
 }
 
-void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y, float at_z, float up_x, float up_y, float up_z)
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y,
+    float at_z, float up_x, float up_y, float up_z)
 {
-    mnm::t_ctx->matrix_stack.multiply_top(HMM_LookAt(HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z), HMM_Vec3(up_x, up_y, up_z)));
+    mnm::t_ctx->matrix_stack.multiply_top(
+        HMM_LookAt( HMM_Vec3(eye_x, eye_y, eye_z), HMM_Vec3(at_x, at_y, at_z),
+            HMM_Vec3(up_x, up_y, up_z))
+    );
 }
 
 void rotate(float angle, float x, float y, float z)
