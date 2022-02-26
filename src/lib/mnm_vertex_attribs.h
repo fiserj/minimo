@@ -114,16 +114,21 @@ constexpr u32 vertex_attrib_offset()
         "`Attrib` must be part of `Flags`."
     );
 
+    static_assert(
+        VERTEX_COLOR  < VERTEX_NORMAL   &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD_F32,
+        "Vertex attributes' order assumption violated."
+    );
+
     u32 offset = 0;
 
-    // Order: color, normal, texcooord.
-
-    if constexpr (Attrib != VERTEX_COLOR && (Flags & VERTEX_COLOR))
+    if constexpr (Attrib > VERTEX_COLOR && (Flags & VERTEX_COLOR))
     {
         offset += sizeof(VertexAttribState::PackedColorType);
     }
 
-    if constexpr (Attrib != VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
+    if constexpr (Attrib > VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
     {
         offset += sizeof(VertexAttribState::PackedNormalType);
     }
