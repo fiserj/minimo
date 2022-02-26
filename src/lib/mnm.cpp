@@ -1694,6 +1694,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         BGFX_EMBEDDED_SHADER(position_color_fs           ),
         BGFX_EMBEDDED_SHADER(position_color_vs           ),
 
+        BGFX_EMBEDDED_SHADER(position_color_normal_fs    ),
+        BGFX_EMBEDDED_SHADER(position_color_normal_vs    ),
+
         BGFX_EMBEDDED_SHADER(position_color_texcoord_fs  ),
         BGFX_EMBEDDED_SHADER(position_color_texcoord_vs  ),
 
@@ -1727,6 +1730,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             {
                 VERTEX_COLOR,
                 "position_color"
+            },
+            {
+                VERTEX_COLOR | VERTEX_NORMAL,
+                "position_color_normal"
             },
             {
                 VERTEX_COLOR | VERTEX_TEXCOORD,
