@@ -4,6 +4,8 @@
 
 static void cube(void);
 
+static void scene(void);
+
 static void setup(void)
 {
     title("Normals Example");
@@ -28,13 +30,28 @@ static void draw(void)
     projection();
 
     identity();
-    look_at(0.0f, 0.0f, -3.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    look_at(0.0f, 0.0f, -17.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
     view();
 
     identity();
-    rotate_x(((float)elapsed() + 0.21f) * 57.2958f);
-    rotate_y(((float)elapsed() + 0.37f) * 57.2958f);
-    mesh(CUBE_MESH);
+    scene();
+}
+
+void scene(void)
+{
+    for (float y = 0.0f; y < 11.0f; y += 1.0f)
+    for (float x = 0.0f; x < 11.0f; x += 1.0f)
+    {
+        push();
+
+        rotate_x (((float)elapsed() + x * 0.21f) * 57.2958f);
+        rotate_y (((float)elapsed() + y * 0.37f) * 57.2958f);
+        translate(-7.5f + x * 1.5f, -7.5f + y * 1.5f, 0.0f);
+
+        mesh(CUBE_MESH);
+
+        pop();
+    }
 }
 
 static void cube(void)
