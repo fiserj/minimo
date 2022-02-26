@@ -5,5 +5,5 @@ $input v_normal
 
 void main()
 {
-    gl_FragColor = vec4(encodeNormalUint(v_normal), 1.0);
+    gl_FragColor = vec4(encodeNormalUint(normalize(v_normal)), 1.0);
 }
