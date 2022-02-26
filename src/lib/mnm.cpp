@@ -445,6 +445,7 @@ public:
 
     inline bgfx::ProgramHandle builtin(u32 attribs) const
     {
+        auto idx = get_index_from_attribs(attribs);
         return m_builtins[get_index_from_attribs(attribs)];
     }
 
@@ -1696,6 +1697,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
         BGFX_EMBEDDED_SHADER(position_color_texcoord_fs  ),
         BGFX_EMBEDDED_SHADER(position_color_texcoord_vs  ),
 
+        BGFX_EMBEDDED_SHADER(position_normal_fs          ),
+        BGFX_EMBEDDED_SHADER(position_normal_vs          ),
+
         BGFX_EMBEDDED_SHADER(position_texcoord_fs        ),
         BGFX_EMBEDDED_SHADER(position_texcoord_vs        ),
 
@@ -1727,6 +1731,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
             {
                 VERTEX_COLOR | VERTEX_TEXCOORD,
                 "position_color_texcoord"
+            },
+            {
+                VERTEX_NORMAL,
+                "position_normal"
             },
             {
                 VERTEX_TEXCOORD,
@@ -2339,6 +2347,7 @@ void mesh(int id)
         }
 
         state.program = g_ctx.program_cache.builtin(mesh_flags);
+        ASSERT(bgfx::isValid(state.program));
     }
 
     if (state.element_start != 0 || state.element_count != UINT32_MAX)
