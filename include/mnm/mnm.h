@@ -349,39 +349,44 @@ double toc(void);
 enum
 {
     // Static, triangle-based, position-only (so not all that useful).
-    MESH_DEFAULT             = 0x0000,
+    MESH_DEFAULT             = 0x00000,
 
     // Mesh type. Static by default.
-    MESH_STATIC              = 0x0001,
-    MESH_TRANSIENT           = 0x0002,
-    MESH_DYNAMIC             = 0x0004,
+    MESH_STATIC              = 0x00001,
+    MESH_TRANSIENT           = 0x00002,
+    MESH_DYNAMIC             = 0x00004,
 
     // Primitive type. Triangles by default.
-    PRIMITIVE_TRIANGLES      = 0x0008,
-    PRIMITIVE_QUADS          = 0x0010,
-    PRIMITIVE_TRIANGLE_STRIP = 0x0020,
-    PRIMITIVE_LINES          = 0x0030,
-    PRIMITIVE_LINE_STRIP     = 0x0040,
-    PRIMITIVE_POINTS         = 0x0050,
+    PRIMITIVE_TRIANGLES      = 0x00008,
+    PRIMITIVE_QUADS          = 0x00010,
+    PRIMITIVE_TRIANGLE_STRIP = 0x00020,
+    PRIMITIVE_LINES          = 0x00030,
+    PRIMITIVE_LINE_STRIP     = 0x00040,
+    PRIMITIVE_POINTS         = 0x00050,
 
     // Vertex attribute flags. 3D position always on.
-    VERTEX_COLOR             = 0x0080,
-    VERTEX_NORMAL            = 0x0100,
-    VERTEX_TEXCOORD          = 0x0200,
+    VERTEX_COLOR             = 0x00080,
+    VERTEX_NORMAL            = 0x00100,
+    VERTEX_TEXCOORD          = 0x00200,
 
     // Texcoord uses full float range.
-    TEXCOORD_F32             = 0x1000,
+    TEXCOORD_F32             = 0x01000,
 
     // Optimizes the mesh data for beter rendering performance, potentially
     // changing the primitive ordering - don't use if you plan to use `range`.
     // Only useful for static or dynamic meshes, and for triangles or quads.
-    OPTIMIZE_GEOMETRY        = 0x2000,
+    OPTIMIZE_GEOMETRY        = 0x02000,
 
     // Disables transformation of submitted vertices by the current matrix.
-    NO_VERTEX_TRANSFORM      = 0x4000,
+    NO_VERTEX_TRANSFORM      = 0x04000,
 
     // Keeps the geometry on CPU (positions only).
-    KEEP_CPU_GEOMETRY        = 0x8000, // TODO : Add support.
+    KEEP_CPU_GEOMETRY        = 0x08000, // TODO : Add support.
+
+    // Generates normals from the vertex positions. `VERTEX_NORMAL` still has to
+    // be specified in the flags.
+    GENEREATE_SMOOTH_NORMALS = 0x10000,
+    GENEREATE_FLAT_NORMALS   = 0x20000,
 };
 
 /// Mesh draw state flags. Subset of the most comonly used ones from BGFX.

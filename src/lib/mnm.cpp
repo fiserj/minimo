@@ -454,17 +454,17 @@ private:
     {
         static_assert(
             VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b000111 &&
-            INSTANCING_SUPPORTED >> 13                  == 0b001000 &&
-            SAMPLER_COLOR_R      >> 13                  == 0b010000 &&
-            VERTEX_PIXCOORD      >> 14                  == 0b100000,
+            INSTANCING_SUPPORTED >> 17                  == 0b001000 &&
+            SAMPLER_COLOR_R      >> 17                  == 0b010000 &&
+            VERTEX_PIXCOORD      >> 18                  == 0b100000,
             "Invalid index assumptions in `ProgramCache::get_index_from_attribs`."
         );
 
         return
             ((attribs & VERTEX_ATTRIB_MASK  ) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
-            ((attribs & INSTANCING_SUPPORTED) >> 13                 ) | // Bit 3.
-            ((attribs & SAMPLER_COLOR_R     ) >> 13                 ) | // Bit 4.
-            ((attribs & VERTEX_PIXCOORD     ) >> 14                 ) ; // Bit 5.
+            ((attribs & INSTANCING_SUPPORTED) >> 17                 ) | // Bit 3.
+            ((attribs & SAMPLER_COLOR_R     ) >> 17                 ) | // Bit 4.
+            ((attribs & VERTEX_PIXCOORD     ) >> 18                 ) ; // Bit 5.
     }
 
 private:

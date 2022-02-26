@@ -14,10 +14,10 @@ constexpr u32 VERTEX_POSITION        = 0x00000;
 constexpr u32 VERTEX_TEXCOORD_F32    = VERTEX_TEXCOORD | TEXCOORD_F32;
 
 // These have to be cross-checked against regular mesh flags (see later).
-constexpr u32 INSTANCING_SUPPORTED   = 0x10000;
-constexpr u32 SAMPLER_COLOR_R        = 0x20000;
-constexpr u32 TEXT_MESH              = 0x40000;
-constexpr u32 VERTEX_PIXCOORD        = 0x80000;
+constexpr u32 INSTANCING_SUPPORTED   = 0x100000;
+constexpr u32 SAMPLER_COLOR_R        = 0x200000;
+constexpr u32 TEXT_MESH              = 0x400000;
+constexpr u32 VERTEX_PIXCOORD        = 0x800000;
 
 constexpr u32 MAX_FONTS              = 128;
 constexpr u32 MAX_FRAMEBUFFERS       = 128;
@@ -58,7 +58,8 @@ constexpr u16 VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEX
 constexpr u16 VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
 
 constexpr u32 USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 |
-                                       OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY;
+                                       OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY |
+                                       GENEREATE_SMOOTH_NORMALS | GENEREATE_FLAT_NORMALS;
 constexpr u32 INTERNAL_MESH_FLAGS    = INSTANCING_SUPPORTED | SAMPLER_COLOR_R | TEXT_MESH | VERTEX_PIXCOORD;
 
 static_assert(
