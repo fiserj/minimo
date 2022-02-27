@@ -3,11 +3,16 @@
 namespace mnm
 {
 
+// TODO : Figure out a way to have a single implementation.
 template <u16 Flags>
 constexpr u32 vertex_attribs_size();
 
 template <u16 Flags, u16 Attrib>
 constexpr u32 vertex_attrib_offset();
+
+internal constexpr u32 vertex_attribs_size(u32 flags);
+
+internal constexpr u32 vertex_attrib_offset(u32 flags, u32 attrib);
 
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
@@ -129,6 +134,69 @@ constexpr u32 vertex_attrib_offset()
     }
 
     if constexpr (Attrib > VERTEX_NORMAL && (Flags & VERTEX_NORMAL))
+    {
+        offset += sizeof(VertexAttribState::PackedNormalType);
+    }
+
+    return offset;
+}
+
+constexpr u32 vertex_attribs_size(u32 flags)
+{
+    u32 size = 0;
+
+    if (flags & VERTEX_COLOR)
+    {
+        size += sizeof(VertexAttribState::PackedColorType);
+    }
+
+    if (flags & VERTEX_NORMAL)
+    {
+        size += sizeof(VertexAttribState::PackedNormalType);
+    }
+
+    if (flags & VERTEX_TEXCOORD)
+    {
+        if (flags & TEXCOORD_F32)
+        {
+            size += sizeof(VertexAttribState::FullTexcoordType);
+        }
+        else
+        {
+            size += sizeof(VertexAttribState::PackedTexcoordType);
+        }
+    }
+
+    return size;
+}
+
+constexpr u32 vertex_attrib_offset(u32 flags, u32 attrib)
+{
+    ASSERT(
+        attrib == VERTEX_COLOR    ||
+        attrib == VERTEX_NORMAL   ||
+        attrib == VERTEX_TEXCOORD ||
+        attrib == VERTEX_TEXCOORD_F32
+    );
+
+    ASSERT(
+        attrib == (flags & attrib)
+    );
+
+    ASSERT(
+        VERTEX_COLOR  < VERTEX_NORMAL   &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD_F32
+    );
+
+    u32 offset = 0;
+
+    if (attrib > VERTEX_COLOR && (flags & VERTEX_COLOR))
+    {
+        offset += sizeof(VertexAttribState::PackedColorType);
+    }
+
+    if (attrib > VERTEX_NORMAL && (flags & VERTEX_NORMAL))
     {
         offset += sizeof(VertexAttribState::PackedNormalType);
     }

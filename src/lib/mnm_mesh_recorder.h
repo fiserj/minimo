@@ -3,6 +3,36 @@
 namespace mnm
 {
 
+internal void generate_flat_normals
+(
+    u32                                  vertex_count,
+    u32                                  vertex_stride,
+    const Vec3*                          vertices,
+    VertexAttribState::PackedNormalType* normals
+)
+{
+    ASSERT(vertex_count % 3 == 0);
+
+    for (u32 i = 0; i < vertex_count; i += 3)
+    {
+        const Vec3 a = vertices[i + 1] - vertices[i];
+        const Vec3 b = vertices[i + 2] - vertices[i];
+        const Vec3 n = HMM_Normalize(HMM_Cross(a, b));
+
+        const f32 normalized[] =
+        {
+            n.X * 0.5f + 0.5f,
+            n.Y * 0.5f + 0.5f,
+            n.Z * 0.5f + 0.5f,
+        };
+
+        bx::packRgb8(&normals[i], normalized);
+
+        normals[i + vertex_stride    ] = normals[i];
+        normals[i + vertex_stride * 2] = normals[i];
+    }
+}
+
 struct MeshRecorder
 {
     void reset(u32 flags)
@@ -49,6 +79,19 @@ struct MeshRecorder
     inline void texcoord(f32 u, f32 v)
     {
         attrib_funcs.texcoord(attrib_state, u, v);
+    }
+
+    void generate_flat_normals(u32 flags)
+    {
+        const u32 offset = vertex_attrib_offset(flags, VERTEX_NORMAL);
+        const u32 stride = vertex_attribs_size (flags);
+
+        ::mnm::generate_flat_normals(
+            vertex_count,
+            stride / sizeof(VertexAttribState::PackedNormalType),
+            reinterpret_cast<Vec3*>(position_buffer.data),
+            reinterpret_cast<VertexAttribState::PackedNormalType*>(attrib_buffer.data + offset)
+        );
     }
 
     DynamicArray<u8>         attrib_buffer;

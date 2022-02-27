@@ -2241,16 +2241,21 @@ void begin_mesh(int id, int flags)
 {
     using namespace mnm;
 
-    t_ctx->mesh_recorder.reset(u16(flags)); // NOTE : User exposed flags fit within 16 bits.
-
-    t_ctx->record_info.flags      = u16(flags);
+    t_ctx->record_info.flags      = u32(flags);
     t_ctx->record_info.extra_data = 0;
     t_ctx->record_info.id         = u16(id);
+
+    t_ctx->mesh_recorder.reset(t_ctx->record_info.flags);
 }
 
 void end_mesh(void)
 {
     using namespace mnm;
+
+    if (t_ctx->record_info.flags & GENEREATE_FLAT_NORMALS)
+    {
+        t_ctx->mesh_recorder.generate_flat_normals(t_ctx->record_info.flags);
+    }
 
     // TODO : Figure out error handling - crash or just ignore the submission?
     (void)g_ctx.mesh_cache.add_mesh(
