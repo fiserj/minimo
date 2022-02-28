@@ -2256,6 +2256,10 @@ void end_mesh(void)
     {
         t_ctx->mesh_recorder.generate_flat_normals(t_ctx->record_info.flags);
     }
+    else if (t_ctx->record_info.flags & GENEREATE_SMOOTH_NORMALS)
+    {
+        t_ctx->mesh_recorder.generate_smooth_normals(t_ctx->record_info.flags);
+    }
 
     // TODO : Figure out error handling - crash or just ignore the submission?
     (void)g_ctx.mesh_cache.add_mesh(
