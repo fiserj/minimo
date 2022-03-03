@@ -68,18 +68,18 @@ static void torus_vertex(int radial_resolution, int tubular_resolution, int inde
 // https://www.danielsieger.com/blog/2021/05/03/generating-primitive-shapes.html
 static void torus(int radial_resolution, int tubular_resolution)
 {
-    for (int i = 0; i < radial_resolution; i++)
+    for (int r0 = 0; r0 < radial_resolution; r0++)
     {
-        const int i_next = (i + 1) % radial_resolution;
+        const int r1 = (r0 + 1) % radial_resolution;
 
-        for (int j = 0; j < tubular_resolution; j++)
+        for (int t0 = 0; t0 < tubular_resolution; t0++)
         {
-            const int j_next = (j + 1) % tubular_resolution;
+            const int t1 = (t0 + 1) % tubular_resolution;
 
-            const int i0 = i * tubular_resolution + j;
-            const int i1 = i * tubular_resolution + j_next;
-            const int i2 = i_next * tubular_resolution + j_next;
-            const int i3 = i_next * tubular_resolution + j;
+            const int i0 = r0 * tubular_resolution + t0;
+            const int i1 = r0 * tubular_resolution + t1;
+            const int i2 = r1 * tubular_resolution + t1;
+            const int i3 = r1 * tubular_resolution + t0;
 
             torus_vertex(radial_resolution, tubular_resolution, i0);
             torus_vertex(radial_resolution, tubular_resolution, i1);
