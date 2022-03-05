@@ -14,3 +14,13 @@ set_target_properties(librope PROPERTIES
     C_EXTENSIONS OFF
     C_STANDARD_REQUIRED ON
 )
+
+if(MSVC)
+    target_compile_options(librope PRIVATE
+        /Wall
+    )
+else()
+    target_compile_options(librope PRIVATE
+        -Wall
+    )
+endif()
