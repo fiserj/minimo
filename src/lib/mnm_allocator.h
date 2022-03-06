@@ -14,6 +14,12 @@ struct OwningAllocator : Allocator
 
 struct StackAllocator : OwningAllocator
 {
+    enum : u32
+    {
+        VALID_BIT = 0x80000000,
+        SIZE_MASK = 0x7fffffff,
+    };
+
     u8* buffer;
     u32 capacity;
     u32 head;
@@ -21,7 +27,7 @@ struct StackAllocator : OwningAllocator
     void init(void* buffer_, u32 size)
     {
         ASSERT(buffer_ && bx::isAligned(uintptr_t(buffer_), sizeof(head)));
-        ASSERT(size >= 64);
+        ASSERT(size >= 64 && size <= SIZE_MASK);
 
         buffer   = reinterpret_cast<u8*>(buffer_);
         capacity = size;
@@ -42,6 +48,7 @@ struct StackAllocator : OwningAllocator
         BX_UNUSED(line);
 
         ASSERT(!ptr || owns(ptr));
+        ASSERT(size <= SIZE_MASK);
 
         u8* memory = nullptr;
 
@@ -49,7 +56,7 @@ struct StackAllocator : OwningAllocator
         {
             if (ptr)
             {
-                const u32   prev_head = *(reinterpret_cast<u32*>(ptr) - 1);
+                const u32   prev_head = (*(reinterpret_cast<u32*>(ptr) - 1)) & SIZE_MASK;
                 const void* prev_ptr  = bx::alignPtr(buffer + prev_head,
                     sizeof(head), bx::max(align, sizeof(head)));
 
@@ -70,7 +77,7 @@ struct StackAllocator : OwningAllocator
 
                 if (memory_end <= buffer + capacity)
                 {
-                    *(reinterpret_cast<u32*>(memory) - 1) = head;
+                    *(reinterpret_cast<u32*>(memory) - 1) = head | VALID_BIT;
                     head = u32(memory_end - buffer);
                 }
                 else
@@ -81,7 +88,7 @@ struct StackAllocator : OwningAllocator
         }
         else
         {
-            const u32 prev_head = *(reinterpret_cast<u32*>(ptr) - 1);
+            const u32 prev_head = (*(reinterpret_cast<u32*>(ptr) - 1)) & SIZE_MASK;
             u8*       prev_ptr  =   reinterpret_cast<u8*>(bx::alignPtr(
                 buffer + prev_head, sizeof(head), bx::max(align, sizeof(head))));
 
