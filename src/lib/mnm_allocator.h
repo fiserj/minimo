@@ -20,20 +20,76 @@ struct StackAllocator : OwningAllocator
         SIZE_MASK = 0x7fffffff,
     };
 
+    struct Header
+    {
+        u32 prev;
+        u32 flags;
+    };
+
+    struct Block
+    {
+        Header* header;
+        u8*     data;
+
+        inline u32 size() const
+        {
+            return header->flags & SIZE_MASK;
+        }
+
+        inline bool is_valid() const
+        {
+            return header->flags & VALID_BIT;
+        }
+
+        inline void invalidate()
+        {
+            header->flags &= ~VALID_BIT;
+        }
+
+        inline void reset(u32 prev_, u32 size_)
+        {
+            header->prev  = prev_;
+            header->flags = u32(size_) | VALID_BIT;
+        }
+    };
+
     u8* buffer;
     u32 capacity;
-    u32 head;
+    u32 top;  // Offset to first free byte in buffer.
+    u32 last; // Offset of last block header.
 
     void init(void* buffer_, u32 size)
     {
-        ASSERT(buffer_ && bx::isAligned(uintptr_t(buffer_), sizeof(head)));
+        ASSERT(buffer_);
         ASSERT(size >= 64 && size <= SIZE_MASK);
 
         buffer   = reinterpret_cast<u8*>(buffer_);
         capacity = size;
-        head     = sizeof(head);
+        top      = sizeof(Header);
+        last     = 0;
 
-        *reinterpret_cast<u32*>(buffer) = 0;
+        bx::memSet(buffer, 0, sizeof(Header));
+    }
+
+    inline Block make_block(void* data_ptr)
+    {
+        Block block;
+        block.header = reinterpret_cast<Header*>(data_ptr) - 1;
+        block.data   = reinterpret_cast<u8*>(data_ptr);
+
+        return block;
+    }
+
+    inline Block make_block(u32 header_offset)
+    {
+        return make_block(buffer + header_offset + sizeof(Header));
+    }
+
+    inline Block next_block(size_t align)
+    {
+        void* data = bx::alignPtr(buffer + top, sizeof(Header), bx::max(align, std::alignment_of<Header>::value));
+
+        return make_block(data);
     }
 
     virtual bool owns(const void* ptr) const override
@@ -56,13 +112,19 @@ struct StackAllocator : OwningAllocator
         {
             if (ptr)
             {
-                const u32   prev_head = (*(reinterpret_cast<u32*>(ptr) - 1)) & SIZE_MASK;
-                const void* prev_ptr  = bx::alignPtr(buffer + prev_head,
-                    sizeof(head), bx::max(align, sizeof(head)));
+                Block block = make_block(ptr);
 
-                if (ptr == prev_ptr)
+                if (block.header == make_block(last).header)
                 {
-                    head = prev_head;
+                    block = make_block(block.header->prev);
+                    last  = block.data - buffer - sizeof(Header);
+                    top   = block.data - buffer + block.size();
+
+                    ASSERT(top >= sizeof(Header));
+                }
+                else
+                {
+                    block.invalidate();
                 }
             }
         }
@@ -70,39 +132,34 @@ struct StackAllocator : OwningAllocator
         {
             if (size)
             {
-                memory = reinterpret_cast<u8*>(bx::alignPtr(buffer + head,
-                    sizeof(head), bx::max(align, sizeof(head))));
+                Block block = next_block(align);
 
-                const u8* memory_end = memory + size;
+                if (block.data + size <= buffer + capacity)
+                {
+                    block.reset(last, size);
 
-                if (memory_end <= buffer + capacity)
-                {
-                    *(reinterpret_cast<u32*>(memory) - 1) = head | VALID_BIT;
-                    head = u32(memory_end - buffer);
-                }
-                else
-                {
-                    memory = nullptr;
+                    last   = block.data - buffer - sizeof(Header);
+                    top    = block.data - buffer + size;
+                    memory = block.data;
                 }
             }
         }
         else
         {
-            const u32 prev_head = (*(reinterpret_cast<u32*>(ptr) - 1)) & SIZE_MASK;
-            u8*       prev_ptr  =   reinterpret_cast<u8*>(bx::alignPtr(
-                buffer + prev_head, sizeof(head), bx::max(align, sizeof(head))));
+            Block block = make_block(ptr);
 
-            if (ptr == prev_ptr)
+            if (block.header == make_block(last).header)
             {
-                // TODO : Multiples of alignment wouldn't matter either.
-                ASSERT(!align || bx::isAligned(uintptr_t(prev_ptr), align));
+                // TODO : Multiples of the previous alignment wouldn't matter either.
+                ASSERT(!align || bx::isAligned(uintptr_t(block.data), align));
+                ASSERT(block.is_valid());
 
-                const u8* memory_end = prev_ptr + size;
-
-                if (memory_end <= buffer + capacity)
+                if (block.data + size <= buffer + capacity)
                 {
-                    memory = prev_ptr;
-                    head   = u32(memory_end - buffer);
+                    block.reset(block.header->prev, size);
+
+                    top    = block.data - buffer + size;
+                    memory = block.data;
                 }
             }
             else
@@ -112,6 +169,8 @@ struct StackAllocator : OwningAllocator
                 if (memory)
                 {
                     bx::memCopy(memory, ptr, size);
+
+                    block.invalidate();
                 }
             }
         }
