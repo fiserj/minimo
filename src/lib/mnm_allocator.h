@@ -65,10 +65,13 @@ struct StackAllocator : OwningAllocator
 
         buffer   = reinterpret_cast<u8*>(buffer_);
         capacity = size;
-        top      = sizeof(Header);
+        top      = 0;
         last     = 0;
 
-        bx::memSet(buffer, 0, sizeof(Header));
+        Block block = next_block(0);
+        block.reset(0, 0);
+
+        top = block.data - buffer;
     }
 
     inline Block make_block(void* data_ptr)
