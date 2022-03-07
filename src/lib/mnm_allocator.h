@@ -5,14 +5,7 @@ namespace mnm
 
 using CrtAllocator = bx::DefaultAllocator;
 
-struct OwningAllocator : Allocator
-{
-    virtual void* realloc(void*, size_t, size_t, const char*, u32) = 0;
-
-    virtual bool owns(const void*) const = 0;
-};
-
-struct StackAllocator : OwningAllocator
+struct StackAllocator : Allocator
 {
     enum : u32
     {
@@ -53,10 +46,10 @@ struct StackAllocator : OwningAllocator
         }
     };
 
-    u8* buffer;
-    u32 capacity;
-    u32 top;  // Offset to first free byte in buffer.
-    u32 last; // Offset of last block header.
+    u8* buffer;   // First 8 bytes reserved for a sentinel block.
+    u32 capacity; // Total buffer size in bytes.
+    u32 top;      // Offset to first free byte in buffer.
+    u32 last;     // Offset of last block header.
 
     void init(void* buffer_, u32 size)
     {
@@ -74,28 +67,7 @@ struct StackAllocator : OwningAllocator
         top = block.data - buffer;
     }
 
-    inline Block make_block(void* data_ptr)
-    {
-        Block block;
-        block.header = reinterpret_cast<Header*>(data_ptr) - 1;
-        block.data   = reinterpret_cast<u8*>(data_ptr);
-
-        return block;
-    }
-
-    inline Block make_block(u32 header_offset)
-    {
-        return make_block(buffer + header_offset + sizeof(Header));
-    }
-
-    inline Block next_block(size_t align)
-    {
-        void* data = bx::alignPtr(buffer + top, sizeof(Header), bx::max(align, std::alignment_of<Header>::value));
-
-        return make_block(data);
-    }
-
-    virtual bool owns(const void* ptr) const override
+    inline bool owns(const void* ptr) const
     {
         // NOTE : > (not >=) because the first four bytes are reserved for head.
         return ptr > buffer && ptr < buffer + capacity;
@@ -116,6 +88,7 @@ struct StackAllocator : OwningAllocator
             if (ptr)
             {
                 Block block = make_block(ptr);
+                ASSERT(block.is_valid());
 
                 if (block.header == make_block(last).header)
                 {
@@ -187,6 +160,27 @@ struct StackAllocator : OwningAllocator
         }
 
         return memory;
+    }
+
+    inline Block make_block(void* data_ptr)
+    {
+        Block block;
+        block.header = reinterpret_cast<Header*>(data_ptr) - 1;
+        block.data   = reinterpret_cast<u8*>(data_ptr);
+
+        return block;
+    }
+
+    inline Block make_block(u32 header_offset)
+    {
+        return make_block(buffer + header_offset + sizeof(Header));
+    }
+
+    inline Block next_block(size_t align)
+    {
+        void* data = bx::alignPtr(buffer + top, sizeof(Header), bx::max(align, std::alignment_of<Header>::value));
+
+        return make_block(data);
     }
 };
 
