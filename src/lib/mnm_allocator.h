@@ -119,11 +119,19 @@ struct StackAllocator : OwningAllocator
 
                 if (block.header == make_block(last).header)
                 {
-                    block = make_block(block.header->prev);
-                    last  = block.data - buffer - sizeof(Header);
-                    top   = block.data - buffer + block.size();
+                    for (;;)
+                    {
+                        block = make_block(block.header->prev);
+                        last  = block.data - buffer - sizeof(Header);
+                        top   = block.data - buffer + block.size();
 
-                    ASSERT(top >= sizeof(Header));
+                        ASSERT(top >= sizeof(Header));
+
+                        if (block.is_valid())
+                        {
+                            break;
+                        }
+                    }
                 }
                 else
                 {
