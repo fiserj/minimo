@@ -12,7 +12,7 @@
 #endif
 
 #include <bx/allocator.h> // AllocatorI, BX_ALIGNED_*
-#include <bx/bx.h>        // BX_ASSERT, BX_WARN, memCmp, memCopy, min/max
+#include <bx/bx.h>        // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
 
 
 namespace mnm
@@ -190,6 +190,40 @@ void fill_value(void* dst, const T& value, u32 count)
 {
     fill_pattern(dst, &value, sizeof(T), count);
 }
+
+
+// -----------------------------------------------------------------------------
+// DEFERRED EXECUTION
+// -----------------------------------------------------------------------------
+
+template <typename Func>
+struct Deferred
+{
+    Func func;
+
+    Deferred(const Deferred&) = delete;
+
+    Deferred& operator=(const Deferred&) = delete;
+
+    Deferred(Func&& func)
+        : func(static_cast<Func&&>(func))
+    {
+    }
+
+    ~Deferred()
+    {
+        func();
+    }
+};
+
+template <typename Func>
+Deferred<Func> make_deferred(Func&& func)
+{
+    return Deferred<Func>(static_cast<decltype(func)>(func));
+}
+
+#define defer(...) auto BX_CONCATENATE(deferred_ , __LINE__) = \
+    make_deferred([&]() mutable { __VA_ARGS__; })
 
 
 // -----------------------------------------------------------------------------
