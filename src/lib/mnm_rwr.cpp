@@ -1,9 +1,16 @@
+#include <mnm/mnm.h>
+
 #include <inttypes.h>     // PRI*
 #include <stdint.h>       // *int*_t, UINT*_MAX, uintptr_t
 
 #include <type_traits>    // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
 
-#define BX_CONFIG_DEBUG
+#ifdef NDEBUG
+#   define BX_CONFIG_DEBUG 0
+#else
+#   define BX_CONFIG_DEBUG 1
+#endif
+
 #include <bx/allocator.h> // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>        // BX_ASSERT, BX_WARN, memCmp, memCopy, min/max
 
@@ -119,6 +126,27 @@ static_assert(
 
 
 // -----------------------------------------------------------------------------
+// UNIT TESTING
+// -----------------------------------------------------------------------------
+
+#ifndef CONFIG_TESTING
+#   define CONFIG_TESTING BX_CONFIG_DEBUG
+#endif
+
+#if CONFIG_TESTING
+
+#define TEST_CASE(name) \
+    static void BX_CONCATENATE(s_test_func_, __LINE__)(); \
+    static const bool BX_CONCATENATE(s_test_var_, __LINE__) = []() \
+        { BX_CONCATENATE(s_test_func_, __LINE__)(); return true; }(); \
+    void BX_CONCATENATE(s_test_func_, __LINE__)()
+
+#define TEST_REQUIRE(cond) ASSERT(cond, #cond)
+
+#endif // CONFIG_TESTING
+
+
+// -----------------------------------------------------------------------------
 // UTILITY FUNCTIONS
 // -----------------------------------------------------------------------------
 
@@ -158,7 +186,7 @@ static void fill_pattern(void* dst, const void* pattern, u32 size, u32 count)
 }
 
 template <typename T>
-inline void fill_value(void* dst, const T& value, u32 count)
+void fill_value(void* dst, const T& value, u32 count)
 {
     fill_pattern(dst, &value, sizeof(T), count);
 }
@@ -326,20 +354,66 @@ T& append(DynamicArray<T>& array, const T& element)
 
     if (array.size == array.capacity)
     {
-        reserve(capacity_hint(array.capacity, array.size + 1));
+        reserve(array, capacity_hint(array.capacity, array.size + 1));
     }
 
     bx::memCopy(array.data + array.size, &element, sizeof(T));
 
-    array.size++;
+    return array.data[array.size++];
 }
 
 template <typename T>
 T& pop(DynamicArray<T>& array)
 {
-    ASSERT(array.size);
+    ASSERT(array.size, "Cannot pop from an empty array.");
 
     return array.data[array.size--];
+}
+
+TEST_CASE("Dynamic Array Lifetime")
+{
+    CrtAllocator allocator;
+
+    auto array = create_dynamic_array<int>(&allocator);
+    TEST_REQUIRE(array.allocator == &allocator);
+
+    reserve(array, 3);
+    TEST_REQUIRE(array.size == 0);
+    TEST_REQUIRE(array.capacity >= 3);
+
+    int val = append(array, 10);
+    TEST_REQUIRE(array.size == 1);
+    TEST_REQUIRE(array[0] == 10);
+    TEST_REQUIRE(val == 10);
+
+    val = append(array, 20);
+    TEST_REQUIRE(array.size == 2);
+    TEST_REQUIRE(array[1] == 20);
+    TEST_REQUIRE(val == 20);
+
+    val = append(array, 30);
+    TEST_REQUIRE(array.size == 3);
+    TEST_REQUIRE(array[2] == 30);
+    TEST_REQUIRE(val == 30);
+
+    val = pop(array);
+    TEST_REQUIRE(array.size == 2);
+    TEST_REQUIRE(val == 30);
+
+    resize(array, 10, 100);
+    TEST_REQUIRE(array.size == 10);
+    TEST_REQUIRE(array.capacity >= 10);
+
+    for (u32 i = 2; i < array.size; i++)
+    {
+        TEST_REQUIRE(array[i] == 100);
+    }
+
+    destroy(array);
+    TEST_REQUIRE(array.data == nullptr);
+    TEST_REQUIRE(array.size == 0);
+    TEST_REQUIRE(array.capacity == 0);
+    TEST_REQUIRE(array.allocator == nullptr);
 }
 
 
