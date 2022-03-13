@@ -135,18 +135,23 @@ static_assert(
 
 #if CONFIG_TESTING
 
-#define TEST_CASE(name) \
-    static void BX_CONCATENATE(s_test_func_, __LINE__)(); \
+#define TEST_CASE(name)                                            \
+    static void BX_CONCATENATE(s_test_func_, __LINE__)();          \
     static const bool BX_CONCATENATE(s_test_var_, __LINE__) = []() \
-        { BX_CONCATENATE(s_test_func_, __LINE__)(); return true; }(); \
+    {                                                              \
+        BX_CONCATENATE(s_test_func_, __LINE__)();                  \
+        return true;                                               \
+    }();                                                           \
     void BX_CONCATENATE(s_test_func_, __LINE__)()
 
 #define TEST_REQUIRE(cond) ASSERT(cond, #cond)
 
 #else
 
-#define TEST_CASE(name) void BX_CONCATENATE(s_unused_func_, __LINE__)()
-#define TEST_REQUIRE(cond)
+#define TEST_CASE(name) [[maybe_unused]] \
+    void BX_CONCATENATE(s_unused_func_, __LINE__)()
+
+#define TEST_REQUIRE(cond) BX_NOOP(cond)
 
 #endif // CONFIG_TESTING
 
