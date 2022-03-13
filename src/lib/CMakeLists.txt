@@ -56,6 +56,9 @@ else()
         -fdata-sections
         -ffunction-sections
         # -Wl,--gc-sections,--print-gc-sections
+
+        -Wno-unused-const-variable
+        -Wno-unused-function
     )
     target_link_options(${NAME} PRIVATE
         --gc-sections
