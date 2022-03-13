@@ -486,6 +486,40 @@ TEST_CASE("Dynamic Array")
 
 
 // -----------------------------------------------------------------------------
+// FIXED STACK
+// -----------------------------------------------------------------------------
+
+template <typename T, u32 Size>
+struct FixedStack
+{
+    T                   top;
+    u32                 size;
+    FixedArray<T, Size> data;
+};
+
+template <typename T, u32 Size>
+void reset(FixedStack<T, Size>& stack, const T& value = T())
+{
+    stack.top  = value;
+    stack.size = 0;
+}
+
+template <typename T, u32 Size>
+void push(FixedStack<T, Size>& stack)
+{
+    stack.data[stack.size++] = stack.top;
+}
+
+template <typename T, u32 Size>
+T& pop(FixedStack<T, Size>& stack)
+{
+    stack.top = stack.data[--stack.size];
+
+    return stack.top;
+}
+
+
+// -----------------------------------------------------------------------------
 
 
 } // namespace rwr
