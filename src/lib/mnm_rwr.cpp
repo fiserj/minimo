@@ -15,6 +15,15 @@
 #include <bx/bx.h>        // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
+
+#define GLFW_INCLUDE_NONE
+
+#include <GLFW/glfw3.h>   // glfw*
+
+BX_PRAGMA_DIAGNOSTIC_POP();
+
+BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505);
@@ -284,6 +293,19 @@ using Vec2 = hmm_vec2;
 using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
+
+union Vec2i
+{
+    i32 X;
+    i32 Y;
+
+    i32& operator[](u32 i)
+    {
+        ASSERT(i < 2, "Invalid Vec2i index %" PRIu32 ".", i);
+
+        return *(&X + i);
+    }
+};
 
 
 // -----------------------------------------------------------------------------
@@ -562,6 +584,112 @@ template <u32 Size>
 void multiply_top(MatrixStack<Size>& stack, const Mat4& matrix)
 {
     stack.top = matrix * stack.top;
+}
+
+
+// -----------------------------------------------------------------------------
+// WINDOW
+// -----------------------------------------------------------------------------
+
+struct WindowInfo
+{
+    Vec2i framebuffer_size;
+    Vec2  invariant_size;
+    Vec2  position_scale;
+    Vec2  display_scale;
+    f32   display_aspect;
+    bool  display_scale_changed;
+};
+
+static void update_window_info(GLFWwindow* window, WindowInfo& info)
+{
+    ASSERT(window, "Invalid window pointer.");
+
+    Vec2i window_size;
+    glfwGetWindowSize(window, &window_size[0], &window_size[1]);
+
+    glfwGetFramebufferSize(window, &info.framebuffer_size[0], &info.framebuffer_size[1]);
+    info.display_aspect = f32(info.framebuffer_size[0]) / info.framebuffer_size[1];
+
+    const f32 prev_display_scale = info.display_scale[0];
+    glfwGetWindowContentScale(window, &info.display_scale[0], &info.display_scale[1]);
+
+    info.display_scale_changed = prev_display_scale != info.display_scale[0];
+
+    for (i32 i = 0; i < 2; i++)
+    {
+        if (info.display_scale[i] != 1.0 &&
+            window_size[i] * info.display_scale[i] != f32(info.framebuffer_size[i]))
+        {
+            info.invariant_size[i] = info.framebuffer_size[i] / info.display_scale[i];
+            info.position_scale[i] = 1.0f / info.display_scale[i];
+        }
+        else
+        {
+            info.invariant_size[i] = f32(window_size[i]);
+            info.position_scale[i] = 1.0f;
+        }
+    }
+}
+
+static void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
+{
+    ASSERT(window, "Invalid window pointer.");
+    ASSERT(flags >= 0, "Invalid window flags.");
+
+    GLFWmonitor* monitor = glfwGetWindowMonitor(window);
+
+    if (flags & WINDOW_FULL_SCREEN)
+    {
+        if (!monitor)
+        {
+            monitor = glfwGetPrimaryMonitor();
+        }
+
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= 0) { width  = mode->width ; }
+        if (height <= 0) { height = mode->height; }
+
+        glfwSetWindowMonitor(window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
+    }
+    else if (monitor)
+    {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
+        if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
+
+        const i32 x = (mode->width  - width ) / 2;
+        const i32 y = (mode->height - height) / 2;
+
+        monitor = nullptr;
+
+        glfwSetWindowMonitor(window, nullptr, x, y, width, height, GLFW_DONT_CARE);
+    }
+
+    // Other window aspects are ignored, if currently in the full screen mode.
+    if (monitor)
+    {
+        return;
+    }
+
+    if (width  <= MIN_WINDOW_SIZE) { width  = DEFAULT_WINDOW_WIDTH ; }
+    if (height <= MIN_WINDOW_SIZE) { height = DEFAULT_WINDOW_HEIGHT; }
+
+    glfwSetWindowSize(window, width, height);
+
+    if (flags & WINDOW_FIXED_ASPECT)
+    {
+        glfwSetWindowAspectRatio(window, width, height);
+    }
+    else
+    {
+        glfwSetWindowAspectRatio(window, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    }
+
+    const i32 resizable = (flags & WINDOW_FIXED_SIZE) ? GLFW_FALSE : GLFW_TRUE;
+    glfwSetWindowAttrib(window, GLFW_RESIZABLE, resizable);
 }
 
 
