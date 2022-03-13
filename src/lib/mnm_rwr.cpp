@@ -225,6 +225,30 @@ Deferred<Func> make_deferred(Func&& func)
 #define defer(...) auto BX_CONCATENATE(deferred_ , __LINE__) = \
     make_deferred([&]() mutable { __VA_ARGS__; })
 
+TEST_CASE("Deferred Execution")
+{
+    int value = 1;
+
+    {
+        defer(value++);
+
+        {
+            defer(
+                for (int i = 0; i < 3; i++)
+                {
+                    value++;
+                }
+            );
+
+            TEST_REQUIRE(value == 1);
+        }
+
+        TEST_REQUIRE(value == 4);
+    }
+
+    TEST_REQUIRE(value == 5);
+}
+
 
 // -----------------------------------------------------------------------------
 // ALLOCATORS
