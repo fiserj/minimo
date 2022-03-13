@@ -143,6 +143,11 @@ static_assert(
 
 #define TEST_REQUIRE(cond) ASSERT(cond, #cond)
 
+#else
+
+#define TEST_CASE(name) void BX_CONCATENATE(s_unused_func_, __LINE__)()
+#define TEST_REQUIRE(cond)
+
 #endif // CONFIG_TESTING
 
 
@@ -428,7 +433,7 @@ T& pop(DynamicArray<T>& array)
     return array.data[array.size--];
 }
 
-TEST_CASE("Dynamic Array Lifetime")
+TEST_CASE("Dynamic Array")
 {
     CrtAllocator allocator;
 
