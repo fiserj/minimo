@@ -1,6 +1,7 @@
 #include <mnm/mnm.h>
 
 #include <inttypes.h>     // PRI*
+#include <stddef.h>       // size_t
 #include <stdint.h>       // *int*_t, UINT*_MAX, uintptr_t
 
 #include <type_traits>    // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
@@ -309,14 +310,240 @@ union Vec2i
 
 
 // -----------------------------------------------------------------------------
-// ALLOCATORS
+// DEFAULT ALLOCATORS
 // -----------------------------------------------------------------------------
 
 using Allocator  = bx::AllocatorI;
 
 using CrtAllocator = bx::DefaultAllocator;
 
-// ...
+
+// -----------------------------------------------------------------------------
+// STACK ALLOCATOR
+// -----------------------------------------------------------------------------
+
+struct StackAllocator : Allocator
+{
+    enum : u32
+    {
+        VALID_BIT = 0x80000000,
+        SIZE_MASK = 0x7fffffff,
+    };
+
+    struct Header
+    {
+        u32 prev;
+        u32 flags;
+    };
+
+    struct Block
+    {
+        Header* header;
+        u8*     data;
+
+        u32 size() const
+        {
+            return header->flags & SIZE_MASK;
+        }
+
+        bool is_valid() const
+        {
+            return header->flags & VALID_BIT;
+        }
+
+        void invalidate()
+        {
+            header->flags &= ~VALID_BIT;
+        }
+
+        void reset(u32 prev_, u32 size_)
+        {
+            header->prev  = prev_;
+            header->flags = u32(size_) | VALID_BIT;
+        }
+    };
+
+    u8* buffer; // First 8 bytes reserved for a sentinel block.
+    u32 size;   // Total buffer size in bytes.
+    u32 top;    // Offset to first free byte in buffer.
+    u32 last;   // Offset of last block header.
+
+    bool owns(const void* ptr) const
+    {
+        // NOTE : > (not >=) because the first four bytes are reserved for head.
+        // TODO : Should really just check against the allocated portion.
+        return ptr > buffer && ptr < buffer + size;
+    }
+
+    virtual void* realloc(void* ptr, size_t size_, size_t align, const char* file, u32 line) override
+    {
+        BX_UNUSED(file);
+        BX_UNUSED(line);
+
+        ASSERT(!ptr || owns(ptr), "Invalid or not-owned pointer ptr.");
+        ASSERT(size_ <= SIZE_MASK, "Maximum allocatable size exceeded.");
+
+        u8* memory = nullptr;
+
+        if (!size_)
+        {
+            if (ptr)
+            {
+                Block block = make_block(ptr);
+                ASSERT(block.is_valid(), "Invalid memory block.");
+
+                if (block.header == make_block(last).header)
+                {
+                    for (;;)
+                    {
+                        block = make_block(block.header->prev);
+                        last  = block.data - buffer - sizeof(Header);
+                        top   = block.data - buffer + block.size();
+
+                        ASSERT(top >= sizeof(Header),
+                            "Stack allocator's top underflowed.");
+
+                        if (block.is_valid())
+                        {
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    block.invalidate();
+                }
+            }
+        }
+        else if (!ptr)
+        {
+            if (size_)
+            {
+                Block block = next_block(align);
+
+                if (block.data + size_ <= buffer + size)
+                {
+                    block.reset(last, size_);
+
+                    last   = block.data - buffer - sizeof(Header);
+                    top    = block.data - buffer + size_;
+                    memory = block.data;
+                }
+            }
+        }
+        else
+        {
+            Block block = make_block(ptr);
+
+            if (block.header == make_block(last).header)
+            {
+                // TODO : Multiples of the previous alignment wouldn't matter either.
+                ASSERT(!align || bx::isAligned(uintptr_t(block.data), align),
+                    "Different (larger) data alignment for reallocation.");
+                ASSERT(block.is_valid(), "Invalid memory block.");
+
+                if (block.data + size_ <= buffer + size)
+                {
+                    block.reset(block.header->prev, size_);
+
+                    top    = block.data - buffer + size_;
+                    memory = block.data;
+                }
+            }
+            else
+            {
+                memory = reinterpret_cast<u8*>(realloc(nullptr, size_, align, file, line));
+
+                if (memory)
+                {
+                    bx::memCopy(memory, ptr, size_);
+
+                    block.invalidate();
+                }
+            }
+        }
+
+        return memory;
+    }
+
+    inline Block make_block(void* data_ptr)
+    {
+        Block block;
+        block.header = reinterpret_cast<Header*>(data_ptr) - 1;
+        block.data   = reinterpret_cast<u8*>(data_ptr);
+
+        return block;
+    }
+
+    inline Block make_block(u32 header_offset)
+    {
+        return make_block(buffer + header_offset + sizeof(Header));
+    }
+
+    inline Block next_block(size_t align)
+    {
+        void* data = bx::alignPtr(
+            buffer + top,
+            sizeof(Header),
+            bx::max(align, std::alignment_of<Header>::value)
+        );
+
+        return make_block(data);
+    }
+};
+
+static StackAllocator create_stack_allocator(void* buffer, u32 size)
+{
+    ASSERT(buffer, "Invalid buffer pointer.");
+    ASSERT(size >= 64, "Too small buffer size %" PRIu32".", size);
+    ASSERT(size <= SIZE_MASK, "Too big buffer size %" PRIu32".", size);
+
+    StackAllocator allocator;
+    allocator.buffer = reinterpret_cast<u8*>(buffer);
+    allocator.size   = size;
+    allocator.top    = 0;
+    allocator.last   = 0;
+
+    StackAllocator::Block block = allocator.next_block(0);
+    block.reset(0, 0);
+
+    allocator.top = block.data - allocator.buffer;
+
+    return allocator;
+}
+
+TEST_CASE("Stack Allocator")
+{
+    u64 buffer[16];
+
+    StackAllocator allocator = create_stack_allocator(buffer, sizeof(buffer));
+
+    void* first = BX_ALLOC(&allocator, 16);
+    TEST_REQUIRE(first != nullptr);
+    TEST_REQUIRE(allocator.owns(first));
+    TEST_REQUIRE(allocator.top == 8);
+
+    void* second = BX_ALLOC(&allocator, 8);
+    TEST_REQUIRE(second != nullptr);
+    TEST_REQUIRE(allocator.owns(second));
+    // TEST_REQUIRE(allocator.top == ...);
+
+    void* third = BX_ALLOC(&allocator, 128);
+    TEST_REQUIRE(third == nullptr);
+    TEST_REQUIRE(!allocator.owns(third));
+    // TEST_REQUIRE(allocator.top == ...);
+
+    BX_FREE(&allocator, third);
+    // TEST_REQUIRE(allocator.top == ...);
+
+    first = BX_REALLOC(&allocator, first, 32);
+
+    BX_FREE(&allocator, first);
+    // TEST_REQUIRE(allocator.top == ...);
+
+    BX_FREE(&allocator, second);
+    // TEST_REQUIRE(allocator.top == ...);
+}
 
 
 // -----------------------------------------------------------------------------
