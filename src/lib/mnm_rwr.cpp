@@ -14,6 +14,19 @@
 #include <bx/allocator.h> // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>        // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
 
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+
+#define HANDMADE_MATH_IMPLEMENTATION
+#define HMM_STATIC
+
+#include <HandmadeMath.h> // HMM_*, hmm_*
+
+BX_PRAGMA_DIAGNOSTIC_POP();
+
 
 namespace mnm
 {
@@ -258,6 +271,19 @@ TEST_CASE("Deferred Execution")
 
     TEST_REQUIRE(value == 5);
 }
+
+
+// -----------------------------------------------------------------------------
+// ALGEBRAIC TYPES
+// -----------------------------------------------------------------------------
+
+using Mat4 = hmm_mat4;
+
+using Vec2 = hmm_vec2;
+
+using Vec3 = hmm_vec3;
+
+using Vec4 = hmm_vec4;
 
 
 // -----------------------------------------------------------------------------
@@ -516,6 +542,26 @@ T& pop(FixedStack<T, Size>& stack)
     stack.top = stack.data[--stack.size];
 
     return stack.top;
+}
+
+
+// -----------------------------------------------------------------------------
+// MATRIX STACK
+// -----------------------------------------------------------------------------
+
+template <u32 Size>
+using MatrixStack = FixedStack<Mat4, Size>;
+
+template <u32 Size>
+void reset(MatrixStack<Size>& stack)
+{
+    reset(stack, HMM_Mat4d(1.0f));
+}
+
+template <u32 Size>
+void multiply_top(MatrixStack<Size>& stack, const Mat4& matrix)
+{
+    stack.top = matrix * stack.top;
 }
 
 
