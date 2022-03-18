@@ -466,7 +466,7 @@ struct StackAllocator : Allocator
         return memory;
     }
 
-    inline Block make_block(void* data_ptr)
+    Block make_block(void* data_ptr)
     {
         Block block;
         block.header = reinterpret_cast<Header*>(data_ptr) - 1;
@@ -475,12 +475,12 @@ struct StackAllocator : Allocator
         return block;
     }
 
-    inline Block make_block(u32 header_offset)
+    Block make_block(u32 header_offset)
     {
         return make_block(buffer + header_offset + sizeof(Header));
     }
 
-    inline Block next_block(size_t align)
+    Block next_block(size_t align)
     {
         void* data = bx::alignPtr(
             buffer + top,
