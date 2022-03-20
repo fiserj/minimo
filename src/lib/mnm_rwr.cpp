@@ -1,10 +1,10 @@
 #include <mnm/mnm.h>
 
-#include <inttypes.h>     // PRI*
-#include <stddef.h>       // size_t
-#include <stdint.h>       // *int*_t, UINT*_MAX, uintptr_t
+#include <inttypes.h>             // PRI*
+#include <stddef.h>               // size_t
+#include <stdint.h>               // *int*_t, UINT*_MAX, uintptr_t
 
-#include <type_traits>    // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
+#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
 
 #ifdef NDEBUG
 #   define BX_CONFIG_DEBUG 0
@@ -12,15 +12,25 @@
 #   define BX_CONFIG_DEBUG 1
 #endif
 
-#include <bx/allocator.h> // AllocatorI, BX_ALIGNED_*
-#include <bx/bx.h>        // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
+#include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
+#include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
+
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
+
+#include <bgfx/bgfx.h>            // bgfx::*
+#include <bgfx/embedded_shader.h> // BGFX_EMBEDDED_SHADER*
+
+BX_PRAGMA_DIAGNOSTIC_POP();
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 
 #define GLFW_INCLUDE_NONE
 
-#include <GLFW/glfw3.h>   // glfw*
+#include <GLFW/glfw3.h>            // glfw*
 
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -33,7 +43,7 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #define HANDMADE_MATH_IMPLEMENTATION
 #define HMM_STATIC
 
-#include <HandmadeMath.h> // HMM_*, hmm_*
+#include <HandmadeMath.h>          // HMM_*, hmm_*
 
 BX_PRAGMA_DIAGNOSTIC_POP();
 
@@ -77,7 +87,7 @@ constexpr i32 MIN_WINDOW_SIZE        = 240;
 constexpr u32 ATLAS_FREE             = 0x08000;
 constexpr u32 ATLAS_MONOSPACED       = 0x00002;
 constexpr u32 MESH_INVALID           = 0x00006;
-constexpr u32 VERTEX_POSITION        = 0x00000;
+constexpr u32 VERTEX_POSITION        = 0x00040;
 constexpr u32 VERTEX_TEXCOORD_F32    = VERTEX_TEXCOORD | TEXCOORD_F32;
 
 // These have to be cross-checked against regular mesh flags (see later).
@@ -122,7 +132,7 @@ constexpr u16 TEXTURE_TARGET_MASK    = TEXTURE_TARGET;
 constexpr u16 TEXTURE_TARGET_SHIFT   = 6;
 
 constexpr u16 VERTEX_ATTRIB_MASK     = VERTEX_COLOR | VERTEX_NORMAL | VERTEX_TEXCOORD;
-constexpr u16 VERTEX_ATTRIB_SHIFT    = 7; // VERTEX_COLOR => 1 (so that VERTEX_POSITION is zero)
+constexpr u16 VERTEX_ATTRIB_SHIFT    = 7;
 
 constexpr u32 USER_MESH_FLAGS        = MESH_TYPE_MASK | PRIMITIVE_TYPE_MASK | VERTEX_ATTRIB_MASK | TEXCOORD_F32 |
                                        OPTIMIZE_GEOMETRY | NO_VERTEX_TRANSFORM | KEEP_CPU_GEOMETRY |
@@ -222,6 +232,16 @@ template <typename T>
 void fill_value(void* dst, const T& value, u32 count)
 {
     fill_pattern(dst, &value, sizeof(T), count);
+}
+
+template <typename HandleT>
+void destroy_if_valid(HandleT& handle)
+{
+    if (bgfx::isValid(handle))
+    {
+        bgfx::destroy(handle);
+        handle = BGFX_INVALID_HANDLE;
+    }
 }
 
 
@@ -581,6 +601,12 @@ struct FixedArray
         return data[i];
     }
 };
+
+template <typename T, u32 Size>
+void fill(FixedArray<T, Size>& array, const T& value)
+{
+    fill_value(array.data, value, Size);
+}
 
 
 // -----------------------------------------------------------------------------
@@ -1122,6 +1148,151 @@ struct MouseInput : InputCache<MouseInput, GLFW_MOUSE_BUTTON_LAST>
         }
     }
 };
+
+
+// -----------------------------------------------------------------------------
+// VERTEX LAYOUT
+// -----------------------------------------------------------------------------
+
+struct VertexLayoutCache
+{
+    FixedArray<bgfx::VertexLayout      , 128> layouts;
+    FixedArray<bgfx::VertexLayoutHandle, 128> handles;
+};
+
+struct VertexAttrib
+{
+    u32                    flag;
+    bgfx::Attrib::Enum     type;
+    bgfx::AttribType::Enum element_type;
+    u8                     element_count;
+    u8                     byte_size;
+    bool                   normalized;
+    bool                   packed;
+};
+
+static const VertexAttrib s_vertex_attribs[] =
+{
+    { VERTEX_POSITION    , bgfx::Attrib::Position , bgfx::AttribType::Float, 3, 0, false, false },
+    { VERTEX_COLOR       , bgfx::Attrib::Color0   , bgfx::AttribType::Uint8, 4, 4, true , false },
+    { VERTEX_NORMAL      , bgfx::Attrib::Normal   , bgfx::AttribType::Uint8, 4, 4, true , true  },
+    { VERTEX_TEXCOORD    , bgfx::Attrib::TexCoord0, bgfx::AttribType::Int16, 2, 4, true , true  },
+    { VERTEX_TEXCOORD_F32, bgfx::Attrib::TexCoord0, bgfx::AttribType::Float, 2, 8, false, false },
+};
+
+constexpr u32 layout_index(u32 attribs, u32 skips = 0)
+{
+    static_assert(
+        VERTEX_ATTRIB_MASK  >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
+        (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 3)) == 0b0111000 &&
+        TEXCOORD_F32        >>  6                         == 0b1000000,
+        "Invalid index assumptions in `layout_index`."
+    );
+
+    return
+        ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
+        ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
+        ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
+}
+
+static void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
+{
+    ASSERT((attribs & skips) == 0, "`Attribute and skip flags must be disjoint.");
+
+    bgfx::VertexLayout layout;
+    layout.begin();
+
+    for (u32 i = 0; i < BX_COUNTOF(s_vertex_attribs); i++)
+    {
+        const VertexAttrib& attrib = s_vertex_attribs[i];
+
+        if ((attribs & attrib.flag) == attrib.flag)
+        {
+            layout.add(
+                attrib.type,
+                attrib.element_count,
+                attrib.element_type,
+                attrib.normalized,
+                attrib.packed
+            );
+        }
+        else if ((skips & attrib.flag) == attrib.flag)
+        {
+            layout.skip(attrib.byte_size);
+        }
+    }
+
+    layout.end();
+    ASSERT(layout.getStride() % 4 == 0, "Layout stride must be multiple of 4 bytes.");
+
+    const u32 index = layout_index(attribs, skips);
+    ASSERT(!bgfx::isValid(m_handles[idx]), "Cannot reset a valid layout.");
+
+    cache.layouts[index] = layout;
+    cache.handles[index] = bgfx::createVertexLayout(layout);
+}
+
+static void init(VertexLayoutCache& cache)
+{
+    fill(cache.handles, BGFX_INVALID_HANDLE);
+
+    add_layout(cache, VERTEX_POSITION, 0);
+
+    for (u32 attrib_mask = 1; attrib_mask < 16; attrib_mask++)
+    {
+        if ((attrib_mask & 0xc) == 0xc)
+        {
+            // Exclude mixing `VERTEX_TEXCOORD` and `VERTEX_TEXCOORD_F32`.
+            continue;
+        }
+
+        u32 attribs = 0;
+
+        for (u32 i = 1; i < BX_COUNTOF(s_vertex_attribs); i++)
+        {
+            if (attrib_mask & (1 << (i - 1)))
+            {
+                attribs |= s_vertex_attribs[i].flag;
+            }
+        }
+
+        add_layout(cache, attribs, 0);
+
+        if (bx::isPowerOf2(attrib_mask))
+        {
+            continue;
+        }
+
+        // Add variants with skipped attributes (for aliasing).
+        for (u32 skip_mask = 1; skip_mask < 16; skip_mask++)
+        {
+            const u32 skipped_attribs = attrib_mask & skip_mask;
+
+            if (skipped_attribs == skip_mask)
+            {
+                u32 skips = 0;
+
+                for (u32 i = 1; i < BX_COUNTOF(s_vertex_attribs); i++)
+                {
+                    if (skip_mask & (1 << (i - 1)))
+                    {
+                        skips |= s_vertex_attribs[i].flag;
+                    }
+                }
+
+                add_layout(cache, attribs, skips);
+            }
+        }
+    }
+}
+
+static void deinit(VertexLayoutCache& cache)
+{
+    for (u32 i = 0; i < cache.handles.size; i++)
+    {
+        destroy_if_valid(cache.handles[i]);
+    }
+}
 
 
 // -----------------------------------------------------------------------------
