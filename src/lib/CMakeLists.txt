@@ -5,8 +5,6 @@ set(NAME ${PROJECT_NAME})
 set(SOURCE_FILES
     mnm.cpp
     ../../include/mnm/mnm.h # Not needed for build, but IDE-friendly.
-
-    mnm_rwr.cpp
 )
 
 if(APPLE)
@@ -90,3 +88,6 @@ add_shader_dependency(${NAME} "shaders/position_texcoord.vs"        )
 add_shader_dependency(${NAME} "shaders/position_texcoord.fs"        )
 
 add_shader_dependency(${NAME} "shaders/instancing_position_color.vs")
+
+# Just a temporary solution.
+add_subdirectory(rwr)
