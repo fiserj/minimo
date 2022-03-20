@@ -6,10 +6,12 @@
 
 #include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
 
-#ifdef NDEBUG
-#   define BX_CONFIG_DEBUG 0
-#else
-#   define BX_CONFIG_DEBUG 1
+#ifndef BX_CONFIG_DEBUG
+#   ifdef NDEBUG
+#       define BX_CONFIG_DEBUG 0
+#   else
+#       define BX_CONFIG_DEBUG 1
+#   endif
 #endif
 
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
@@ -537,32 +539,52 @@ TEST_CASE("Stack Allocator")
     u64 buffer[16];
 
     StackAllocator allocator = create_stack_allocator(buffer, sizeof(buffer));
+    TEST_REQUIRE(allocator.size == sizeof(buffer));
+    TEST_REQUIRE(allocator.top == 8);
+    TEST_REQUIRE(allocator.last == 0);
 
     void* first = BX_ALLOC(&allocator, 16);
     TEST_REQUIRE(first != nullptr);
     TEST_REQUIRE(allocator.owns(first));
-    TEST_REQUIRE(allocator.top == 8);
+    TEST_REQUIRE(allocator.size == sizeof(buffer));
+    TEST_REQUIRE(allocator.top == 32);
+    TEST_REQUIRE(allocator.last == 8);
 
     void* second = BX_ALLOC(&allocator, 8);
     TEST_REQUIRE(second != nullptr);
     TEST_REQUIRE(allocator.owns(second));
-    // TEST_REQUIRE(allocator.top == ...);
+    TEST_REQUIRE(allocator.top == 48);
+    TEST_REQUIRE(allocator.last == 32);
 
     void* third = BX_ALLOC(&allocator, 128);
     TEST_REQUIRE(third == nullptr);
     TEST_REQUIRE(!allocator.owns(third));
-    // TEST_REQUIRE(allocator.top == ...);
+    TEST_REQUIRE(allocator.top == 48);
+    TEST_REQUIRE(allocator.last == 32);
 
     BX_FREE(&allocator, third);
-    // TEST_REQUIRE(allocator.top == ...);
+    TEST_REQUIRE(allocator.top == 48);
+    TEST_REQUIRE(allocator.last == 32);
 
-    first = BX_REALLOC(&allocator, first, 32);
+    void* second_realloced = BX_REALLOC(&allocator, second, 16);
+    TEST_REQUIRE(second != second_realloced);
+    TEST_REQUIRE(allocator.owns(second_realloced));
+    TEST_REQUIRE(allocator.top == 56);
+    TEST_REQUIRE(allocator.last == 32);
 
-    BX_FREE(&allocator, first);
-    // TEST_REQUIRE(allocator.top == ...);
+    void* first_realloced = BX_REALLOC(&allocator, first, 8);
+    TEST_REQUIRE(first != first_realloced);
+    TEST_REQUIRE(allocator.owns(first_realloced));
+    TEST_REQUIRE(allocator.top == 72);
+    TEST_REQUIRE(allocator.last == 56);
 
-    BX_FREE(&allocator, second);
-    // TEST_REQUIRE(allocator.top == ...);
+    BX_FREE(&allocator, second_realloced);
+    TEST_REQUIRE(allocator.top == 72);
+    TEST_REQUIRE(allocator.last == 56);
+
+    BX_FREE(&allocator, first_realloced);
+    TEST_REQUIRE(allocator.top == 8);
+    TEST_REQUIRE(allocator.last == 0);
 }
 
 
