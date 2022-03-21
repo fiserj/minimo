@@ -42,6 +42,7 @@ BX_PRAGMA_DIAGNOSTIC_POP();
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
+#include <bx/allocator.h>         // ...
 #include <bx/debug.h>             // debugPrintf
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>

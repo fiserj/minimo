@@ -6,14 +6,6 @@
 
 #include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
 
-#ifndef BX_CONFIG_DEBUG
-#   ifdef NDEBUG
-#       define BX_CONFIG_DEBUG 0
-#   else
-#       define BX_CONFIG_DEBUG 1
-#   endif
-#endif
-
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
 
@@ -518,7 +510,7 @@ static StackAllocator create_stack_allocator(void* buffer, u32 size)
 {
     ASSERT(buffer, "Invalid buffer pointer.");
     ASSERT(size >= 64, "Too small buffer size %" PRIu32".", size);
-    ASSERT(size <= SIZE_MASK, "Too big buffer size %" PRIu32".", size);
+    ASSERT(size <= StackAllocator::SIZE_MASK, "Too big buffer size %" PRIu32".", size);
 
     StackAllocator allocator;
     allocator.buffer = reinterpret_cast<u8*>(buffer);
@@ -1248,7 +1240,7 @@ static void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
     ASSERT(layout.getStride() % 4 == 0, "Layout stride must be multiple of 4 bytes.");
 
     const u32 index = layout_index(attribs, skips);
-    ASSERT(!bgfx::isValid(m_handles[idx]), "Cannot reset a valid layout.");
+    ASSERT(!bgfx::isValid(cache.handles[index]), "Cannot reset a valid layout.");
 
     cache.layouts[index] = layout;
     cache.handles[index] = bgfx::createVertexLayout(layout);

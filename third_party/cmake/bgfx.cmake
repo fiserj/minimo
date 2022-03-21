@@ -45,16 +45,6 @@ if (MSVC)
     )
 endif()
 
-target_compile_definitions(bgfx PRIVATE
-    "$<$<CONFIG:Debug>:BGFX_CONFIG_DEBUG=1>"
-)
-
-if(BGFX_CONFIG_DEBUG)
-    target_compile_definitions(bgfx PRIVATE
-        BGFX_CONFIG_DEBUG=1
-    )
-endif()
-
 target_link_libraries(bgfx
     PRIVATE
         bimg

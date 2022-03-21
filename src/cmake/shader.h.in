@@ -23,6 +23,13 @@ static const uint8_t ${SHADER_NAME}_dx9[10] = EMPTY_SHADER;
 static const uint8_t ${SHADER_NAME}_dx11[10] = EMPTY_SHADER;
 #endif
 
+// ESSL.
+#if __has_include("essl/${SHADER_NAME}_essl.h")
+#   include "essl/${SHADER_NAME}_essl.h"
+#else
+static const uint8_t ${SHADER_NAME}_essl[10] = EMPTY_SHADER;
+#endif
+
 // GLSL.
 #if __has_include("glsl/${SHADER_NAME}_glsl.h")
 #   include "glsl/${SHADER_NAME}_glsl.h"

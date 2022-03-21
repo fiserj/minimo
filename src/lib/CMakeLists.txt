@@ -64,6 +64,12 @@ else()
     )
 endif()
 
+
+target_compile_definitions(${NAME} PRIVATE
+    "BGFX_CONFIG_DEBUG=$<CONFIG:Debug>"
+    "BX_CONFIG_DEBUG=$<CONFIG:Debug>"
+)
+
 set_target_properties(${NAME} PROPERTIES
     CXX_STANDARD 17 # needed for `__has_include` (hard requirement)
     CXX_EXTENSIONS OFF
