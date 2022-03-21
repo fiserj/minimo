@@ -17,8 +17,8 @@ target_compile_definitions(bx PUBLIC
     __STDC_LIMIT_MACROS
 )
 
-target_compile_definitions(bx PRIVATE
-    "$<$<CONFIG:Debug>:BX_CONFIG_DEBUG=1>"
+target_compile_definitions(bx PUBLIC
+    "BX_CONFIG_DEBUG=$<CONFIG:Debug>"
 )
 
 if(BX_CONFIG_DEBUG)

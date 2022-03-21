@@ -35,10 +35,6 @@ target_link_libraries(${NAME} PRIVATE
     stb
 )
 
-# target_compile_definitions(${NAME} PRIVATE
-#     "$<$<CONFIG:Debug>:BX_CONFIG_DEBUG=1>"
-# )
-
 if(MSVC)
     target_compile_definitions(${NAME} PRIVATE
         _CRT_SECURE_NO_WARNINGS
