@@ -21,9 +21,9 @@ target_compile_definitions(bx PUBLIC
     "BX_CONFIG_DEBUG=$<CONFIG:Debug>"
 )
 
-if(BX_CONFIG_DEBUG)
-    target_compile_definitions(bx PRIVATE
-        BX_CONFIG_DEBUG=1
+if(NOT MSVC)
+    target_compile_options(bx PUBLIC
+        -Wno-gnu-zero-variadic-macro-arguments
     )
 endif()
 
