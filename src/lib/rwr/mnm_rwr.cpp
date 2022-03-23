@@ -559,7 +559,7 @@ TEST_CASE("Stack Allocator")
     TEST_REQUIRE(allocator.last == 32);
 
     void* second_realloced = BX_REALLOC(&allocator, second, 16);
-    TEST_REQUIRE(second != second_realloced);
+    TEST_REQUIRE(second == second_realloced);
     TEST_REQUIRE(allocator.owns(second_realloced));
     TEST_REQUIRE(allocator.top == 56);
     TEST_REQUIRE(allocator.last == 32);
@@ -750,7 +750,7 @@ T& pop(DynamicArray<T>& array)
 {
     ASSERT(array.size, "Cannot pop from an empty array.");
 
-    return array.data[array.size--];
+    return array.data[--array.size];
 }
 
 TEST_CASE("Dynamic Array")
