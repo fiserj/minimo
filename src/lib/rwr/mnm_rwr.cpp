@@ -8,6 +8,8 @@
 
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
+#include <bx/endian.h>            // endianSwap
+#include <bx/pixelformat.h>       // packRg16S, packRgb8
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
@@ -1306,6 +1308,87 @@ void deinit(VertexLayoutCache& cache)
     for (u32 i = 0; i < cache.handles.size; i++)
     {
         destroy_if_valid(cache.handles[i]);
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// VERTEX ATTRIBUTE STATE
+// -----------------------------------------------------------------------------
+
+BX_ALIGN_DECL_16(struct) VertexAttribState
+{
+    u8 data[32];
+};
+
+using PackedColorType    = u32; // As RGBA_u8.
+
+using PackedNormalType   = u32; // As RGB_u8.
+
+using PackedTexcoordType = u32; // As RG_s16.
+
+using FullTexcoordType   = Vec2;
+
+template <typename T>
+constexpr T& attrib(VertexAttribState& state, u32 offset)
+{
+    static_assert(is_pod<T>(),
+        "`T` must be POD type.");
+
+    ASSERT(offset % std::alignment_of<T>::value == 0,
+        "Offset %" PRIu32 " not multiple of alignment of return type.");
+
+    ASSERT(offset + sizeof(T) <= sizeof(state.data),
+        "Requested data go beyond vertex attrib state's memory.");
+
+    return *reinterpret_cast<T*>(state.data + offset);
+}
+
+constexpr u32 vertex_attrib_offset(u16 flags, u16 attrib)
+{
+    ASSERT(
+        attrib == VERTEX_COLOR    ||
+        attrib == VERTEX_NORMAL   ||
+        attrib == VERTEX_TEXCOORD ||
+        attrib == VERTEX_TEXCOORD_F32,
+        "Invalid attribute."
+    );
+
+    ASSERT(
+        attrib == (flags & attrib),
+        "Attribute is not part of flags."
+    );
+
+    static_assert(
+        VERTEX_COLOR  < VERTEX_NORMAL   &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD &&
+        VERTEX_NORMAL < VERTEX_TEXCOORD_F32,
+        "Vertex attributes' order assumption violated."
+    );
+
+    u32 offset = 0;
+
+    if (attrib > VERTEX_COLOR && (flags & VERTEX_COLOR))
+    {
+        offset += sizeof(PackedColorType);
+    }
+
+    if (attrib > VERTEX_NORMAL && (flags & VERTEX_NORMAL))
+    {
+        offset += sizeof(PackedNormalType);
+    }
+
+    return offset;
+}
+
+template <u16 Flags>
+void store_color(VertexAttribState& state, u32 rgba)
+{
+    if constexpr (!!(Flags & VERTEX_COLOR))
+    {
+        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_COLOR);
+
+        attrib<PackedColorType>(state, offset) = bx::endianSwap(rgba);
     }
 }
 
