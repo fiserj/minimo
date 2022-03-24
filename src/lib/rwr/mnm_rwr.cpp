@@ -509,13 +509,12 @@ struct StackAllocator : Allocator
     }
 };
 
-StackAllocator create_stack_allocator(void* buffer, u32 size)
+void init(StackAllocator& allocator, void* buffer, u32 size)
 {
     ASSERT(buffer, "Invalid buffer pointer.");
     ASSERT(size >= 64, "Too small buffer size %" PRIu32".", size);
     ASSERT(size <= StackAllocator::SIZE_MASK, "Too big buffer size %" PRIu32".", size);
 
-    StackAllocator allocator;
     allocator.buffer = reinterpret_cast<u8*>(buffer);
     allocator.size   = size;
     allocator.top    = 0;
@@ -525,15 +524,14 @@ StackAllocator create_stack_allocator(void* buffer, u32 size)
     block.reset(0, 0);
 
     allocator.top = block.data - allocator.buffer;
-
-    return allocator;
 }
 
 TEST_CASE("Stack Allocator")
 {
     u64 buffer[16];
 
-    StackAllocator allocator = create_stack_allocator(buffer, sizeof(buffer));
+    StackAllocator allocator;
+    init(allocator, buffer, sizeof(buffer));
     TEST_REQUIRE(allocator.size == sizeof(buffer));
     TEST_REQUIRE(allocator.top == 8);
     TEST_REQUIRE(allocator.last == 0);
@@ -661,18 +659,17 @@ struct DynamicArray
 };
 
 template <typename T>
-DynamicArray<T> create_dynamic_array(Allocator* allocator)
+void init(DynamicArray<T>& array, Allocator* allocator)
 {
+    ASSERT(!array.size, "Array not empty.")
     ASSERT(allocator, "Invalid allocator pointer.");
 
-    DynamicArray<T> array = {};
+    array = {};
     array.allocator = allocator;
-
-    return array;
 }
 
 template <typename T>
-void destroy(DynamicArray<T>& array)
+void deinit(DynamicArray<T>& array)
 {
     ASSERT(array.allocator, "Invalid allocator pointer.");
 
@@ -760,7 +757,8 @@ TEST_CASE("Dynamic Array")
 {
     CrtAllocator allocator;
 
-    auto array = create_dynamic_array<int>(&allocator);
+    DynamicArray<int> array;
+    init(array, &allocator);
     TEST_REQUIRE(array.allocator == &allocator);
 
     reserve(array, 3);
@@ -795,7 +793,7 @@ TEST_CASE("Dynamic Array")
         TEST_REQUIRE(array[i] == 100);
     }
 
-    destroy(array);
+    deinit(array);
     TEST_REQUIRE(array.data == nullptr);
     TEST_REQUIRE(array.size == 0);
     TEST_REQUIRE(array.capacity == 0);
