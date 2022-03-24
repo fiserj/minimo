@@ -1177,7 +1177,7 @@ struct VertexLayoutCache
     FixedArray<bgfx::VertexLayoutHandle, 128> handles;
 };
 
-struct VertexAttrib
+struct VertexLayoutAttrib
 {
     u32                    flag;
     bgfx::Attrib::Enum     type;
@@ -1188,7 +1188,7 @@ struct VertexAttrib
     bool                   packed;
 };
 
-const VertexAttrib s_vertex_attribs[] =
+const VertexLayoutAttrib s_vertex_layout_attribs[] =
 {
     { VERTEX_POSITION    , bgfx::Attrib::Position , bgfx::AttribType::Float, 3, 0, false, false },
     { VERTEX_COLOR       , bgfx::Attrib::Color0   , bgfx::AttribType::Uint8, 4, 4, true , false },
@@ -1197,13 +1197,13 @@ const VertexAttrib s_vertex_attribs[] =
     { VERTEX_TEXCOORD_F32, bgfx::Attrib::TexCoord0, bgfx::AttribType::Float, 2, 8, false, false },
 };
 
-constexpr u32 layout_index(u32 attribs, u32 skips = 0)
+constexpr u32 vertex_layout_index(u32 attribs, u32 skips = 0)
 {
     static_assert(
         VERTEX_ATTRIB_MASK  >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
         (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 3)) == 0b0111000 &&
         TEXCOORD_F32        >>  6                         == 0b1000000,
-        "Invalid index assumptions in `layout_index`."
+        "Invalid index assumptions in `vertex_layout_index`."
     );
 
     return
@@ -1212,37 +1212,37 @@ constexpr u32 layout_index(u32 attribs, u32 skips = 0)
         ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
 }
 
-void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
+void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 {
     ASSERT((attribs & skips) == 0, "`Attribute and skip flags must be disjoint.");
 
     bgfx::VertexLayout layout;
     layout.begin();
 
-    for (u32 i = 0; i < BX_COUNTOF(s_vertex_attribs); i++)
+    for (u32 i = 0; i < BX_COUNTOF(s_vertex_layout_attribs); i++)
     {
-        const VertexAttrib& attrib = s_vertex_attribs[i];
+        const VertexLayoutAttrib& vertex_attrib = s_vertex_layout_attribs[i];
 
-        if ((attribs & attrib.flag) == attrib.flag)
+        if ((attribs & vertex_attrib.flag) == vertex_attrib.flag)
         {
             layout.add(
-                attrib.type,
-                attrib.element_count,
-                attrib.element_type,
-                attrib.normalized,
-                attrib.packed
+                vertex_attrib.type,
+                vertex_attrib.element_count,
+                vertex_attrib.element_type,
+                vertex_attrib.normalized,
+                vertex_attrib.packed
             );
         }
-        else if ((skips & attrib.flag) == attrib.flag)
+        else if ((skips & vertex_attrib.flag) == vertex_attrib.flag)
         {
-            layout.skip(attrib.byte_size);
+            layout.skip(vertex_attrib.byte_size);
         }
     }
 
     layout.end();
     ASSERT(layout.getStride() % 4 == 0, "Layout stride must be multiple of 4 bytes.");
 
-    const u32 index = layout_index(attribs, skips);
+    const u32 index = vertex_layout_index(attribs, skips);
     ASSERT(!bgfx::isValid(cache.handles[index]), "Cannot reset a valid layout.");
 
     cache.layouts[index] = layout;
@@ -1253,7 +1253,7 @@ void init(VertexLayoutCache& cache)
 {
     fill(cache.handles, BGFX_INVALID_HANDLE);
 
-    add_layout(cache, VERTEX_POSITION, 0);
+    add_vertex_layout(cache, VERTEX_POSITION, 0);
 
     for (u32 attrib_mask = 1; attrib_mask < 16; attrib_mask++)
     {
@@ -1265,15 +1265,15 @@ void init(VertexLayoutCache& cache)
 
         u32 attribs = 0;
 
-        for (u32 i = 1; i < BX_COUNTOF(s_vertex_attribs); i++)
+        for (u32 i = 1; i < BX_COUNTOF(s_vertex_layout_attribs); i++)
         {
             if (attrib_mask & (1 << (i - 1)))
             {
-                attribs |= s_vertex_attribs[i].flag;
+                attribs |= s_vertex_layout_attribs[i].flag;
             }
         }
 
-        add_layout(cache, attribs, 0);
+        add_vertex_layout(cache, attribs, 0);
 
         if (bx::isPowerOf2(attrib_mask))
         {
@@ -1289,15 +1289,15 @@ void init(VertexLayoutCache& cache)
             {
                 u32 skips = 0;
 
-                for (u32 i = 1; i < BX_COUNTOF(s_vertex_attribs); i++)
+                for (u32 i = 1; i < BX_COUNTOF(s_vertex_layout_attribs); i++)
                 {
                     if (skip_mask & (1 << (i - 1)))
                     {
-                        skips |= s_vertex_attribs[i].flag;
+                        skips |= s_vertex_layout_attribs[i].flag;
                     }
                 }
 
-                add_layout(cache, attribs, skips);
+                add_vertex_layout(cache, attribs, skips);
             }
         }
     }
@@ -1330,7 +1330,7 @@ using PackedTexcoordType = u32; // As RG_s16.
 using FullTexcoordType   = Vec2;
 
 template <typename T>
-constexpr T& attrib(VertexAttribState& state, u32 offset)
+constexpr T& vertex_attrib(VertexAttribState& state, u32 offset)
 {
     static_assert(is_pod<T>(),
         "`T` must be POD type.");
@@ -1339,23 +1339,23 @@ constexpr T& attrib(VertexAttribState& state, u32 offset)
         "Offset %" PRIu32 " not multiple of alignment of return type.");
 
     ASSERT(offset + sizeof(T) <= sizeof(state.data),
-        "Requested data go beyond vertex attrib state's memory.");
+        "Requested data go beyond vertex vertex_attrib state's memory.");
 
     return *reinterpret_cast<T*>(state.data + offset);
 }
 
-constexpr u32 vertex_attrib_offset(u16 flags, u16 attrib)
+constexpr u32 vertex_attrib_offset(u16 flags, u16 vertex_attrib)
 {
     ASSERT(
-        attrib == VERTEX_COLOR    ||
-        attrib == VERTEX_NORMAL   ||
-        attrib == VERTEX_TEXCOORD ||
-        attrib == VERTEX_TEXCOORD_F32,
+        vertex_attrib == VERTEX_COLOR    ||
+        vertex_attrib == VERTEX_NORMAL   ||
+        vertex_attrib == VERTEX_TEXCOORD ||
+        vertex_attrib == VERTEX_TEXCOORD_F32,
         "Invalid attribute."
     );
 
     ASSERT(
-        attrib == (flags & attrib),
+        vertex_attrib == (flags & vertex_attrib),
         "Attribute is not part of flags."
     );
 
@@ -1368,12 +1368,12 @@ constexpr u32 vertex_attrib_offset(u16 flags, u16 attrib)
 
     u32 offset = 0;
 
-    if (attrib > VERTEX_COLOR && (flags & VERTEX_COLOR))
+    if (vertex_attrib > VERTEX_COLOR && (flags & VERTEX_COLOR))
     {
         offset += sizeof(PackedColorType);
     }
 
-    if (attrib > VERTEX_NORMAL && (flags & VERTEX_NORMAL))
+    if (vertex_attrib > VERTEX_NORMAL && (flags & VERTEX_NORMAL))
     {
         offset += sizeof(PackedNormalType);
     }
@@ -1388,7 +1388,7 @@ void store_color(VertexAttribState& state, u32 rgba)
     {
         constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_COLOR);
 
-        attrib<PackedColorType>(state, offset) = bx::endianSwap(rgba);
+        vertex_attrib<PackedColorType>(state, offset) = bx::endianSwap(rgba);
     }
 }
 
@@ -1406,7 +1406,7 @@ void store_normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
 
         constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_NORMAL);
 
-        bx::packRgb8(&attrib<PackedNormalType>(state, offset), normalized);
+        bx::packRgb8(&vertex_attrib<PackedNormalType>(state, offset), normalized);
     }
 }
 
@@ -1418,7 +1418,7 @@ void store_texcoord(VertexAttribState& state, f32 u, f32 v)
     {
         constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_TEXCOORD_F32);
 
-        attrib<FullTexcoordType>(state, offset) = HMM_Vec2(u, v);
+        vertex_attrib<FullTexcoordType>(state, offset) = HMM_Vec2(u, v);
     }
     else if constexpr (!!(Flags & VERTEX_TEXCOORD))
     {
@@ -1426,7 +1426,7 @@ void store_texcoord(VertexAttribState& state, f32 u, f32 v)
 
         const f32 elems[] = { u, v };
 
-        bx::packRg16S(&attrib<PackedTexcoordType>(state, offset), elems);
+        bx::packRg16S(&vertex_attrib<PackedTexcoordType>(state, offset), elems);
     }
 }
 
