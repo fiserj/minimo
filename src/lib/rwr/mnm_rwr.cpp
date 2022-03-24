@@ -1392,6 +1392,49 @@ void store_color(VertexAttribState& state, u32 rgba)
     }
 }
 
+template <u16 Flags>
+void store_normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
+{
+    if constexpr (!!(Flags & VERTEX_NORMAL))
+    {
+        const f32 normalized[] =
+        {
+            nx * 0.5f + 0.5f,
+            ny * 0.5f + 0.5f,
+            nz * 0.5f + 0.5f,
+        };
+
+        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_NORMAL);
+
+        bx::packRgb8(&attrib<PackedNormalType>(state, offset), normalized);
+    }
+}
+
+template <u16 Flags>
+void store_texcoord(VertexAttribState& state, f32 u, f32 v)
+{
+    // NOTE : `VERTEX_TEXCOORD_F32` has two bits on.
+    if constexpr ((Flags & VERTEX_TEXCOORD_F32) == VERTEX_TEXCOORD_F32)
+    {
+        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_TEXCOORD_F32);
+
+        attrib<FullTexcoordType>(state, offset) = HMM_Vec2(u, v);
+    }
+    else if constexpr (!!(Flags & VERTEX_TEXCOORD))
+    {
+        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_TEXCOORD);
+
+        const f32 elems[] = { u, v };
+
+        bx::packRg16S(&attrib<PackedTexcoordType>(state, offset), elems);
+    }
+}
+
+TEST_CASE("Deferred Execution")
+{
+    // ...
+}
+
 
 // -----------------------------------------------------------------------------
 
