@@ -759,7 +759,7 @@ TEST_CASE("Dynamic Array")
 {
     CrtAllocator allocator;
 
-    DynamicArray<int> array;
+    DynamicArray<int> array = {};
     init(array, &allocator);
     TEST_REQUIRE(array.allocator == &allocator);
 
@@ -1430,8 +1430,26 @@ void store_texcoord(VertexAttribState& state, f32 u, f32 v)
     }
 }
 
-TEST_CASE("Deferred Execution")
+TEST_CASE("Vertex Attribute State")
 {
+    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_COLOR, VERTEX_COLOR));
+    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_NORMAL, VERTEX_NORMAL));
+    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_TEXCOORD, VERTEX_TEXCOORD));
+    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_TEXCOORD_F32, VERTEX_TEXCOORD_F32));
+
+    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_COLOR | VERTEX_NORMAL, VERTEX_COLOR));
+    TEST_REQUIRE(4 == vertex_attrib_offset(VERTEX_COLOR | VERTEX_NORMAL, VERTEX_NORMAL));
+
+    VertexAttribState state;
+
+    state = {};
+    store_color<VERTEX_COLOR>(state, 0x12345678);
+    TEST_REQUIRE(*reinterpret_cast<PackedColorType*>(state.data) == 0x78563412);
+
+    state = {};
+    store_texcoord<VERTEX_TEXCOORD_F32>(state, 0.1f, 0.2f);
+    TEST_REQUIRE(*reinterpret_cast<Vec2*>(state.data) == HMM_Vec2(0.1f, 0.2f));
+
     // ...
 }
 
