@@ -48,6 +48,9 @@ namespace mnm
 namespace rwr
 {
 
+namespace
+{
+
 // -----------------------------------------------------------------------------
 // FIXED-SIZE TYPES
 // -----------------------------------------------------------------------------
@@ -163,8 +166,8 @@ static_assert(
 #if CONFIG_TESTING
 
 #define TEST_CASE(name)                                            \
-    static void BX_CONCATENATE(s_test_func_, __LINE__)();          \
-    static const bool BX_CONCATENATE(s_test_var_, __LINE__) = []() \
+    void BX_CONCATENATE(s_test_func_, __LINE__)();          \
+    const bool BX_CONCATENATE(s_test_var_, __LINE__) = []() \
     {                                                              \
         BX_CONCATENATE(s_test_func_, __LINE__)();                  \
         return true;                                               \
@@ -194,14 +197,14 @@ constexpr bool is_pod()
     return std::is_trivial<T>::value && std::is_standard_layout<T>::value;
 }
 
-static bool is_aligned(const void* ptr, size_t alignment)
+bool is_aligned(const void* ptr, size_t alignment)
 {
     return reinterpret_cast<uintptr_t>(ptr) % alignment == 0;
 }
 
-static constexpr u64 s_zero_memory[8] = {};
+constexpr u64 s_zero_memory[8] = {};
 
-static void fill_pattern(void* dst, const void* pattern, u32 size, u32 count)
+void fill_pattern(void* dst, const void* pattern, u32 size, u32 count)
 {
     ASSERT(dst, "Invalid dst pointer.");
     ASSERT(pattern, "Invalid pattern pointer.");
@@ -506,7 +509,7 @@ struct StackAllocator : Allocator
     }
 };
 
-static StackAllocator create_stack_allocator(void* buffer, u32 size)
+StackAllocator create_stack_allocator(void* buffer, u32 size)
 {
     ASSERT(buffer, "Invalid buffer pointer.");
     ASSERT(size >= 64, "Too small buffer size %" PRIu32".", size);
@@ -678,7 +681,7 @@ void destroy(DynamicArray<T>& array)
     array = {};
 }
 
-static u32 capacity_hint(u32 capacity, u32 requested_size)
+u32 capacity_hint(u32 capacity, u32 requested_size)
 {
     return bx::max(u32(8), requested_size, capacity + capacity / 2);
 }
@@ -868,7 +871,7 @@ struct WindowInfo
     bool  display_scale_changed;
 };
 
-static void update_window_info(GLFWwindow* window, WindowInfo& info)
+void update_window_info(GLFWwindow* window, WindowInfo& info)
 {
     ASSERT(window, "Invalid window pointer.");
 
@@ -899,7 +902,7 @@ static void update_window_info(GLFWwindow* window, WindowInfo& info)
     }
 }
 
-static void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
+void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
 {
     ASSERT(window, "Invalid window pointer.");
     ASSERT(flags >= 0, "Invalid window flags.");
@@ -1185,7 +1188,7 @@ struct VertexAttrib
     bool                   packed;
 };
 
-static const VertexAttrib s_vertex_attribs[] =
+const VertexAttrib s_vertex_attribs[] =
 {
     { VERTEX_POSITION    , bgfx::Attrib::Position , bgfx::AttribType::Float, 3, 0, false, false },
     { VERTEX_COLOR       , bgfx::Attrib::Color0   , bgfx::AttribType::Uint8, 4, 4, true , false },
@@ -1209,7 +1212,7 @@ constexpr u32 layout_index(u32 attribs, u32 skips = 0)
         ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
 }
 
-static void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
+void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 {
     ASSERT((attribs & skips) == 0, "`Attribute and skip flags must be disjoint.");
 
@@ -1246,7 +1249,7 @@ static void add_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
     cache.handles[index] = bgfx::createVertexLayout(layout);
 }
 
-static void init(VertexLayoutCache& cache)
+void init(VertexLayoutCache& cache)
 {
     fill(cache.handles, BGFX_INVALID_HANDLE);
 
@@ -1300,7 +1303,7 @@ static void init(VertexLayoutCache& cache)
     }
 }
 
-static void deinit(VertexLayoutCache& cache)
+void deinit(VertexLayoutCache& cache)
 {
     for (u32 i = 0; i < cache.handles.size; i++)
     {
@@ -1310,6 +1313,8 @@ static void deinit(VertexLayoutCache& cache)
 
 
 // -----------------------------------------------------------------------------
+
+} // unnamed namespace
 
 } // namespace rwr
 
