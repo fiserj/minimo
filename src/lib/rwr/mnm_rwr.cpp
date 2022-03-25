@@ -1221,21 +1221,21 @@ void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 
     for (u32 i = 0; i < BX_COUNTOF(s_vertex_layout_attribs); i++)
     {
-        const VertexLayoutAttrib& vertex_attrib = s_vertex_layout_attribs[i];
+        const VertexLayoutAttrib& attrib = s_vertex_layout_attribs[i];
 
-        if ((attribs & vertex_attrib.flag) == vertex_attrib.flag)
+        if ((attribs & attrib.flag) == attrib.flag)
         {
             layout.add(
-                vertex_attrib.type,
-                vertex_attrib.element_count,
-                vertex_attrib.element_type,
-                vertex_attrib.normalized,
-                vertex_attrib.packed
+                attrib.type,
+                attrib.element_count,
+                attrib.element_type,
+                attrib.normalized,
+                attrib.packed
             );
         }
-        else if ((skips & vertex_attrib.flag) == vertex_attrib.flag)
+        else if ((skips & attrib.flag) == attrib.flag)
         {
-            layout.skip(vertex_attrib.byte_size);
+            layout.skip(attrib.byte_size);
         }
     }
 
@@ -1316,21 +1316,72 @@ void deinit(VertexLayoutCache& cache)
 // VERTEX ATTRIBUTE STATE
 // -----------------------------------------------------------------------------
 
+using PackedColor    = u32; // As RGBA_u8.
+
+using PackedNormal   = u32; // As RGB_u8.
+
+using PackedTexcoord = u32; // As RG_s16.
+
+using FullTexcoord   = Vec2;
+
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
-    u8 data[32];
+    u8              data[32];
+    u32             size;
+
+    PackedColor*    packed_color;
+    PackedNormal*   packed_normal;
+    PackedTexcoord* packed_texcoord;
+    FullTexcoord*   full_texcoord;
+
+    void         (* store_color   )(VertexAttribState&, u32 rgba);
+    void         (* store_normal  )(VertexAttribState&, f32 x, f32 y, f32 z);
+    void         (* store_texcoord)(VertexAttribState&, f32 u, f32 v);
 };
 
-using PackedColorType    = u32; // As RGBA_u8.
+void store_packed_color(VertexAttribState& state, u32 rgba)
+{
+    *state.packed_color = bx::endianSwap(rgba);
+}
 
-using PackedNormalType   = u32; // As RGB_u8.
+void store_packed_normal(VertexAttribState& state, f32 x, f32 y, f32 z)
+{
+    const f32 normalized[] =
+    {
+        x * 0.5f + 0.5f,
+        y * 0.5f + 0.5f,
+        z * 0.5f + 0.5f,
+    };
 
-using PackedTexcoordType = u32; // As RG_s16.
+    bx::packRgb8(state.packed_normal, normalized);
+}
 
-using FullTexcoordType   = Vec2;
+void store_packed_texcoord(VertexAttribState& state, f32 u, f32 v)
+{
+    const f32 elems[] = { u, v };
+
+    bx::packRg16S(state.packed_texcoord, elems);
+}
+
+void store_full_texcoord(VertexAttribState& state, f32 u, f32 v)
+{
+    *state.full_texcoord = HMM_Vec2(u, v);
+}
+
+void store_no_color(VertexAttribState&, u32)
+{
+}
+
+void store_no_normal(VertexAttribState&, f32, f32, f32)
+{
+}
+
+void store_no_texcoord(VertexAttribState&, f32, f32)
+{
+}
 
 template <typename T>
-constexpr T& vertex_attrib(VertexAttribState& state, u32 offset)
+constexpr T* vertex_attrib(VertexAttribState& state, u32 offset)
 {
     static_assert(is_pod<T>(),
         "`T` must be POD type.");
@@ -1341,24 +1392,11 @@ constexpr T& vertex_attrib(VertexAttribState& state, u32 offset)
     ASSERT(offset + sizeof(T) <= sizeof(state.data),
         "Requested data go beyond vertex vertex_attrib state's memory.");
 
-    return *reinterpret_cast<T*>(state.data + offset);
+    return reinterpret_cast<T*>(state.data + offset);
 }
 
-constexpr u32 vertex_attrib_offset(u16 flags, u16 vertex_attrib)
+void init(VertexAttribState& state, u16 flags)
 {
-    ASSERT(
-        vertex_attrib == VERTEX_COLOR    ||
-        vertex_attrib == VERTEX_NORMAL   ||
-        vertex_attrib == VERTEX_TEXCOORD ||
-        vertex_attrib == VERTEX_TEXCOORD_F32,
-        "Invalid attribute."
-    );
-
-    ASSERT(
-        vertex_attrib == (flags & vertex_attrib),
-        "Attribute is not part of flags."
-    );
-
     static_assert(
         VERTEX_COLOR  < VERTEX_NORMAL   &&
         VERTEX_NORMAL < VERTEX_TEXCOORD &&
@@ -1366,90 +1404,45 @@ constexpr u32 vertex_attrib_offset(u16 flags, u16 vertex_attrib)
         "Vertex attributes' order assumption violated."
     );
 
-    u32 offset = 0;
+    bx::memSet(&state, 0, sizeof(state));
 
-    if (vertex_attrib > VERTEX_COLOR && (flags & VERTEX_COLOR))
+    state.store_color    = store_no_color;
+    state.store_normal   = store_no_normal;
+    state.store_texcoord = store_no_texcoord;
+
+    if (flags & VERTEX_COLOR)
     {
-        offset += sizeof(PackedColorType);
+        state.packed_color = vertex_attrib<PackedColor>(state, state.size);
+        state.store_color  = store_packed_color;
+        state.size        += sizeof(PackedColor);
     }
 
-    if (vertex_attrib > VERTEX_NORMAL && (flags & VERTEX_NORMAL))
+    if (flags & VERTEX_NORMAL)
     {
-        offset += sizeof(PackedNormalType);
+        state.packed_normal = vertex_attrib<PackedNormal>(state, state.size);
+        state.store_normal  = store_packed_normal;
+        state.size         += sizeof(PackedNormal);
     }
 
-    return offset;
-}
-
-template <u16 Flags>
-void store_color(VertexAttribState& state, u32 rgba)
-{
-    if constexpr (!!(Flags & VERTEX_COLOR))
-    {
-        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_COLOR);
-
-        vertex_attrib<PackedColorType>(state, offset) = bx::endianSwap(rgba);
-    }
-}
-
-template <u16 Flags>
-void store_normal(VertexAttribState& state, f32 nx, f32 ny, f32 nz)
-{
-    if constexpr (!!(Flags & VERTEX_NORMAL))
-    {
-        const f32 normalized[] =
-        {
-            nx * 0.5f + 0.5f,
-            ny * 0.5f + 0.5f,
-            nz * 0.5f + 0.5f,
-        };
-
-        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_NORMAL);
-
-        bx::packRgb8(&vertex_attrib<PackedNormalType>(state, offset), normalized);
-    }
-}
-
-template <u16 Flags>
-void store_texcoord(VertexAttribState& state, f32 u, f32 v)
-{
     // NOTE : `VERTEX_TEXCOORD_F32` has two bits on.
-    if constexpr ((Flags & VERTEX_TEXCOORD_F32) == VERTEX_TEXCOORD_F32)
+    if ((flags & VERTEX_TEXCOORD_F32) == VERTEX_TEXCOORD_F32)
     {
-        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_TEXCOORD_F32);
-
-        vertex_attrib<FullTexcoordType>(state, offset) = HMM_Vec2(u, v);
+        state.full_texcoord  = vertex_attrib<FullTexcoord>(state, state.size);
+        state.store_texcoord = store_full_texcoord;
+        state.size          += sizeof(FullTexcoord);
     }
-    else if constexpr (!!(Flags & VERTEX_TEXCOORD))
+
+    else if (flags & VERTEX_TEXCOORD)
     {
-        constexpr u32 offset = vertex_attrib_offset(Flags, VERTEX_TEXCOORD);
-
-        const f32 elems[] = { u, v };
-
-        bx::packRg16S(&vertex_attrib<PackedTexcoordType>(state, offset), elems);
+        
+        state.packed_texcoord = vertex_attrib<PackedTexcoord>(state, state.size);
+        state.store_texcoord  = store_full_texcoord;
+        state.size           += sizeof(PackedTexcoord);
     }
 }
 
 TEST_CASE("Vertex Attribute State")
 {
-    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_COLOR, VERTEX_COLOR));
-    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_NORMAL, VERTEX_NORMAL));
-    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_TEXCOORD, VERTEX_TEXCOORD));
-    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_TEXCOORD_F32, VERTEX_TEXCOORD_F32));
-
-    TEST_REQUIRE(0 == vertex_attrib_offset(VERTEX_COLOR | VERTEX_NORMAL, VERTEX_COLOR));
-    TEST_REQUIRE(4 == vertex_attrib_offset(VERTEX_COLOR | VERTEX_NORMAL, VERTEX_NORMAL));
-
-    VertexAttribState state;
-
-    state = {};
-    store_color<VERTEX_COLOR>(state, 0x12345678);
-    TEST_REQUIRE(*reinterpret_cast<PackedColorType*>(state.data) == 0x78563412);
-
-    state = {};
-    store_texcoord<VERTEX_TEXCOORD_F32>(state, 0.1f, 0.2f);
-    TEST_REQUIRE(*reinterpret_cast<Vec2*>(state.data) == HMM_Vec2(0.1f, 0.2f));
-
     // ...
 }
 
