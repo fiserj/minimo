@@ -757,6 +757,13 @@ T& append(DynamicArray<T>& array, const T& element)
     return array.data[array.size++];
 }
 
+void append(DynamicArray<u8>& array, const void* data, u32 size)
+{
+    resize(array, array.size + size);
+
+    bx::memCopy(array.data + array.size - size, data, size);
+}
+
 template <typename T>
 T& pop(DynamicArray<T>& array)
 {
@@ -1546,7 +1553,7 @@ void emulate_quad(DynamicArray<u8>& buffer, u32 vertex_size)
 }
 
 template <bool IsQuadMesh, bool HasAttribs>
-void store_vertex(const Vec3& position, const VertexAttribState& state, MeshRecorder& recorder)
+void store_vertex(const Vec3& position, const VertexAttribState& attrib_state, MeshRecorder& recorder)
 {
     if constexpr (IsQuadMesh)
     {
@@ -1556,7 +1563,7 @@ void store_vertex(const Vec3& position, const VertexAttribState& state, MeshReco
 
             if constexpr (HasAttribs)
             {
-                emulate_quad(recorder.attrib_buffer, state.size);
+                emulate_quad(recorder.attrib_buffer, attrib_state.size);
             }
 
             recorder.vertex_count += 2;
@@ -1567,11 +1574,11 @@ void store_vertex(const Vec3& position, const VertexAttribState& state, MeshReco
 
     recorder.vertex_count++;
 
-    // push_back(position_buffer, position);
+    append(recorder.position_buffer, &position, sizeof(position));
 
     if constexpr (HasAttribs)
     {
-        // push_back(recorder.attrib_buffer, attrib_state.data, attrib_state.size);
+        append(recorder.attrib_buffer, attrib_state.data, attrib_state.size);
     }
 }
 
