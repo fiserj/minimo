@@ -1461,6 +1461,17 @@ TEST_CASE("Vertex Attribute State")
 
 
 // -----------------------------------------------------------------------------
+// VERTEX SUBMISSION (I / II)
+// -----------------------------------------------------------------------------
+
+struct MeshRecorder;
+
+using VertexStoreFunc = void (*)(const Vec3&, const VertexAttribState&, MeshRecorder&);
+
+void reset(VertexStoreFunc& func, u32 flags);
+
+
+// -----------------------------------------------------------------------------
 // MESH RECORDING
 // -----------------------------------------------------------------------------
 
@@ -1469,6 +1480,7 @@ struct MeshRecorder
     DynamicArray<u8>  attrib_buffer;
     DynamicArray<u8>  position_buffer;
     VertexAttribState attrib_state;
+    VertexStoreFunc   store_vertex;
     u32               vertex_count;
     u32               invocation_count;
 };
@@ -1484,6 +1496,7 @@ void init(MeshRecorder& recorder, Allocator* allocator)
 void start(MeshRecorder& recorder, u32 flags)
 {
     reset(recorder.attrib_state, flags);
+    reset(recorder.store_vertex, flags);
 
     reserve(recorder.attrib_buffer  , 1024 * recorder.attrib_state.size);
     reserve(recorder.position_buffer, 1024 * sizeof(float) * 3);
@@ -1499,8 +1512,83 @@ void end(MeshRecorder& recorder)
     clear(recorder.attrib_buffer  );
     clear(recorder.position_buffer);
 
+    recorder.store_vertex     = nullptr;
     recorder.vertex_count     = 0;
     recorder.invocation_count = 0;
+}
+
+
+// -----------------------------------------------------------------------------
+// VERTEX SUBMISSION (II / II)
+// -----------------------------------------------------------------------------
+
+void emulate_quad(DynamicArray<u8>& buffer, u32 vertex_size)
+{
+    ASSERT(vertex_size > 0,
+        "Zero vertex size.");
+    ASSERT(buffer.size > 0,
+        "Empty vertex buffer.");
+    ASSERT(buffer.size % vertex_size == 0,
+        "Buffer size " PRIu32 " not divisible by vertex size " PRIu32 ".",
+        buffer.size, size);
+    ASSERT((buffer.size / vertex_size) % 3 == 0,
+        "Quad emulation should be done with 3 outstanding vertices, but got " PRIu32 ".",
+        (buffer.size / vertex_size));
+
+    resize(buffer, buffer.size + 2 * vertex_size);
+
+    u8* end = buffer.data + buffer.size;
+
+    // Assuming the last triangle has relative indices
+    // [v0, v1, v2] = [-5, -4, -3], we need to copy the vertices v0 and v2.
+    bx::memCopy(end - 2 * vertex_size, end - 5 * vertex_size, vertex_size);
+    bx::memCopy(end -     vertex_size, end - 3 * vertex_size, vertex_size);
+}
+
+template <bool IsQuadMesh, bool HasAttribs>
+void store_vertex(const Vec3& position, const VertexAttribState& state, MeshRecorder& recorder)
+{
+    if constexpr (IsQuadMesh)
+    {
+        if ((recorder.invocation_count & 3) == 3)
+        {
+            emulate_quad(recorder.position_buffer, sizeof(position));
+
+            if constexpr (HasAttribs)
+            {
+                emulate_quad(recorder.attrib_buffer, state.size);
+            }
+
+            recorder.vertex_count += 2;
+        }
+
+        recorder.invocation_count++;
+    }
+
+    recorder.vertex_count++;
+
+    // push_back(position_buffer, position);
+
+    if constexpr (HasAttribs)
+    {
+        // push_back(recorder.attrib_buffer, attrib_state.data, attrib_state.size);
+    }
+}
+
+const VertexStoreFunc s_vertex_store_funcs[] =
+{
+    store_vertex<0, 0>,
+    store_vertex<0, 1>,
+    store_vertex<1, 0>,
+    store_vertex<1, 1>,
+};
+
+void reset(VertexStoreFunc& func, u32 flags)
+{
+    const bool is_quad_mesh = flags & PRIMITIVE_QUADS;
+    const bool has_attribs  = flags & VERTEX_ATTRIB_MASK;
+
+    func = s_vertex_store_funcs[is_quad_mesh * 2 + has_attribs];
 }
 
 
