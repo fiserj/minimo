@@ -671,13 +671,23 @@ void init(DynamicArray<T>& array, Allocator* allocator)
 }
 
 template <typename T>
-void deinit(DynamicArray<T>& array)
+void clear(DynamicArray<T>& array)
 {
     ASSERT(array.allocator, "Invalid allocator pointer.");
 
     BX_ALIGNED_FREE(array.allocator, array.data, std::alignment_of<T>::value);
 
-    array = {};
+    array.data     = nullptr;
+    array.size     = 0;
+    array.capacity = 0;
+}
+
+template <typename T>
+void deinit(DynamicArray<T>& array)
+{
+    clear(array);
+
+    array.allocator = nullptr;
 }
 
 u32 capacity_hint(u32 capacity, u32 requested_size)
@@ -1395,7 +1405,7 @@ constexpr T* vertex_attrib(VertexAttribState& state, u32 offset)
     return reinterpret_cast<T*>(state.data + offset);
 }
 
-void init(VertexAttribState& state, u16 flags)
+void reset(VertexAttribState& state, u32 flags)
 {
     static_assert(
         VERTEX_COLOR  < VERTEX_NORMAL   &&
@@ -1444,6 +1454,50 @@ void init(VertexAttribState& state, u16 flags)
 TEST_CASE("Vertex Attribute State")
 {
     // ...
+}
+
+
+// -----------------------------------------------------------------------------
+// MESH RECORDING
+// -----------------------------------------------------------------------------
+
+struct MeshRecorder
+{
+    DynamicArray<u8>  attrib_buffer;
+    DynamicArray<u8>  position_buffer;
+    VertexAttribState attrib_state;
+    u32               vertex_count;
+    u32               invocation_count;
+};
+
+void init(MeshRecorder& recorder, Allocator* allocator)
+{
+    recorder = {};
+
+    init(recorder.attrib_buffer  , allocator);
+    init(recorder.position_buffer, allocator);
+}
+
+void start(MeshRecorder& recorder, u32 flags)
+{
+    reset(recorder.attrib_state, flags);
+
+    reserve(recorder.attrib_buffer  , 1024 * recorder.attrib_state.size);
+    reserve(recorder.position_buffer, 1024 * sizeof(float) * 3);
+
+    recorder.vertex_count     = 0;
+    recorder.invocation_count = 0;
+}
+
+void end(MeshRecorder& recorder)
+{
+    reset(recorder.attrib_state, 0);
+
+    clear(recorder.attrib_buffer  );
+    clear(recorder.position_buffer);
+
+    recorder.vertex_count     = 0;
+    recorder.invocation_count = 0;
 }
 
 
