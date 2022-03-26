@@ -1326,27 +1326,30 @@ void deinit(VertexLayoutCache& cache)
 // VERTEX ATTRIBUTE STATE
 // -----------------------------------------------------------------------------
 
+struct VertexAttribState;
+
 using PackedColor    = u32; // As RGBA_u8.
-
 using PackedNormal   = u32; // As RGB_u8.
-
 using PackedTexcoord = u32; // As RG_s16.
-
 using FullTexcoord   = Vec2;
+
+using ColorStoreFunc    = void (*)(VertexAttribState&, u32);
+using NormalStoreFunc   = void (*)(VertexAttribState&, f32, f32, f32);
+using TexcoordStoreFunc = void (*)(VertexAttribState&, f32, f32);
 
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
-    u8              data[32];
-    u32             size;
+    u8                data[32];
+    u32               size;
 
-    PackedColor*    packed_color;
-    PackedNormal*   packed_normal;
-    PackedTexcoord* packed_texcoord;
-    FullTexcoord*   full_texcoord;
+    PackedColor*      packed_color;
+    PackedNormal*     packed_normal;
+    PackedTexcoord*   packed_texcoord;
+    FullTexcoord*     full_texcoord;
 
-    void         (* store_color   )(VertexAttribState&, u32 rgba);
-    void         (* store_normal  )(VertexAttribState&, f32 x, f32 y, f32 z);
-    void         (* store_texcoord)(VertexAttribState&, f32 u, f32 v);
+    ColorStoreFunc    store_color;
+    NormalStoreFunc   store_normal;
+    TexcoordStoreFunc store_texcoord;
 };
 
 void store_packed_color(VertexAttribState& state, u32 rgba)
