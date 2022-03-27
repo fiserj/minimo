@@ -839,6 +839,65 @@ TEST_CASE("Dynamic Array")
 
 
 // -----------------------------------------------------------------------------
+// SPAN
+// -----------------------------------------------------------------------------
+
+template <typename T>
+struct Span
+{
+    T*  data;
+    u32 size;
+
+    const T& operator[](u32 i) const
+    {
+        ASSERT(data, "Invalid data pointer.");
+        ASSERT(i < size, "Index %" PRIu32 "out of range %" PRIu32 ".", i, size);
+
+        return data[i];
+    }
+
+    T& operator[](u32 i)
+    {
+        ASSERT(data, "Invalid data pointer.");
+        ASSERT(i < size, "Index %" PRIu32 "out of range %" PRIu32 ".", i, size);
+
+        return data[i];
+    }
+};
+
+template <typename T>
+void init(Span<T>& span, const DynamicArray<T>& array, u32 start = 0, u32 end = U32_MAX)
+{
+    if (!array.data && start == 0 && end == U32_MAX)
+    {
+        span = {};
+        return;
+    }
+
+    ASSERT(start < array.size,
+        "Start index %" PRIu32 " outside of array size %" PRIu32 ".",
+        start, array.size
+    );
+    ASSERT(end == U32_MAX || end <= array.size,
+        "End index %" PRIu32 " outside of array size %" PRIu32 ".",
+        end, array.size
+    );
+    ASSERT(end >= start,
+        "Start index %" PRIu32 " bigger than the end one, %" PRIu32 ".",
+        start, end
+    );
+
+    if (end == U32_MAX)
+    {
+        end = array.size;
+    }
+
+    span.data = array.data + start;
+    span.size = end - start;
+}
+
+
+// -----------------------------------------------------------------------------
 // FIXED STACK
 // -----------------------------------------------------------------------------
 
