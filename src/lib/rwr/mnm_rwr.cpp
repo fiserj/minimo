@@ -113,6 +113,7 @@ constexpr u32 MAX_PROGRAMS           = 128;
 constexpr u32 MAX_TASKS              = 64;
 constexpr u32 MAX_TEXTURES           = 1024;
 constexpr u32 MAX_TEXTURE_ATLASES    = 32;
+constexpr u32 MAX_TRANSIENT_BUFFERS  = 64;
 constexpr u32 MAX_UNIFORMS           = 256;
 
 constexpr u16 MESH_TYPE_MASK         = MESH_STATIC | MESH_TRANSIENT | MESH_DYNAMIC | MESH_INVALID;
@@ -1845,11 +1846,12 @@ struct Mesh
 
 struct MeshCache
 {
-    Mutex                                     mutex;
-    FixedArray<Mesh, MAX_MESHES>              meshes;
-    DynamicArray<u16>                         transient_idxs;
-    DynamicArray<bgfx::TransientVertexBuffer> transient_buffers;
-    bool                                      transient_memory_exhausted;
+    Mutex                                                          mutex;
+    FixedArray<Mesh, MAX_MESHES>                                   meshes;
+    FixedArray<u16, MAX_TRANSIENT_BUFFERS>                         transient_indices;
+    FixedArray<bgfx::TransientVertexBuffer, MAX_TRANSIENT_BUFFERS> transient_buffers;
+    u32                                                            transient_buffer_count;
+    u32                                                            transient_memory_exhausted;
 };
 
 u16 mesh_type(u32 flags)
