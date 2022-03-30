@@ -1905,6 +1905,72 @@ void destroy(Mesh& mesh)
     mesh = {};
 }
 
+void create_persistent_geometry
+(
+    u32                       flags,
+    u32                       count,
+    const Span<u8>*           attribs,
+    const bgfx::VertexLayout* layouts,
+    Allocator*                temp_allocator,
+    VertexBufferUnion*        output_vertex_buffers,
+    IndexBufferUnion&         output_index_buffer
+)
+{
+    const u32 type = mesh_type(flags);
+    const u32 vertex_count = attribs[0].size / layouts[0].getStride();
+
+    FixedArray<meshopt_Stream, 2> streams;
+    ASSERT(streams.size >= count, "Insufficient stream array size.");
+
+    for (u32 i = 0; i < count; i++)
+    {
+        ASSERT(vertex_count == attribs[i].size / layouts[i].getStride(),
+            "Mismatched number of vertices for attribute buffer %" PRIu32 ".", i
+        );
+
+        streams[i] = {
+            attribs[i].data,
+            layouts[i].getStride(),
+            layouts[i].getStride()
+        };
+    }
+
+    DynamicArray<u32> remap_table;
+    init(remap_table, temp_allocator);
+    defer(deinit(remap_table));
+
+    resize(remap_table, vertex_count);
+
+    const u32 indexed_vertex_count = count > 1
+        ? u32(meshopt_generateVertexRemapMulti(
+            remap_table.data, nullptr, vertex_count, vertex_count, streams.data,
+            count
+        ))
+        : u32(meshopt_generateVertexRemap(
+            remap_table.data, nullptr, vertex_count, streams[0].data,
+            vertex_count, streams[0].size
+        ));
+
+    void* vertex_positions = nullptr;
+
+    for (u32 i = 0; i < count; i++)
+    {
+        output_vertex_buffers[i] = create_persistent_vertex_buffer(
+            type, streams[i], layouts[i], vertex_count, indexed_vertex_count,
+            remap_table.data, i ? nullptr : &vertex_positions
+        );
+    }
+
+    const bool optimize_geometry =
+         (flags & OPTIMIZE_GEOMETRY) &&
+        ((flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS);
+
+    output_index_buffer = create_persistent_index_buffer(
+        type, vertex_count, indexed_vertex_count,
+        static_cast<f32*>(vertex_positions), remap_table.data, optimize_geometry
+    );
+}
+
 Mesh create_persistent_mesh
 (
     const Span<u8>&           position_buffer,
