@@ -1726,7 +1726,7 @@ VertexBufferUnion create_persistent_vertex_buffer
         break;
     }
 
-    ASSERT(handle != bgfx::kInvalidHandle, "Vertex buffer creation failed.");
+    WARN(handle != bgfx::kInvalidHandle, "Vertex buffer creation failed.");
 
     return { handle };
 }
@@ -1799,33 +1799,34 @@ IndexBufferUnion create_persistent_index_buffer
         break;
     }
 
-    ASSERT(handle != bgfx::kInvalidHandle, "Index buffer creation failed.");
+    WARN(handle != bgfx::kInvalidHandle, "Index buffer creation failed.");
 
     return { handle };
 }
 
 bool create_transient_vertex_buffer
 (
-    bgfx::TransientVertexBuffer& buffer,
-    const void*                  data,
-    u32                          size,
-    const bgfx::VertexLayout&    layout
+    const Span<u8>&              buffer,
+    const bgfx::VertexLayout&    layout,
+    bgfx::TransientVertexBuffer* tvb
 )
 {
-    ASSERT(data, "Invalid data pointer.");
-    ASSERT(size, "Zero data size.");
+    ASSERT(buffer.size, "Empty buffer.");
     ASSERT(layout.getStride(), "Zero layout stride.");
-    ASSERT(size % layout.getStride() == 0, "Layout / data size mismatch.");
+    ASSERT(buffer.size % layout.getStride() == 0,
+        "Data / layout size mismatch; %" PRIu32 " not divisible by %" PRIu32 ".",
+        buffer.size, layout.getStride()
+    );
 
-    const u32 count = size / layout.getStride();
+    const u32 count = buffer.size / layout.getStride();
 
     if (bgfx::getAvailTransientVertexBuffer(count, layout) < count)
     {
         return false;
     }
 
-    bgfx::allocTransientVertexBuffer(&buffer, count, layout);
-    bx::memCopy(buffer.data, data, size);
+    bgfx::allocTransientVertexBuffer(tvb, count, layout);
+    bx::memCopy(tvb->data, buffer.data, buffer.size);
 
     return true;
 }
@@ -1905,33 +1906,33 @@ void destroy(Mesh& mesh)
     mesh = {};
 }
 
-void create_persistent_geometry
+bool create_persistent_geometry
 (
-    u32                       flags,
-    u32                       count,
-    const Span<u8>*           attribs,
-    const bgfx::VertexLayout* layouts,
-    Allocator*                temp_allocator,
-    VertexBufferUnion*        output_vertex_buffers,
-    IndexBufferUnion&         output_index_buffer
+    u32                        flags,
+    u32                        count,
+    const Span<u8>*            attribs,
+    const bgfx::VertexLayout** layouts,
+    Allocator*                 temp_allocator,
+    VertexBufferUnion*         output_vertex_buffers,
+    IndexBufferUnion&          output_index_buffer
 )
 {
     const u32 type = mesh_type(flags);
-    const u32 vertex_count = attribs[0].size / layouts[0].getStride();
+    const u32 vertex_count = attribs[0].size / layouts[0]->getStride();
 
     FixedArray<meshopt_Stream, 2> streams;
     ASSERT(streams.size >= count, "Insufficient stream array size.");
 
     for (u32 i = 0; i < count; i++)
     {
-        ASSERT(vertex_count == attribs[i].size / layouts[i].getStride(),
+        ASSERT(vertex_count == attribs[i].size / layouts[i]->getStride(),
             "Mismatched number of vertices for attribute buffer %" PRIu32 ".", i
         );
 
         streams[i] = {
             attribs[i].data,
-            layouts[i].getStride(),
-            layouts[i].getStride()
+            layouts[i]->getStride(),
+            layouts[i]->getStride()
         };
     }
 
@@ -1956,7 +1957,7 @@ void create_persistent_geometry
     for (u32 i = 0; i < count; i++)
     {
         output_vertex_buffers[i] = create_persistent_vertex_buffer(
-            type, streams[i], layouts[i], vertex_count, indexed_vertex_count,
+            type, streams[i], *layouts[i], vertex_count, indexed_vertex_count,
             remap_table.data, i ? nullptr : &vertex_positions
         );
     }
@@ -1969,179 +1970,133 @@ void create_persistent_geometry
         type, vertex_count, indexed_vertex_count,
         static_cast<f32*>(vertex_positions), remap_table.data, optimize_geometry
     );
+
+    // TODO : Check that all the buffers were successfully created and perform
+    //        the cleanup if not.
+
+    return true;
 }
 
-Mesh create_persistent_mesh
+bool create_transient_geometry
 (
-    const Span<u8>&           position_buffer,
-    const bgfx::VertexLayout& position_layout,
-    const Span<u8>&           attrib_buffer,
-    const bgfx::VertexLayout& attrib_layout,
-    u32                       flags,
-    u32                       extra_data,
-    Allocator*                allocator
+    u32                          count,
+    const Span<u8>*              attribs,
+    const bgfx::VertexLayout**   layouts,
+    bgfx::TransientVertexBuffer* output_vertex_buffers
 )
 {
-    ASSERT(mesh_type(flags) == MESH_STATIC
-        || mesh_type(flags) == MESH_DYNAMIC,
-        "Non-persistent mesh type.");
-    ASSERT(allocator, "Invalid allocator pointer.");
-
-    Mesh mesh;
-    init(mesh);
-
-    mesh.element_count = position_buffer.size / position_layout.getStride();
-    mesh.extra_data    = extra_data;
-    mesh.flags         = flags;
-
-    const meshopt_Stream streams[2] =
+    for (u32 i = 0; i < count; i++)
     {
-        { position_buffer.data, position_layout.getStride(), position_layout.getStride() },
-        { attrib_buffer  .data, attrib_layout  .getStride(), attrib_layout  .getStride() },
-    };
-
-    DynamicArray<u32> remap_table;
-    init(remap_table, allocator);
-    defer(deinit(remap_table));
-
-    resize(remap_table, mesh.element_count);
-
-    u32 indexed_vertex_count = 0;
-
-    if (attrib_buffer.size)
-    {
-        indexed_vertex_count = u32(meshopt_generateVertexRemapMulti(
-            remap_table.data, nullptr, mesh.element_count,
-            mesh.element_count, streams, BX_COUNTOF(streams)
-        ));
-
-        mesh.attribs = create_persistent_vertex_buffer(
-            mesh_type(mesh.flags), streams[1], attrib_layout,
-            mesh.element_count, indexed_vertex_count, remap_table.data
-        );
-    }
-    else
-    {
-        indexed_vertex_count = u32(meshopt_generateVertexRemap(
-            remap_table.data, nullptr, mesh.element_count, streams[0].data,
-            mesh.element_count, streams[0].size
-        ));
+        if (!create_transient_vertex_buffer(
+            attribs[i],
+            *layouts[i],
+            &output_vertex_buffers[i]
+        ))
+        {
+            return false;
+        }
     }
 
-    void* vertex_positions = nullptr;
-
-    mesh.positions = create_persistent_vertex_buffer(
-        mesh_type(mesh.flags), streams[0], position_layout, mesh.element_count,
-        indexed_vertex_count, remap_table.data, &vertex_positions
-    );
-
-    const bool optimize_geometry =
-         (mesh.flags & OPTIMIZE_GEOMETRY) &&
-        ((mesh.flags & PRIMITIVE_TYPE_MASK) <= PRIMITIVE_QUADS);
-
-    mesh.indices = create_persistent_index_buffer(
-        mesh_type(mesh.flags), mesh.element_count, indexed_vertex_count,
-        static_cast<f32*>(vertex_positions), remap_table.data, optimize_geometry
-    );
-
-    return mesh;
+    return true;
 }
 
-Mesh create_transient_mesh
-(
-    const Span<u8>&              position_buffer,
-    const bgfx::VertexLayout&    position_layout,
-    bgfx::TransientVertexBuffer* position_tvb,
-    const Span<u8>&              attrib_buffer,
-    const bgfx::VertexLayout&    attrib_layout,
-    bgfx::TransientVertexBuffer* attrib_tvb,
-    u32                          flags,
-    u32                          extra_data
-)
-{
-    // ...
-
-    return {};
-}
-
-void add_recorded_mesh
+void add_mesh
 (
     MeshCache&                      cache,
     const RecordInfo&               info,
     const MeshRecorder&             recorder,
-    const Span<bgfx::VertexLayout>& layouts,
+    const Span<bgfx::VertexLayout>& layouts_,
     Allocator*                      thread_local_allocator
 )
 {
     ASSERT(info.id < cache.meshes.size,
         "Mesh id %" PRIu32 " out of bounds (%" PRIu32").",
-        info.id, cache.meshes.size);
+        info.id, cache.meshes.size
+    );
 
     const u16 type = mesh_type(info.flags);
 
-    WARN(type == MESH_INVALID, "Invalid registered mesh type.");
     if (type == MESH_INVALID)
     {
+        WARN(true, "Invalid registered mesh type.");
         return;
     }
 
+    const u32 count = 1 + (recorder.attrib_buffer.size > 0);
+
+    Span<u8>                  attribs[2];
+    const bgfx::VertexLayout* layouts[2];
+
+    attribs[0] = recorder.position_buffer;
+    layouts[0] = &layouts_[vertex_layout_index(VERTEX_POSITION)];
+
+    if (count > 1)
+    {
+        attribs[1] = recorder.attrib_buffer;
+        layouts[1] = &layouts_[vertex_layout_index(info.flags)];
+    }
+
     Mesh mesh;
+    init(mesh);
+
+    mesh.element_count = recorder.vertex_count;
+    mesh.extra_data    = info.extra_data;
+    mesh.flags         = info.flags;
 
     if (type != MESH_TRANSIENT)
     {
-        mesh = create_persistent_mesh(
-            recorder.position_buffer,
-            layouts[vertex_layout_index(VERTEX_POSITION)],
-            recorder.attrib_buffer,
-            layouts[vertex_layout_index(info.flags)],
-            info.flags,
-            info.extra_data,
-            thread_local_allocator
+        static_assert(
+            &mesh.positions + 1 == &mesh.attribs,
+            "Invalid `Mesh` structure layout assumption."
         );
+
+        // TODO
+        Allocator* temp_allocator = nullptr;
+
+        if (!create_persistent_geometry(
+            info.flags, count, attribs, layouts, temp_allocator,
+            &mesh.positions, mesh.indices
+        ))
+        {
+            WARN(true, "Failed to create %s mesh with ID %" PRIu16 ".",
+                type == MESH_STATIC ? "static" : "dynamic", info.id
+            );
+
+            return;
+        }
     }
     else if (0 == bx::atomicCompareAndSwap(&cache.transient_memory_exhausted, 0u, 0u))
     {
-        const u32 count  = 1 + (recorder.attrib_buffer.size > 0);
         const u32 offset = bx::atomicFetchAndAdd(&cache.transient_buffer_count, count);
 
-        // TODO : This should be a once-per-frame warning.
-        WARN(offset + count <= cache.transient_buffers.size,
-            "Transient buffer count limit %" PRIu32 " exceeded.",
-            cache.transient_buffers.size
-        );
-
-        if (offset + count <= cache.transient_buffers.size)
+        if (offset + count > cache.transient_buffers.size)
         {
-            mesh = create_transient_mesh(
-                recorder.position_buffer,
-                layouts[vertex_layout_index(VERTEX_POSITION)],
-                &cache.transient_buffers[offset],
-                recorder.attrib_buffer,
-                layouts[vertex_layout_index(info.flags)],
-                count > 1 ? &cache.transient_buffers[offset + 1] : nullptr,
-                info.flags,
-                info.extra_data
-            );
-
             // TODO : This should be a once-per-frame warning.
-            WARN(is_valid(mesh),
-                "Transient memory of %" PRIu32 " MB exhausted.",
-                0 // TODO : Plug in the actual limit.
+            WARN(true, "Transient buffer count limit %" PRIu32 " exceeded.",
+                cache.transient_buffers.size
             );
+
+            return;
         }
 
-        if (is_valid(mesh))
+        if (!create_transient_geometry(
+            count, attribs, layouts, &cache.transient_buffers[offset]
+        ))
         {
-            mesh.positions.transient_index = u16(offset);
+            WARN(true, "Transient memory of %" PRIu32 " MB exhausted.",
+                0 // TODO : Provide the actual limit.
+            );
 
-            if (recorder.attrib_buffer.size)
-            {
-                mesh.attribs.transient_index = u16(offset + 1);
-            }
-        }
-        else
-        {
             bx::atomicCompareAndSwap(&cache.transient_memory_exhausted, 0u, 1u);
+
+            return;
+        }
+
+        mesh.positions.transient_index = u16(offset);
+
+        if (count > 1)
+        {
+            mesh.attribs.transient_index = u16(offset + 1);
         }
     }
 
@@ -2150,10 +2105,7 @@ void add_recorded_mesh
 
         destroy(cache.meshes[info.id]);
 
-        if (is_valid(mesh))
-        {
-            cache.meshes[info.id] = mesh;
-        }
+        cache.meshes[info.id] = mesh;
     }
 }
 
