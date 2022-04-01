@@ -1871,9 +1871,8 @@ u16 mesh_type(u32 flags)
 
 bool is_valid(const Mesh& mesh)
 {
-    // TODO
-
-    return false;
+    // TODO : A more complete check might be in order (at least an assertion).
+    return mesh.element_count != 0;
 }
 
 void init(Mesh& mesh)
@@ -2006,7 +2005,7 @@ void add_mesh
     const RecordInfo&               info,
     const MeshRecorder&             recorder,
     const Span<bgfx::VertexLayout>& layouts_,
-    Allocator*                      thread_local_allocator
+    Allocator*                      thread_local_temp_allocator
 )
 {
     ASSERT(info.id < cache.meshes.size,
@@ -2050,11 +2049,8 @@ void add_mesh
             "Invalid `Mesh` structure layout assumption."
         );
 
-        // TODO
-        Allocator* temp_allocator = nullptr;
-
         if (!create_persistent_geometry(
-            info.flags, count, attribs, layouts, temp_allocator,
+            info.flags, count, attribs, layouts, thread_local_temp_allocator,
             &mesh.positions, mesh.indices
         ))
         {
@@ -2109,9 +2105,28 @@ void add_mesh
     }
 }
 
-void init(MeshCache& cache, Allocator* allocator)
+void init(MeshCache& cache)
 {
-    // ...
+    for (u32 i = 0; i < cache.meshes.size; i++)
+    {
+        init(cache.meshes[i]);
+    }
+}
+
+void deinit(MeshCache& cache)
+{
+    for (u32 i = 0; i < cache.meshes.size; i++)
+    {
+        destroy(cache.meshes[i]);
+    }
+}
+
+void init_frame(MeshCache& cache)
+{
+    MutexScope lock(cache.mutex);
+
+    cache.transient_buffer_count     = 0;
+    cache.transient_memory_exhausted = 0;
 }
 
 
