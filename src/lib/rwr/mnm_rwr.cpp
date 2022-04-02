@@ -212,6 +212,16 @@ using MutexScope = bx::MutexScope;
 // UTILITY FUNCTIONS
 // -----------------------------------------------------------------------------
 
+constexpr u32 operator""_kB(unsigned long long value)
+{
+    return value << u32(10);
+}
+
+constexpr u32 operator""_MB(unsigned long long value)
+{
+    return value << u32(20);
+}
+
 template <typename T>
 constexpr bool is_pod()
 {
@@ -1576,8 +1586,8 @@ void start(MeshRecorder& recorder, u32 flags)
     reset(recorder.attrib_state, flags);
     reset(recorder.store_vertex, flags);
 
-    reserve(recorder.attrib_buffer  , 32768 * recorder.attrib_state.size);
-    reserve(recorder.position_buffer, 32768 * sizeof(float) * 3);
+    reserve(recorder.attrib_buffer  , 32_kB * recorder.attrib_state.size);
+    reserve(recorder.position_buffer, 32_kB * sizeof(float) * 3);
 
     recorder.vertex_count     = 0;
     recorder.invocation_count = 0;
