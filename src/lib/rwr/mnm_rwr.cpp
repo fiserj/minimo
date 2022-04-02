@@ -2141,6 +2141,52 @@ void init_frame(MeshCache& cache)
 
 
 // -----------------------------------------------------------------------------
+// TEXTURE & TEXTURE CACHING
+// -----------------------------------------------------------------------------
+
+struct Texture
+{
+    bgfx::TextureHandle handle;
+    u16                 width;
+    u16                 height;
+    u16                 format; // bgfx::TextureFormat::Enum
+    u16                 ratio;  // bgfx::BackbufferRatio::Enum
+    bgfx::TextureHandle blit_handle;
+    u32                 read_frame;
+};
+
+static_assert(
+    bgfx::TextureFormat  ::Count <= U16_MAX &&
+    bgfx::BackbufferRatio::Count <= U16_MAX,
+    "Invalid BGFX texture-related enums' value assumptions."
+);
+
+void init(Texture& texture)
+{
+    texture.handle      = BGFX_INVALID_HANDLE;
+    texture.width       = 0;
+    texture.height      = 0;
+    texture.format      = u16(bgfx::TextureFormat  ::Count);
+    texture.ratio       = u16(bgfx::BackbufferRatio::Count);
+    texture.blit_handle = BGFX_INVALID_HANDLE;
+    texture.read_frame  = U32_MAX;
+}
+
+void destroy(Texture& texture)
+{
+    ASSERT(bgfx::isValid(texture.blit_handle) <= bgfx::isValid(texture.handle),
+        "Blit handle %" PRIu16 " valid, but the main one is not.",
+        texture.blit_handle
+    );
+
+    destroy_if_valid(texture.handle);
+    destroy_if_valid(texture.blit_handle);
+
+    texture = {};
+}
+
+
+// -----------------------------------------------------------------------------
 // INSTANCE RECORDING
 // -----------------------------------------------------------------------------
 
