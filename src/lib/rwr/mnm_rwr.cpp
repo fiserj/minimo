@@ -4,7 +4,7 @@
 #include <stddef.h>               // size_t
 #include <stdint.h>               // *int*_t, UINT*_MAX, uintptr_t
 
-#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable
+#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
 
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
@@ -1304,22 +1304,22 @@ struct VertexLayoutCache
 
 struct VertexLayoutAttrib
 {
-    u32                    flag;
-    bgfx::Attrib::Enum     type;
-    bgfx::AttribType::Enum element_type;
-    u8                     element_count;
-    u8                     byte_size;
-    bool                   normalized;
-    bool                   packed;
+    u32            flag;
+    BgfxAttrib     type;
+    BgfxAttribType element_type;
+    u8             element_count;
+    u8             byte_size;
+    bool           normalized;
+    bool           packed;
 };
 
 const VertexLayoutAttrib s_vertex_layout_attribs[] =
 {
-    { VERTEX_POSITION    , bgfx::Attrib::Position , bgfx::AttribType::Float, 3, 0, false, false },
-    { VERTEX_COLOR       , bgfx::Attrib::Color0   , bgfx::AttribType::Uint8, 4, 4, true , false },
-    { VERTEX_NORMAL      , bgfx::Attrib::Normal   , bgfx::AttribType::Uint8, 4, 4, true , true  },
-    { VERTEX_TEXCOORD    , bgfx::Attrib::TexCoord0, bgfx::AttribType::Int16, 2, 4, true , true  },
-    { VERTEX_TEXCOORD_F32, bgfx::Attrib::TexCoord0, bgfx::AttribType::Float, 2, 8, false, false },
+    { VERTEX_POSITION    , {bgfx::Attrib::Position }, {bgfx::AttribType::Float}, 3, 0, false, false },
+    { VERTEX_COLOR       , {bgfx::Attrib::Color0   }, {bgfx::AttribType::Uint8}, 4, 4, true , false },
+    { VERTEX_NORMAL      , {bgfx::Attrib::Normal   }, {bgfx::AttribType::Uint8}, 4, 4, true , true  },
+    { VERTEX_TEXCOORD    , {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Int16}, 2, 4, true , true  },
+    { VERTEX_TEXCOORD_F32, {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Float}, 2, 8, false, false },
 };
 
 constexpr u32 vertex_layout_index(u32 attribs, u32 skips = 0)
@@ -2184,30 +2184,27 @@ void init_frame(MeshCache& cache)
 // TEXTURE & TEXTURE CACHING
 // -----------------------------------------------------------------------------
 
+using BgfxTextureFormat   = BgfxReducedEnum<bgfx::TextureFormat  , u8>;
+using BgfxBackbufferRatio = BgfxReducedEnum<bgfx::BackbufferRatio, u8>;
+
 struct Texture
 {
     bgfx::TextureHandle handle;
     u16                 width;
     u16                 height;
-    u16                 format; // bgfx::TextureFormat::Enum
-    u16                 ratio;  // bgfx::BackbufferRatio::Enum
+    BgfxTextureFormat   format;
+    BgfxBackbufferRatio ratio;
     bgfx::TextureHandle blit_handle;
     u32                 read_frame;
 };
-
-static_assert(
-    bgfx::TextureFormat  ::Count <= U16_MAX &&
-    bgfx::BackbufferRatio::Count <= U16_MAX,
-    "Invalid BGFX texture-related enums' value assumptions."
-);
 
 void init(Texture& texture)
 {
     texture.handle      = BGFX_INVALID_HANDLE;
     texture.width       = 0;
     texture.height      = 0;
-    texture.format      = u16(bgfx::TextureFormat  ::Count);
-    texture.ratio       = u16(bgfx::BackbufferRatio::Count);
+    texture.format      = bgfx::TextureFormat  ::Count;
+    texture.ratio       = bgfx::BackbufferRatio::Count;
     texture.blit_handle = BGFX_INVALID_HANDLE;
     texture.read_frame  = U32_MAX;
 }
