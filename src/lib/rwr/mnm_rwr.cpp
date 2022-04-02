@@ -2059,7 +2059,7 @@ void add_mesh
 )
 {
     ASSERT(info.id < cache.meshes.size,
-        "Mesh id %" PRIu32 " out of bounds (%" PRIu32").",
+        "Mesh id %" PRIu16 " out of bounds (%" PRIu32").",
         info.id, cache.meshes.size
     );
 
