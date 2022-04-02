@@ -2125,9 +2125,19 @@ void add_mesh
             return;
         }
 
-        if (!create_transient_geometry(
-            count, attribs, layouts, &cache.transient_buffers[offset]
-        ))
+        bool success;
+        {
+            // NOTE : Mutexing since it seems that both
+            //        `getAvailTransientVertexBuffer` and
+            //        `allocTransientVertexBuffer` aren't thread safe.
+            MutexScope lock(cache.mutex);
+
+            success = create_transient_geometry(
+                count, attribs, layouts, &cache.transient_buffers[offset]
+            );
+        }
+
+        if (!success)
         {
             WARN(true, "Transient memory of %" PRIu32 " MB exhausted.",
                 0 // TODO : Provide the actual limit.
