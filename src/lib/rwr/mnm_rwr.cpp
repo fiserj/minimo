@@ -2141,6 +2141,61 @@ void init_frame(MeshCache& cache)
 
 
 // -----------------------------------------------------------------------------
+// INSTANCE RECORDING
+// -----------------------------------------------------------------------------
+
+struct InstanceRecorder
+{
+    DynamicArray<u8> buffer;
+    u16              instance_size;
+};
+
+void init(InstanceRecorder& recorder, Allocator* allocator)
+{
+    recorder = {};
+
+    init(recorder.buffer, allocator);
+}
+
+void start(InstanceRecorder& recorder, u32 type)
+{
+    constexpr u32 type_sizes[] =
+    {
+        sizeof(Mat4), // INSTANCE_TRANSFORM
+        16,           // INSTANCE_DATA_16
+        32,           // INSTANCE_DATA_32
+        48,           // INSTANCE_DATA_48
+        64,           // INSTANCE_DATA_64
+        80,           // INSTANCE_DATA_80
+        96,           // INSTANCE_DATA_96
+        112,          // INSTANCE_DATA_112
+    };
+
+    reserve(recorder.buffer, bx::min(4_MB, 2048u * recorder.instance_size));
+
+    recorder.instance_size = type_sizes[bx::max<u32>(type, BX_COUNTOF(type_sizes) - 1)];
+}
+
+void end(InstanceRecorder& recorder)
+{
+    clear(recorder.buffer);
+    recorder.instance_size = 0;
+}
+
+void append(InstanceRecorder& recorder, const void* instance_data)
+{
+    ASSERT(instance_data, "Invalid `instance_data` pointer.");
+
+    append(recorder.buffer, instance_data, recorder.instance_size);
+}
+
+u32 instance_count(InstanceRecorder& recorder)
+{
+    return recorder.buffer.size / recorder.instance_size;
+}
+
+
+// -----------------------------------------------------------------------------
 
 } // unnamed namespace
 
