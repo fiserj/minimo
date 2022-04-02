@@ -107,7 +107,7 @@ constexpr u32 VERTEX_PIXCOORD        = 0x800000;
 
 constexpr u32 MAX_FONTS              = 128;
 constexpr u32 MAX_FRAMEBUFFERS       = 128;
-constexpr u32 MAX_INSTANCE_BUFFERS   = 16;
+constexpr u32 MAX_INSTANCE_BUFFERS   = 32;
 constexpr u32 MAX_MESHES             = 4096;
 constexpr u32 MAX_PASSES             = 64;
 constexpr u32 MAX_PROGRAMS           = 128;
@@ -2282,9 +2282,63 @@ void append(InstanceRecorder& recorder, const void* instance_data)
     append(recorder.buffer, instance_data, recorder.instance_size);
 }
 
-u32 instance_count(InstanceRecorder& recorder)
+u32 instance_count(const InstanceRecorder& recorder)
 {
     return recorder.buffer.size / recorder.instance_size;
+}
+
+
+// -----------------------------------------------------------------------------
+// INSTANCE & INSTANCE CACHE
+// -----------------------------------------------------------------------------
+
+struct InstanceData
+{
+    bgfx::InstanceDataBuffer buffer;
+    bool                     is_transform;
+};
+
+struct InstanceCache
+{
+    Mutex                                          mutex;
+    FixedArray<InstanceData, MAX_INSTANCE_BUFFERS> data;
+};
+
+void add_instances
+(
+    InstanceCache&          cache,
+    const InstanceRecorder& recorder,
+    u16                     id,
+    bool                    is_transform
+)
+{
+    ASSERT(id < cache.data.size,
+        "Mesh id %" PRIu16 " out of bounds (%" PRIu32").",
+        id, cache.data.size
+    );
+
+    const u32 count  = instance_count(recorder);
+    const u16 stride = recorder.instance_size;
+
+    // NOTE : Mutexing since it seems that both `getAvailInstanceDataBuffer`
+    //        and `allocInstanceDataBuffer` aren't thread safe.
+    MutexScope lock(cache.mutex);
+
+    if (bgfx::getAvailInstanceDataBuffer(count, stride) < count)
+    {
+        WARN(true, "Instance buffer memory exhausted.");
+        return;
+    }
+
+    InstanceData &instance_data = cache.data[id];
+
+    instance_data.is_transform = is_transform;
+
+    bgfx::allocInstanceDataBuffer(&instance_data.buffer, count, stride);
+    bx::memCopy(instance_data.buffer.data, recorder.buffer.data,
+        recorder.buffer.size
+    );
+
 }
 
 
