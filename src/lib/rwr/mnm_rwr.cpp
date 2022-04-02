@@ -1253,8 +1253,48 @@ struct MouseInput : InputCache<MouseInput, GLFW_MOUSE_BUTTON_LAST>
 
 
 // -----------------------------------------------------------------------------
+// BGFX ENUM REDUCTION UTILITY
+// -----------------------------------------------------------------------------
+
+template <typename EnumT, typename ValueT>
+struct BgfxReducedEnum
+{
+    ValueT value;
+
+    static_assert(
+        std::is_unsigned<ValueT>::value,
+        "Underlying value type must be unsigned integral type."
+    );
+
+    static_assert(
+        sizeof(ValueT) < sizeof(typename EnumT::Enum),
+        "Underlying value type must be smaller than the original enum type."
+    );
+
+    static_assert(
+        EnumT::Count <= ValueT(-1),
+        "Underlying value type has insufficient value range."
+    );
+
+    BgfxReducedEnum& operator=(typename EnumT::Enum value_)
+    {
+        value = ValueT(value_);
+        return *this;
+    }
+
+    operator typename EnumT::Enum() const
+    {
+        return typename EnumT::Enum(value);
+    }
+};
+
+
+// -----------------------------------------------------------------------------
 // VERTEX LAYOUT
 // -----------------------------------------------------------------------------
+
+using BgfxAttrib     = BgfxReducedEnum<bgfx::Attrib    , u8>;
+using BgfxAttribType = BgfxReducedEnum<bgfx::AttribType, u8>;
 
 struct VertexLayoutCache
 {
