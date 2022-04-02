@@ -1901,15 +1901,15 @@ void destroy(Mesh& mesh)
 
     if (type == MESH_STATIC)
     {
-        bgfx::destroy   (mesh.positions.static_buffer);
+        destroy_if_valid(mesh.positions.static_buffer);
         destroy_if_valid(mesh.attribs  .static_buffer);
-        bgfx::destroy   (mesh.indices  .static_buffer);
+        destroy_if_valid(mesh.indices  .static_buffer);
     }
     else if (type == MESH_DYNAMIC)
     {
-        bgfx::destroy   (mesh.positions.dynamic_buffer);
+        destroy_if_valid(mesh.positions.dynamic_buffer);
         destroy_if_valid(mesh.attribs  .dynamic_buffer);
-        bgfx::destroy   (mesh.indices  .dynamic_buffer);
+        destroy_if_valid(mesh.indices  .dynamic_buffer);
     }
 
     mesh = {};
