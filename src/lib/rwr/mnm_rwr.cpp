@@ -2412,6 +2412,180 @@ bgfx::UniformHandle default_sampler
 }
 
 
+// -----------------------------------------------------------------------------
+// DRAW STATE & SUBMISSION
+// -----------------------------------------------------------------------------
+
+static_assert(
+    BGFX_STATE_DEFAULT == (BGFX_STATE_WRITE_RGB       |
+                           BGFX_STATE_WRITE_A         |
+                           BGFX_STATE_WRITE_Z         |
+                           BGFX_STATE_DEPTH_TEST_LESS |
+                           BGFX_STATE_CULL_CW         |
+                           BGFX_STATE_MSAA            ) &&
+
+    STATE_DEFAULT      == (STATE_WRITE_RGB            |
+                           STATE_WRITE_A              |
+                           STATE_WRITE_Z              |
+                           STATE_DEPTH_TEST_LESS      |
+                           STATE_CULL_CW              |
+                           STATE_MSAA                 ) ,
+
+    "BGFX and MiNiMo default draw states don't match."
+);
+
+struct DrawState
+{
+    const InstanceData*      instances;
+    u32                      element_start;
+    u32                      element_count;
+    bgfx::ViewId             pass;
+    bgfx::FrameBufferHandle  framebuffer;
+    bgfx::ProgramHandle      program;
+    bgfx::TextureHandle      texture;
+    bgfx::UniformHandle      sampler;
+    u16                      texture_size[2];
+    bgfx::VertexLayoutHandle vertex_alias;
+    u16                      flags;
+};
+
+void init(DrawState& state)
+{
+    state.instances       = nullptr;
+    state.element_start   = 0;
+    state.element_count   = UINT32_MAX;
+    state.pass            = UINT16_MAX;
+    state.framebuffer     = BGFX_INVALID_HANDLE;
+    state.program         = BGFX_INVALID_HANDLE;
+    state.texture         = BGFX_INVALID_HANDLE;
+    state.sampler         = BGFX_INVALID_HANDLE;
+    state.texture_size[0] = 0;
+    state.texture_size[1] = 0;
+    state.vertex_alias    = BGFX_INVALID_HANDLE;
+    state.flags           = STATE_DEFAULT;
+}
+
+u64 translate_draw_state_flags(u16 flags)
+{
+    if (flags == STATE_DEFAULT)
+    {
+        return BGFX_STATE_DEFAULT;
+    }
+
+    constexpr u32 BLEND_STATE_MASK       = STATE_BLEND_ADD | STATE_BLEND_ALPHA | STATE_BLEND_MAX | STATE_BLEND_MIN;
+    constexpr u32 BLEND_STATE_SHIFT      = 0;
+
+    constexpr u32 CULL_STATE_MASK        = STATE_CULL_CCW | STATE_CULL_CW;
+    constexpr u32 CULL_STATE_SHIFT       = 4;
+
+    constexpr u32 DEPTH_TEST_STATE_MASK  = STATE_DEPTH_TEST_GEQUAL | STATE_DEPTH_TEST_GREATER | STATE_DEPTH_TEST_LEQUAL | STATE_DEPTH_TEST_LESS;
+    constexpr u32 DEPTH_TEST_STATE_SHIFT = 6;
+
+    constexpr u64 blend_table[] =
+    {
+        0,
+        BGFX_STATE_BLEND_ADD,
+        BGFX_STATE_BLEND_ALPHA,
+        BGFX_STATE_BLEND_LIGHTEN,
+        BGFX_STATE_BLEND_DARKEN,
+    };
+
+    constexpr u64 cull_table[] =
+    {
+        0,
+        BGFX_STATE_CULL_CCW,
+        BGFX_STATE_CULL_CW,
+    };
+
+    constexpr u64 depth_test_table[] =
+    {
+        0,
+        BGFX_STATE_DEPTH_TEST_GEQUAL,
+        BGFX_STATE_DEPTH_TEST_GREATER,
+        BGFX_STATE_DEPTH_TEST_LEQUAL,
+        BGFX_STATE_DEPTH_TEST_LESS,
+    };
+
+    // TODO : Remove the conditions from `STATE_MSAA` and onward.
+    return
+        blend_table     [(flags & BLEND_STATE_MASK     ) >> BLEND_STATE_SHIFT         ] |
+        cull_table      [(flags & CULL_STATE_MASK      ) >> CULL_STATE_SHIFT          ] |
+        depth_test_table[(flags & DEPTH_TEST_STATE_MASK) >> DEPTH_TEST_STATE_SHIFT    ] |
+        (                (flags & STATE_MSAA           ) ?  BGFX_STATE_MSAA        : 0) |
+        (                (flags & STATE_WRITE_A        ) ?  BGFX_STATE_WRITE_A     : 0) |
+        (                (flags & STATE_WRITE_RGB      ) ?  BGFX_STATE_WRITE_RGB   : 0) |
+        (                (flags & STATE_WRITE_Z        ) ?  BGFX_STATE_WRITE_Z     : 0) ;
+}
+
+void submit_mesh
+(
+    const Mesh&                              mesh,
+    const Mat4&                              transform,
+    const DrawState&                         state,
+    const Span<bgfx::TransientVertexBuffer>& transient_buffers,
+    const DefaultUniforms&                   default_uniforms,
+    bgfx::Encoder&                           encoder
+)
+{
+    constexpr u64 primitive_flags[] =
+    {
+        0, // Triangles.
+        0, // Quads (for users, triangles internally).
+        BGFX_STATE_PT_TRISTRIP,
+        BGFX_STATE_PT_LINES,
+        BGFX_STATE_PT_LINESTRIP,
+        BGFX_STATE_PT_POINTS,
+    };
+
+    const u16  type        = mesh_type(mesh.flags);
+    const bool has_attribs = mesh.flags & VERTEX_ATTRIB_MASK;
+
+    if (type == MESH_STATIC)
+    {
+                         encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                         encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
+    }
+    else if (type == MESH_TRANSIENT)
+    {
+                         encoder.setVertexBuffer(0, &transient_buffers[mesh.positions.transient_index], state.element_start, state.element_count);
+        if (has_attribs) encoder.setVertexBuffer(1, &transient_buffers[mesh.attribs  .transient_index], state.element_start, state.element_count, state.vertex_alias);
+    }
+    else if (type == MESH_DYNAMIC)
+    {
+                         encoder.setVertexBuffer(0, mesh.positions.static_buffer);
+        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+                         encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
+    }
+
+    if (bgfx::isValid(state.texture) && bgfx::isValid(state.sampler))
+    {
+        encoder.setTexture(0, state.sampler, state.texture);
+    }
+
+    if (mesh.flags & VERTEX_PIXCOORD)
+    {
+        const f32 data[] =
+        {
+            f32(state.texture_size[0]),
+            f32(state.texture_size[1]),
+            f32(state.texture_size[0]) ? 1.0f / f32(state.texture_size[0]) : 0.0f,
+            f32(state.texture_size[1]) ? 1.0f / f32(state.texture_size[1]) : 0.0f
+        };
+
+        encoder.setUniform(default_uniforms[u32(DefaultUniform::TEXTURE_SIZE)], data);
+    }
+
+    encoder.setTransform(&transform);
+
+    u64 flags = translate_draw_state_flags(state.flags);
+
+    flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
+
+    encoder.setState(flags);
+
+    ASSERT(bgfx::isValid(state.program), "Invalid draw state program.");
+    encoder.submit(state.pass, state.program);
 }
 
 
