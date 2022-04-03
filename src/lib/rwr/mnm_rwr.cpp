@@ -670,8 +670,8 @@ struct BackedStackAllocator : StackAllocator
 template <typename T>
 struct Span
 {
-    T*  data;
-    u32 size;
+    T*  data = nullptr;
+    u32 size = 0;
 
     const T& operator[](u32 i) const
     {
@@ -710,7 +710,7 @@ struct FixedArray
 
     static constexpr u32 size = Size;
 
-    T data[Size];
+    T data[Size] = {};
 
     const T& operator[](u32 i) const
     {
@@ -751,10 +751,10 @@ struct DynamicArray
         "`DynamicArray` only supports POD-like types."
     );
 
-    T*              data;
-    u32             size;
-    u32             capacity;
-    bx::AllocatorI* allocator;
+    T*         data      = nullptr;
+    u32        size      = 0;
+    u32        capacity  = 0;
+    Allocator* allocator = nullptr;
 
     const T& operator[](u32 i) const
     {
@@ -945,13 +945,13 @@ TEST_CASE("Dynamic Array")
 template <typename T, u32 Size>
 struct FixedStack
 {
-    T                   top;
-    u32                 size;
+    T                   top  = {};
+    u32                 size = 0;
     FixedArray<T, Size> data;
 };
 
 template <typename T, u32 Size>
-void reset(FixedStack<T, Size>& stack, const T& value = T())
+void init(FixedStack<T, Size>& stack, const T& value = T())
 {
     stack.top  = value;
     stack.size = 0;
@@ -998,12 +998,12 @@ void multiply_top(MatrixStack<Size>& stack, const Mat4& matrix)
 
 struct WindowInfo
 {
-    Vec2i framebuffer_size;
-    Vec2  invariant_size;
-    Vec2  position_scale;
-    Vec2  display_scale;
-    f32   display_aspect;
-    bool  display_scale_changed;
+    Vec2i framebuffer_size      = {};
+    Vec2  invariant_size        = {};
+    Vec2  position_scale        = {};
+    Vec2  display_scale         = {};
+    f32   display_aspect        = 0.0f;
+    bool  display_scale_changed = false;
 };
 
 void update_window_info(GLFWwindow* window, WindowInfo& info)
@@ -1238,10 +1238,10 @@ struct MouseInput : InputCache<MouseInput, GLFW_MOUSE_BUTTON_LAST>
 {
     static constexpr f32 REPEATED_CLICK_DELAY = 0.5f; // NOTE : Could be configurable.
 
-    Vec2                       current;
-    Vec2                       previous;
-    Vec2                       delta;
-    Vec2                       scroll;
+    Vec2                       current  = {};
+    Vec2                       previous = {};
+    Vec2                       delta    = {};
+    Vec2                       scroll   = {};
     FixedArray<u8, INPUT_SIZE> clicks;
 
     u8 repeated_click_count(u16 input) const
@@ -1309,7 +1309,7 @@ struct MouseInput : InputCache<MouseInput, GLFW_MOUSE_BUTTON_LAST>
 template <typename EnumT, typename ValueT>
 struct BgfxReducedEnum
 {
-    ValueT value;
+    ValueT value = EnumT::Count;
 
     static_assert(
         std::is_unsigned<ValueT>::value,
@@ -1504,17 +1504,17 @@ using TexcoordStoreFunc = void (*)(VertexAttribState&, f32, f32);
 
 BX_ALIGN_DECL_16(struct) VertexAttribState
 {
-    u8                data[32];
-    u32               size;
+    u8                data[32]        = {};
+    u32               size            = 0;
 
-    PackedColor*      packed_color;
-    PackedNormal*     packed_normal;
-    PackedTexcoord*   packed_texcoord;
-    FullTexcoord*     full_texcoord;
+    PackedColor*      packed_color    = nullptr;
+    PackedNormal*     packed_normal   = nullptr;
+    PackedTexcoord*   packed_texcoord = nullptr;
+    FullTexcoord*     full_texcoord   = nullptr;
 
-    ColorStoreFunc    store_color;
-    NormalStoreFunc   store_normal;
-    TexcoordStoreFunc store_texcoord;
+    ColorStoreFunc    store_color     = nullptr;
+    NormalStoreFunc   store_normal    = nullptr;
+    TexcoordStoreFunc store_texcoord  = nullptr;
 };
 
 void store_packed_color(VertexAttribState& state, u32 rgba)
@@ -1631,10 +1631,10 @@ TEST_CASE("Vertex Attribute State")
 
 struct RecordInfo
 {
-    u32  flags;
-    u32  extra_data;
-    u16  id;
-    bool is_transform;
+    u32  flags        = 0;
+    u32  extra_data   = 0;
+    u16  id           = 0;
+    bool is_transform = false;
 };
 
 
@@ -1658,9 +1658,9 @@ struct MeshRecorder
     DynamicArray<u8>  attrib_buffer;
     DynamicArray<u8>  position_buffer;
     VertexAttribState attrib_state;
-    VertexStoreFunc   store_vertex;
-    u32               vertex_count;
-    u32               invocation_count;
+    VertexStoreFunc   store_vertex     = nullptr;
+    u32               vertex_count     = 0;
+    u32               invocation_count = 0;
 };
 
 void init(MeshRecorder& recorder, Allocator* allocator)
@@ -1938,12 +1938,12 @@ bool create_transient_vertex_buffer
 
 struct Mesh
 {
-    u32               element_count;
-    u32               extra_data;
-    u32               flags;
-    VertexBufferUnion positions;
-    VertexBufferUnion attribs;
-    IndexBufferUnion  indices;
+    u32               element_count = 0;
+    u32               extra_data    = 0;
+    u32               flags         = 0;
+    VertexBufferUnion positions     = { bgfx::kInvalidHandle };
+    VertexBufferUnion attribs       = { bgfx::kInvalidHandle };
+    IndexBufferUnion  indices       = { bgfx::kInvalidHandle };
 };
 
 struct MeshCache
@@ -1952,8 +1952,8 @@ struct MeshCache
     FixedArray<Mesh, MAX_MESHES>                                   meshes;
     FixedArray<u16, MAX_TRANSIENT_BUFFERS>                         transient_indices;
     FixedArray<bgfx::TransientVertexBuffer, MAX_TRANSIENT_BUFFERS> transient_buffers;
-    u32                                                            transient_buffer_count;
-    u32                                                            transient_memory_exhausted;
+    u32                                                            transient_buffer_count     = 0;
+    u32                                                            transient_memory_exhausted = 0;
 };
 
 u16 mesh_type(u32 flags)
@@ -1973,16 +1973,6 @@ bool is_valid(const Mesh& mesh)
 {
     // TODO : A more complete check might be in order (at least an assertion).
     return mesh.element_count != 0;
-}
-
-void init(Mesh& mesh)
-{
-    mesh.element_count       = 0;
-    mesh.extra_data          = 0;
-    mesh.flags               = 0;
-    mesh.positions.raw_index = bgfx::kInvalidHandle;
-    mesh.attribs  .raw_index = bgfx::kInvalidHandle;
-    mesh.indices  .raw_index = bgfx::kInvalidHandle;
 }
 
 void destroy(Mesh& mesh)
@@ -2136,7 +2126,6 @@ void add_mesh
     }
 
     Mesh mesh;
-    init(mesh);
 
     mesh.element_count = recorder.vertex_count;
     mesh.extra_data    = info.extra_data;
@@ -2215,14 +2204,6 @@ void add_mesh
     }
 }
 
-void init(MeshCache& cache)
-{
-    for (u32 i = 0; i < cache.meshes.size; i++)
-    {
-        init(cache.meshes[i]);
-    }
-}
-
 void deinit(MeshCache& cache)
 {
     for (u32 i = 0; i < cache.meshes.size; i++)
@@ -2249,25 +2230,14 @@ using BgfxBackbufferRatio = BgfxReducedEnum<bgfx::BackbufferRatio, u8>;
 
 struct Texture
 {
-    bgfx::TextureHandle handle;
-    u16                 width;
-    u16                 height;
-    BgfxTextureFormat   format;
-    BgfxBackbufferRatio ratio;
-    bgfx::TextureHandle blit_handle;
-    u32                 read_frame;
+    bgfx::TextureHandle handle      = BGFX_INVALID_HANDLE;
+    u16                 width       = 0;
+    u16                 height      = 0;
+    BgfxTextureFormat   format      = { bgfx::TextureFormat  ::Count };
+    BgfxBackbufferRatio ratio       = { bgfx::BackbufferRatio::Count };
+    bgfx::TextureHandle blit_handle = BGFX_INVALID_HANDLE;
+    u32                 read_frame  = U32_MAX;
 };
-
-void init(Texture& texture)
-{
-    texture.handle      = BGFX_INVALID_HANDLE;
-    texture.width       = 0;
-    texture.height      = 0;
-    texture.format      = bgfx::TextureFormat  ::Count;
-    texture.ratio       = bgfx::BackbufferRatio::Count;
-    texture.blit_handle = BGFX_INVALID_HANDLE;
-    texture.read_frame  = U32_MAX;
-}
 
 void destroy(Texture& texture)
 {
@@ -2290,7 +2260,7 @@ void destroy(Texture& texture)
 struct InstanceRecorder
 {
     DynamicArray<u8> buffer;
-    u16              instance_size;
+    u16              instance_size = 0;
 };
 
 void init(InstanceRecorder& recorder, Allocator* allocator)
@@ -2345,7 +2315,7 @@ u32 instance_count(const InstanceRecorder& recorder)
 struct InstanceData
 {
     bgfx::InstanceDataBuffer buffer;
-    bool                     is_transform;
+    bool                     is_transform = false;
 };
 
 struct InstanceCache
@@ -2486,34 +2456,18 @@ static_assert(
 
 struct DrawState
 {
-    const InstanceData*      instances;
-    u32                      element_start;
-    u32                      element_count;
-    bgfx::ViewId             pass;
-    bgfx::FrameBufferHandle  framebuffer;
-    bgfx::ProgramHandle      program;
-    bgfx::TextureHandle      texture;
-    bgfx::UniformHandle      sampler;
-    u16                      texture_size[2];
-    bgfx::VertexLayoutHandle vertex_alias;
-    u16                      flags;
+    const InstanceData*      instances       = nullptr;
+    u32                      element_start   = 0;
+    u32                      element_count   = UINT32_MAX;
+    bgfx::ViewId             pass            = UINT16_MAX;
+    bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle      texture         = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle      sampler         = BGFX_INVALID_HANDLE;
+    u16                      texture_size[2] = {};
+    bgfx::VertexLayoutHandle vertex_alias    = BGFX_INVALID_HANDLE;
+    u16                      flags           = STATE_DEFAULT;
 };
-
-void init(DrawState& state)
-{
-    state.instances       = nullptr;
-    state.element_start   = 0;
-    state.element_count   = UINT32_MAX;
-    state.pass            = UINT16_MAX;
-    state.framebuffer     = BGFX_INVALID_HANDLE;
-    state.program         = BGFX_INVALID_HANDLE;
-    state.texture         = BGFX_INVALID_HANDLE;
-    state.sampler         = BGFX_INVALID_HANDLE;
-    state.texture_size[0] = 0;
-    state.texture_size[1] = 0;
-    state.vertex_alias    = BGFX_INVALID_HANDLE;
-    state.flags           = STATE_DEFAULT;
-}
 
 u64 translate_draw_state_flags(u16 flags)
 {
