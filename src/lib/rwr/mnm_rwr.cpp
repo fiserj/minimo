@@ -33,6 +33,18 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
 BX_PRAGMA_DIAGNOSTIC_POP();
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4820);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5039);
+
+#define GLEQ_IMPLEMENTATION
+#define GLEQ_STATIC
+
+#include <gleq.h>                 // gleq*
+
+BX_PRAGMA_DIAGNOSTIC_POP();
+
+BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wnested-anon-types");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4505);
@@ -2590,6 +2602,142 @@ void submit_mesh
 
     ASSERT(bgfx::isValid(state.program), "Invalid draw state program.");
     encoder.submit(state.pass, state.program);
+}
+
+
+// -----------------------------------------------------------------------------
+// PLATFORM HELPERS
+// -----------------------------------------------------------------------------
+
+} // unnamed namespace
+
+// Compiled separately mainly due to the name clash of `normal` function with
+// an enum from MacTypes.h.
+extern bgfx::PlatformData create_platform_data
+(
+    GLFWwindow*              window,
+    bgfx::RendererType::Enum renderer
+);
+
+namespace
+{
+
+
+// -----------------------------------------------------------------------------
+// CONTEXTS
+// -----------------------------------------------------------------------------
+
+struct GlobalContext
+{
+    KeyboardInput   keyboard;
+    MouseInput      mouse;
+
+    MeshCache       mesh_cache;
+
+    GLFWcursor*     window_cursors[6] = {};
+    GLFWwindow*     window_handle     = nullptr;
+    WindowInfo      window_info;
+
+    u32             active_cursor     = 0;
+    u32             frame_number      = 0;
+    u32             bgfx_frame_number = 0;
+
+    u32             transient_memory  = 32_MB;
+    u32             vsync_on          = 0;
+    bool            reset_back_buffer = true;
+};
+
+struct ThreadLocalContext
+{
+    MeshRecorder    mesh_recorder;
+
+    DrawState       draw_state;
+
+    MatrixStack<16> matrix_stack;
+};
+
+
+// -----------------------------------------------------------------------------
+// GLOBAL RUNTIME VARIABLES
+// -----------------------------------------------------------------------------
+
+Mutex                            g_mutex;
+
+GlobalContext*                   g_ctx = nullptr;
+
+thread_local ThreadLocalContext* t_ctx = nullptr;
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
+// -----------------------------------------------------------------------------
+
+int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
+{
+    MutexScope lock(g_mutex);
+
+    if (init)
+    {
+        (*init)();
+    }
+
+    if (glfwInit() != GLFW_TRUE)
+    {
+        return 1;
+    }
+
+    defer(glfwTerminate());
+
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE); // Note that this will be ignored when `glfwSetWindowSize` is specified.
+
+    GlobalContext ctx;
+    g_ctx = &ctx;
+
+    g_ctx->window_handle = glfwCreateWindow(
+        DEFAULT_WINDOW_WIDTH,
+        DEFAULT_WINDOW_HEIGHT,
+        "MiNiMo",
+        nullptr,
+        nullptr
+    );
+
+    if (!g_ctx->window_handle)
+    {
+        return 2;
+    }
+
+    defer(glfwDestroyWindow(g_ctx->window_handle));
+
+    update_window_info(g_ctx->window_handle, g_ctx->window_info);
+
+    gleqInit();
+    gleqTrackWindow(g_ctx->window_handle);
+
+    {
+        // TODO : Set Limits on number of encoders and transient memory.
+        // TODO : Init resolution is needed for any backbuffer-size-related
+        //        object creations in `setup` function. We should probably just
+        //        call the code in the block exectured when
+        //        `g_ctx->reset_back_buffer` is true.
+        bgfx::Init init;
+        init.platformData           = create_platform_data (g_ctx->window_handle, init.type);
+        init.resolution.width       = u32(g_ctx->window_info.framebuffer_size.X);
+        init.resolution.height      = u32(g_ctx->window_info.framebuffer_size.Y);
+        init.limits.transientVbSize = u32(g_ctx->transient_memory);
+
+        if (!bgfx::init(init))
+        {
+            return 3;
+        }
+    }
+
+    defer(bgfx::shutdown());
+
+    // ...
+
+    return 0;
 }
 
 
