@@ -1302,7 +1302,7 @@ struct VertexLayoutCache
     FixedArray<bgfx::VertexLayoutHandle, 128> handles;
 };
 
-struct VertexLayoutAttrib
+struct VertexLayoutAttribInfo
 {
     u32            flag;
     BgfxAttrib     type;
@@ -1313,7 +1313,7 @@ struct VertexLayoutAttrib
     bool           packed;
 };
 
-const VertexLayoutAttrib s_vertex_layout_attribs[] =
+const VertexLayoutAttribInfo s_vertex_layout_attribs[] =
 {
     { VERTEX_POSITION    , {bgfx::Attrib::Position }, {bgfx::AttribType::Float}, 3, 0, false, false },
     { VERTEX_COLOR       , {bgfx::Attrib::Color0   }, {bgfx::AttribType::Uint8}, 4, 4, true , false },
@@ -1346,7 +1346,7 @@ void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 
     for (u32 i = 0; i < BX_COUNTOF(s_vertex_layout_attribs); i++)
     {
-        const VertexLayoutAttrib& attrib = s_vertex_layout_attribs[i];
+        const VertexLayoutAttribInfo& attrib = s_vertex_layout_attribs[i];
 
         if ((attribs & attrib.flag) == attrib.flag)
         {
