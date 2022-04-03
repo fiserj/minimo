@@ -2338,6 +2338,79 @@ void add_instances
     bx::memCopy(instance_data.buffer.data, recorder.buffer.data,
         recorder.buffer.size
     );
+}
+
+// -----------------------------------------------------------------------------
+// UNIFORMS & UNIFORMS CACHING
+// -----------------------------------------------------------------------------
+
+enum struct DefaultUniform : u32
+{
+    COLOR_TEXTURE_RED,
+    COLOR_TEXTURE_RGBA,
+    TEXTURE_SIZE,
+};
+
+struct DefaultUniformInfo
+{
+    const char*             name;
+    bgfx::UniformType::Enum type;
+    DefaultUniform          index;
+};
+
+const DefaultUniformInfo s_default_uniforms[] =
+{
+    { "s_tex_color_r"     , bgfx::UniformType::Sampler, DefaultUniform::COLOR_TEXTURE_RED  },
+    { "color_texture_rgba", bgfx::UniformType::Sampler, DefaultUniform::COLOR_TEXTURE_RGBA },
+    { "u_tex_size"        , bgfx::UniformType::Vec4   , DefaultUniform::TEXTURE_SIZE       },
+};
+
+
+using DefaultUniforms = FixedArray<bgfx::UniformHandle, BX_COUNTOF(s_default_uniforms)>;
+
+void init(DefaultUniforms& uniforms)
+{
+    for (u32 i = 0; i < uniforms.size; i++)
+    {
+        const u32 index = u32(s_default_uniforms[i].index);
+
+        uniforms[index] = bgfx::createUniform(
+            s_default_uniforms[i].name,
+            s_default_uniforms[i].type
+        );
+
+        ASSERT(bgfx::isValid(uniforms[index]),
+            "Failed to create default uniform '%s'.",
+            s_default_uniforms[i].name
+        );
+    }
+}
+
+void destroy(DefaultUniforms& uniforms)
+{
+    for (u32 i = 0; i < uniforms.size; i++)
+    {
+        destroy_if_valid(uniforms[i]);
+    }
+}
+
+bgfx::UniformHandle default_sampler
+(
+    const DefaultUniforms&    uniforms,
+    bgfx::TextureFormat::Enum format
+)
+{
+    switch (format)
+    {
+    case bgfx::TextureFormat::RGBA8:
+        return uniforms[u32(DefaultUniform::COLOR_TEXTURE_RGBA)];
+    case bgfx::TextureFormat::R8:
+        return uniforms[u32(DefaultUniform::COLOR_TEXTURE_RED)];
+    default:
+        return BGFX_INVALID_HANDLE;
+    }
+}
+
 
 }
 
