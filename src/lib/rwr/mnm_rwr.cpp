@@ -614,6 +614,56 @@ TEST_CASE("Stack Allocator")
 
 
 // -----------------------------------------------------------------------------
+// BACKED STACK ALLOCATOR
+// -----------------------------------------------------------------------------
+
+struct BackedStackAllocator : StackAllocator
+{
+    CrtAllocator allocator;
+
+    virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
+    {
+        void* memory = nullptr;
+
+        if (!size)
+        {
+            if (owns(ptr))
+            {
+                memory = StackAllocator::realloc(ptr, 0, align, file, line);
+            }
+            else
+            {
+                memory = allocator.realloc(ptr, 0, align, file, line);
+            }
+        }
+        else if (!ptr)
+        {
+            memory = StackAllocator::realloc(nullptr, size, align, file, line);
+
+            if (!memory)
+            {
+                memory = allocator.realloc(nullptr, size, align, file, line);
+            }
+        }
+        else
+        {
+            if (owns(ptr))
+            {
+                memory = StackAllocator::realloc(ptr, size, align, file, line);
+            }
+
+            if (!memory)
+            {
+                memory = allocator.realloc(ptr, size, align, file, line);
+            }
+        }
+
+        return memory;
+    }
+};
+
+
+// -----------------------------------------------------------------------------
 // SPAN
 // -----------------------------------------------------------------------------
 
