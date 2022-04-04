@@ -2406,7 +2406,7 @@ u32 instance_count(const InstanceRecorder& recorder)
 
 struct InstanceData
 {
-    bgfx::InstanceDataBuffer buffer;
+    bgfx::InstanceDataBuffer buffer       = { nullptr, 0, 0, 0, 0, BGFX_INVALID_HANDLE };
     bool                     is_transform = false;
 };
 
