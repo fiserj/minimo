@@ -1111,6 +1111,54 @@ void resize_window(GLFWwindow* window, i32 width, i32 height, i32 flags)
 
 
 // -----------------------------------------------------------------------------
+// WINDOW CURSORS
+// -----------------------------------------------------------------------------
+
+struct WindowCursorDesc
+{
+    u32 cursor;
+    int shape;
+};
+
+const WindowCursorDesc s_window_cursor_descs[] =
+{
+    { CURSOR_ARROW    , GLFW_ARROW_CURSOR     },
+    { CURSOR_CROSSHAIR, GLFW_CROSSHAIR_CURSOR },
+    { CURSOR_H_RESIZE , GLFW_HRESIZE_CURSOR   },
+    { CURSOR_HAND     , GLFW_HAND_CURSOR      },
+    { CURSOR_I_BEAM   , GLFW_IBEAM_CURSOR     },
+    { CURSOR_V_RESIZE , GLFW_VRESIZE_CURSOR   },
+};
+
+using WindowCursors = FixedArray<GLFWcursor*, BX_COUNTOF(s_window_cursor_descs)>;
+
+void init(WindowCursors& cursors)
+{
+    for (u32 i = 0; i < cursors.size; i++)
+    {
+        ASSERT(s_window_cursor_descs[i].cursor == i,
+            "Cursor %i is placed on different index %i.",
+            s_window_cursor_descs[i].cursor, i
+        );
+
+        cursors[s_window_cursor_descs[i].cursor] = glfwCreateStandardCursor(
+            s_window_cursor_descs[i].shape
+        );
+    }
+}
+
+void deinit(WindowCursors& cursors)
+{
+    for (u32 i = 0; i < cursors.size; i++)
+    {
+        glfwDestroyCursor(cursors[i]);
+    }
+
+    cursors = {};
+}
+
+
+// -----------------------------------------------------------------------------
 // INPUT
 // -----------------------------------------------------------------------------
 
@@ -2634,9 +2682,9 @@ struct GlobalContext
 
     MeshCache       mesh_cache;
 
-    GLFWcursor*     window_cursors[6] = {};
     GLFWwindow*     window_handle     = nullptr;
     WindowInfo      window_info;
+    WindowCursors   window_cursors;
 
     u32             active_cursor     = 0;
     u32             frame_number      = 0;
@@ -2734,6 +2782,9 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
     }
 
     defer(bgfx::shutdown());
+
+    init(g_ctx->window_cursors);
+    defer(deinit(g_ctx->window_cursors));
 
     // ...
 
