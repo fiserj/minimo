@@ -6,15 +6,15 @@ set(SOURCE_FILES
     mnm_rwr_test.cpp
 )
 
-# if(APPLE)
-#     list(APPEND SOURCE_FILES
-#         mnm_platform.mm
-#     )
-# else()
-#     list(APPEND SOURCE_FILES
-#         mnm_platform.cpp
-#     )
-# endif()
+if(APPLE)
+    list(APPEND SOURCE_FILES
+        ../mnm_platform.mm
+    )
+else()
+    list(APPEND SOURCE_FILES
+        ../mnm_platform.cpp
+    )
+endif()
 
 add_executable(${NAME}
     ${SOURCE_FILES}
