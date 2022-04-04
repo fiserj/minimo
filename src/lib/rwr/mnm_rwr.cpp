@@ -2498,7 +2498,7 @@ void init(DefaultUniforms& uniforms)
     }
 }
 
-void destroy(DefaultUniforms& uniforms)
+void deinit(DefaultUniforms& uniforms)
 {
     for (u32 i = 0; i < uniforms.size; i++)
     {
@@ -2709,22 +2709,28 @@ namespace
 
 struct GlobalContext
 {
-    KeyboardInput   keyboard;
-    MouseInput      mouse;
+    KeyboardInput     keyboard;
+    MouseInput        mouse;
 
-    MeshCache       mesh_cache;
+    MeshCache         mesh_cache;
+    InstanceCache     instance_cache;
+    VertexLayoutCache vertex_layout_cache;
+    DefaultUniforms   default_uniforms;
 
-    GLFWwindow*     window_handle     = nullptr;
-    WindowInfo      window_info;
-    WindowCursors   window_cursors;
+    GLFWwindow*       window_handle     = nullptr;
+    WindowInfo        window_info;
+    WindowCursors     window_cursors;
 
-    u32             active_cursor     = 0;
-    u32             frame_number      = 0;
-    u32             bgfx_frame_number = 0;
+    Timer             total_time;
+    Timer             frame_time;
 
-    u32             transient_memory  = 32_MB;
-    u32             vsync_on          = 0;
-    bool            reset_back_buffer = true;
+    u32               active_cursor     = 0;
+    u32               frame_number      = 0;
+    u32               bgfx_frame_number = 0;
+
+    u32               transient_memory  = 32_MB;
+    u32               vsync_on          = 0;
+    bool              reset_back_buffer = true;
 };
 
 struct ThreadLocalContext
@@ -2802,10 +2808,10 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
         //        call the code in the block exectured when
         //        `g_ctx->reset_back_buffer` is true.
         bgfx::Init init;
-        init.platformData           = create_platform_data (g_ctx->window_handle, init.type);
+        init.platformData           = create_platform_data(g_ctx->window_handle, init.type);
         init.resolution.width       = u32(g_ctx->window_info.framebuffer_size.X);
         init.resolution.height      = u32(g_ctx->window_info.framebuffer_size.Y);
-        init.limits.transientVbSize = u32(g_ctx->transient_memory);
+        init.limits.transientVbSize = g_ctx->transient_memory;
 
         if (!bgfx::init(init))
         {
@@ -2817,6 +2823,56 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     init(g_ctx->window_cursors);
     defer(deinit(g_ctx->window_cursors));
+
+    // TODO : Setup task scheduler threads and init thread-local-context data:
+    //        * memory allocators
+    //        * recorders (mesh, ...)
+
+    defer(deinit(g_ctx->mesh_cache)); // NOTE : No init needed.
+
+    init(g_ctx->vertex_layout_cache);
+    defer(deinit(g_ctx->vertex_layout_cache));
+
+    init(g_ctx->default_uniforms);
+    defer(deinit(g_ctx->default_uniforms));
+
+    if (setup)
+    {
+        (*setup)();
+    }
+
+    // ...
+
+    tic(g_ctx->total_time);
+    tic(g_ctx->frame_time);
+
+    while (!glfwWindowShouldClose(g_ctx->window_handle))
+    {
+        g_ctx->keyboard.update_states();
+        g_ctx->mouse   .update_states();
+
+        toc(g_ctx->total_time);
+        toc(g_ctx->frame_time, true);
+
+        glfwPollEvents();
+
+        // ...
+
+        if (draw)
+        {
+            (*draw)();
+        }
+
+        // ...
+
+        g_ctx->bgfx_frame_number = bgfx::frame();
+        bx::atomicFetchAndAdd(&g_ctx->frame_number, 1u);
+    }
+
+    if (cleanup)
+    {
+        (*cleanup)();
+    }
 
     // ...
 
