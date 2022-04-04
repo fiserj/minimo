@@ -12,6 +12,7 @@
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>             // Mutex, MutexScope
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
+#include <bx/timer.h>             // getHPCounter, getHPFrequency
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
@@ -1001,6 +1002,37 @@ template <u32 Size>
 void multiply_top(MatrixStack<Size>& stack, const Mat4& matrix)
 {
     stack.top = matrix * stack.top;
+}
+
+
+// -----------------------------------------------------------------------------
+// TIME MEASUREMENT
+// -----------------------------------------------------------------------------
+
+struct Timer 
+{
+    i64 counter   = 0;
+    f64 elapsed   = 0;
+    f64 frequency = f64(bx::getHPFrequency());
+};
+
+void tic(Timer& timer)
+{
+    timer.counter = bx::getHPCounter();
+}
+
+f64 toc(Timer& timer, bool restart = false)
+{
+    const i64 now = bx::getHPCounter();
+
+    timer.elapsed = (now - timer.counter) / timer.frequency;
+
+    if (restart)
+    {
+        timer.counter = now;
+    }
+
+    return timer.elapsed;
 }
 
 
