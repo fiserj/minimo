@@ -2720,13 +2720,13 @@ thread_local ThreadLocalContext* t_ctx = nullptr;
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
 // -----------------------------------------------------------------------------
 
-int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
+int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 {
     MutexScope lock(g_mutex);
 
-    if (init)
+    if (init_)
     {
-        (*init)();
+        (*init_)();
     }
 
     if (glfwInit() != GLFW_TRUE)
