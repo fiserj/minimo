@@ -22,6 +22,10 @@ add_executable(${NAME}
 
 target_include_directories(${NAME} PUBLIC
     ../../../include
+
+    # Fix for not building the same shaders twice.
+    ..
+    ../../../build/$<CONFIG>/shaders
 )
 
 target_link_libraries(${NAME} PRIVATE

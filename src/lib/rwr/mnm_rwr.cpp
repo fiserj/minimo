@@ -12,6 +12,7 @@
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>             // Mutex, MutexScope
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
+#include <bx/string.h>            // strCat, strCopy
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
@@ -65,6 +66,8 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 #include <meshoptimizer.h>         // meshopt_*
 
 BX_PRAGMA_DIAGNOSTIC_POP();
+
+#include <mnm_shaders.h>           // *_fs, *_vs
 
 
 namespace mnm
@@ -2525,6 +2528,161 @@ bgfx::UniformHandle default_sampler
 
 
 // -----------------------------------------------------------------------------
+// DEFAULT PROGRAMS
+// -----------------------------------------------------------------------------
+
+const bgfx::EmbeddedShader s_default_shaders[] =
+{
+    BGFX_EMBEDDED_SHADER(position_fs),
+    BGFX_EMBEDDED_SHADER(position_vs),
+
+    BGFX_EMBEDDED_SHADER(position_color_fs),
+    BGFX_EMBEDDED_SHADER(position_color_vs),
+
+    BGFX_EMBEDDED_SHADER(position_color_normal_fs),
+    BGFX_EMBEDDED_SHADER(position_color_normal_vs),
+
+    BGFX_EMBEDDED_SHADER(position_color_texcoord_fs),
+    BGFX_EMBEDDED_SHADER(position_color_texcoord_vs),
+
+    BGFX_EMBEDDED_SHADER(position_normal_fs),
+    BGFX_EMBEDDED_SHADER(position_normal_vs),
+
+    BGFX_EMBEDDED_SHADER(position_texcoord_fs),
+    BGFX_EMBEDDED_SHADER(position_texcoord_vs),
+
+    BGFX_EMBEDDED_SHADER(position_color_r_texcoord_fs),
+    BGFX_EMBEDDED_SHADER(position_color_r_pixcoord_fs),
+
+    BGFX_EMBEDDED_SHADER(instancing_position_color_vs),
+};
+
+struct DefaultProgramInfo
+{
+    u32         attribs;
+    const char* vs_name;
+    const char* fs_name = nullptr;
+};
+
+const DefaultProgramInfo s_default_program_info[] =
+{
+    {
+        VERTEX_POSITION, // Position only. It's assumed everywhere else.
+        "position"
+    },
+    {
+        VERTEX_COLOR,
+        "position_color"
+    },
+    {
+        VERTEX_COLOR | VERTEX_NORMAL,
+        "position_color_normal"
+    },
+    {
+        VERTEX_COLOR | VERTEX_TEXCOORD,
+        "position_color_texcoord"
+    },
+    {
+        VERTEX_NORMAL,
+        "position_normal"
+    },
+    {
+        VERTEX_TEXCOORD,
+        "position_texcoord"
+    },
+    {
+        VERTEX_COLOR | INSTANCING_SUPPORTED,
+        "instancing_position_color",
+        "position_color"
+    },
+    {
+        VERTEX_COLOR | VERTEX_TEXCOORD | SAMPLER_COLOR_R,
+        "position_color_texcoord",
+        "position_color_r_texcoord"
+    },
+    {
+        VERTEX_COLOR | VERTEX_TEXCOORD | VERTEX_PIXCOORD | SAMPLER_COLOR_R,
+        "position_color_texcoord",
+        "position_color_r_pixcoord"
+    },
+};
+
+using DefaultPrograms = FixedArray<bgfx::ProgramHandle, 64>;
+
+constexpr u32 default_program_index(u32 attribs)
+{
+    static_assert(
+        VERTEX_ATTRIB_MASK   >> VERTEX_ATTRIB_SHIFT == 0b000111 &&
+        INSTANCING_SUPPORTED >> 17                  == 0b001000 &&
+        SAMPLER_COLOR_R      >> 17                  == 0b010000 &&
+        VERTEX_PIXCOORD      >> 18                  == 0b100000,
+        "Invalid index assumptions in default_program_index`."
+    );
+
+    return
+        ((attribs & VERTEX_ATTRIB_MASK  ) >> VERTEX_ATTRIB_SHIFT) | // Bits 0..2.
+        ((attribs & INSTANCING_SUPPORTED) >> 17                 ) | // Bit 3.
+        ((attribs & SAMPLER_COLOR_R     ) >> 17                 ) | // Bit 4.
+        ((attribs & VERTEX_PIXCOORD     ) >> 18                 ) ; // Bit 5.
+}
+
+void init(DefaultPrograms& programs, bgfx::RendererType::Enum renderer)
+{
+    fill(programs, BGFX_INVALID_HANDLE);
+
+    char vs_name[32];
+    char fs_name[32];
+
+    for (u32 i = 0; i < BX_COUNTOF(s_default_program_info); i++)
+    {
+        const DefaultProgramInfo& info = s_default_program_info[i];
+
+        bx::strCopy(vs_name, sizeof(vs_name), info.vs_name);
+        bx::strCat (vs_name, sizeof(vs_name), "_vs");
+
+        bx::strCopy(fs_name, sizeof(fs_name), info.fs_name ? info.fs_name : info.vs_name);
+        bx::strCat (fs_name, sizeof(fs_name), "_fs");
+
+        const bgfx::ShaderHandle vs = bgfx::createEmbeddedShader(
+            s_default_shaders, renderer, vs_name
+        );
+        ASSERT(
+            bgfx::isValid(vs),
+            "Invalid default vertex shader '%s'.",
+            vs_name
+        );
+
+        const bgfx::ShaderHandle fs = bgfx::createEmbeddedShader(
+            s_default_shaders, renderer, fs_name
+        );
+        ASSERT(
+            bgfx::isValid(fs),
+            "Invalid default fragment shader '%s'.",
+            fs_name
+        );
+
+        const bgfx::ProgramHandle program = bgfx::createProgram(vs, fs, true);
+        ASSERT(
+            bgfx::isValid(program),
+            "Invalid default program with shaders '%s' and '%s'.",
+            vs_name, fs_name
+        );
+
+        const u32 index = default_program_index(info.attribs);
+        programs[index] = program;
+    }
+}
+
+void deinit(DefaultPrograms& programs)
+{
+    for (u32 i = 0; i < programs.size; i++)
+    {
+        destroy_if_valid(programs[i]);
+    }
+}
+
+
+// -----------------------------------------------------------------------------
 // DRAW STATE & SUBMISSION
 // -----------------------------------------------------------------------------
 
@@ -2716,6 +2874,7 @@ struct GlobalContext
     InstanceCache     instance_cache;
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
+    DefaultPrograms   default_programs;
 
     GLFWwindow*       window_handle     = nullptr;
     WindowInfo        window_info;
@@ -2835,6 +2994,9 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     init(g_ctx->default_uniforms);
     defer(deinit(g_ctx->default_uniforms));
+
+    init(g_ctx->default_programs);
+    defer(deinit(g_ctx->default_programs));
 
     if (setup)
     {
