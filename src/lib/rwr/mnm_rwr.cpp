@@ -2643,25 +2643,25 @@ void init(DefaultPrograms& programs, bgfx::RendererType::Enum renderer)
         bx::strCopy(fs_name, sizeof(fs_name), info.fs_name ? info.fs_name : info.vs_name);
         bx::strCat (fs_name, sizeof(fs_name), "_fs");
 
-        const bgfx::ShaderHandle vs = bgfx::createEmbeddedShader(
+        const bgfx::ShaderHandle vertex = bgfx::createEmbeddedShader(
             s_default_shaders, renderer, vs_name
         );
         ASSERT(
-            bgfx::isValid(vs),
+            bgfx::isValid(vertex),
             "Invalid default vertex shader '%s'.",
             vs_name
         );
 
-        const bgfx::ShaderHandle fs = bgfx::createEmbeddedShader(
+        const bgfx::ShaderHandle fragment = bgfx::createEmbeddedShader(
             s_default_shaders, renderer, fs_name
         );
         ASSERT(
-            bgfx::isValid(fs),
+            bgfx::isValid(fragment),
             "Invalid default fragment shader '%s'.",
             fs_name
         );
 
-        const bgfx::ProgramHandle program = bgfx::createProgram(vs, fs, true);
+        const bgfx::ProgramHandle program = bgfx::createProgram(vertex, fragment, true);
         ASSERT(
             bgfx::isValid(program),
             "Invalid default program with shaders '%s' and '%s'.",
@@ -2995,7 +2995,7 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     init(g_ctx->default_uniforms);
     defer(deinit(g_ctx->default_uniforms));
 
-    init(g_ctx->default_programs);
+    init(g_ctx->default_programs, bgfx::getRendererType());
     defer(deinit(g_ctx->default_programs));
 
     if (setup)
