@@ -25,7 +25,7 @@ target_include_directories(${NAME} PUBLIC
 
     # Fix for not building the same shaders twice.
     ..
-    ../../../build/$<CONFIG>/shaders
+    ${CMAKE_BINARY_DIR}/shaders
 )
 
 target_link_libraries(${NAME} PRIVATE
