@@ -2683,6 +2683,73 @@ void deinit(DefaultPrograms& programs)
 
 
 // -----------------------------------------------------------------------------
+// PROGRAM CACHE
+// -----------------------------------------------------------------------------
+
+struct ProgramCache
+{
+    Mutex                                         mutex;
+    FixedArray<bgfx::ProgramHandle, MAX_PROGRAMS> handles;
+};
+
+void init(ProgramCache& cache)
+{
+    fill(cache.handles, BGFX_INVALID_HANDLE);
+}
+
+void deinit(ProgramCache& cache)
+{
+    for (u32 i = 0; i < cache.handles.size; i++)
+    {
+        destroy_if_valid(cache.handles[i]);
+    }
+}
+
+void add_program
+(
+    ProgramCache& cache,
+    u16           id,
+    const void*   vs_data,
+    u32           vs_size,
+    const void*   fs_data,
+    u32           fs_size
+)
+{
+    ASSERT(
+        id < cache.handles.size,
+        "Program id %" PRIu16 " out of bounds (%" PRIu32").",
+        id, cache.handles.size
+    )
+    ASSERT(vs_data, "Invalid vertex shader blob pointer.");
+    ASSERT(vs_size, "Zero vertex shader blob size.");
+    ASSERT(fs_data, "Invalid fragment shader blob pointer.");
+    ASSERT(fs_size, "Zero fragment shader blob size.");
+
+    // TODO : Use a scratch memory / frame allocator.
+    bgfx::ShaderHandle  vertex   = bgfx::createShader(bgfx::copy(vs_data, vs_size));
+    bgfx::ShaderHandle  fragment = bgfx::createShader(bgfx::copy(fs_data, fs_size));
+    bgfx::ProgramHandle program  = bgfx::createProgram(vertex, fragment, true);
+
+    if (!bgfx::isValid(program))
+    {
+        ASSERT(false, "Custom program creation failed.");
+
+        destroy_if_valid(vertex);
+        destroy_if_valid(fragment);
+        destroy_if_valid(program);
+    }
+    else
+    {
+        MutexScope lock(cache.mutex);
+
+        destroy_if_valid(cache.handles[id]);
+
+        cache.handles[id] = program;
+    }
+}
+
+
+// -----------------------------------------------------------------------------
 // DRAW STATE & SUBMISSION
 // -----------------------------------------------------------------------------
 
@@ -2872,6 +2939,7 @@ struct GlobalContext
 
     MeshCache         mesh_cache;
     InstanceCache     instance_cache;
+    ProgramCache      program_cache;
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
     DefaultPrograms   default_programs;
@@ -2997,6 +3065,9 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     init(g_ctx->default_programs, bgfx::getRendererType());
     defer(deinit(g_ctx->default_programs));
+
+    init(g_ctx->program_cache);
+    defer(deinit(g_ctx->program_cache));
 
     if (setup)
     {
