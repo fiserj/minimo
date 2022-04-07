@@ -2750,6 +2750,105 @@ void add_program
 
 
 // -----------------------------------------------------------------------------
+// PASS & PASS CACHE
+// -----------------------------------------------------------------------------
+
+struct Pass
+{
+    enum : u8
+    {
+        DIRTY_NONE        = 0x00,
+        DIRTY_CLEAR       = 0x01,
+        DIRTY_TOUCH       = 0x02,
+        DIRTY_TRANSFORM   = 0x04,
+        DIRTY_RECT        = 0x08,
+        DIRTY_FRAMEBUFFER = 0x10,
+    };
+
+    Mat4                    view_matrix     = HMM_Mat4d(1.0f);
+    Mat4                    proj_matrix     = HMM_Mat4d(1.0f);
+
+    u16                     viewport_x      = 0;
+    u16                     viewport_y      = 0;
+    u16                     viewport_width  = SIZE_EQUAL;
+    u16                     viewport_height = SIZE_EQUAL;
+
+    bgfx::FrameBufferHandle framebuffer     = BGFX_INVALID_HANDLE;
+
+    u16                     clear_flags     = BGFX_CLEAR_NONE;
+    f32                     clear_depth     = 1.0f;
+    u32                     clear_rgba      = 0x000000ff;
+    u8                      clear_stencil   = 0;
+
+    u8                      dirty_flags     = DIRTY_CLEAR;
+};
+
+struct PassCache
+{
+    FixedArray<Pass, MAX_PASSES> passes;
+    bool                         backbuffer_size_changed = true;
+};
+
+void update_passes(PassCache& cache, bgfx::Encoder* encoder)
+{
+    for (bgfx::ViewId id = 0; id < cache.passes.size; id++)
+    {
+        Pass& pass = cache.passes[id];
+
+        if (pass.dirty_flags & Pass::DIRTY_TOUCH)
+        {
+            encoder->touch(id);
+        }
+
+        if (pass.dirty_flags & Pass::DIRTY_CLEAR)
+        {
+            bgfx::setViewClear(
+                id, pass.clear_flags, pass.clear_rgba, pass.clear_depth, 
+                pass.clear_stencil
+            );
+        }
+
+        if (pass.dirty_flags & Pass::DIRTY_TRANSFORM)
+        {
+            bgfx::setViewTransform(id, &pass.view_matrix, &pass.proj_matrix);
+        }
+
+        if ((pass.dirty_flags & Pass::DIRTY_RECT) ||
+            (cache.backbuffer_size_changed && pass.viewport_width >= SIZE_EQUAL)
+        )
+        {
+            if (pass.viewport_width >= SIZE_EQUAL)
+            {
+                bgfx::setViewRect(
+                    id, pass.viewport_x, pass.viewport_y,
+                    bgfx::BackbufferRatio::Enum(pass.viewport_width - SIZE_EQUAL)
+                );
+            }
+            else
+            {
+                bgfx::setViewRect(
+                    id, pass.viewport_x, pass.viewport_y, pass.viewport_width,
+                    pass.viewport_height
+                );
+            }
+        }
+
+        if ((pass.dirty_flags & Pass::DIRTY_FRAMEBUFFER) ||
+            cache.backbuffer_size_changed
+        )
+        {
+            // Having `BGFX_INVALID_HANDLE` here is OK.
+            bgfx::setViewFrameBuffer(id, pass.framebuffer);
+        }
+
+        pass.dirty_flags = Pass::DIRTY_NONE;
+    }
+
+    cache.backbuffer_size_changed = false;
+}
+
+
+// -----------------------------------------------------------------------------
 // DRAW STATE & SUBMISSION
 // -----------------------------------------------------------------------------
 
