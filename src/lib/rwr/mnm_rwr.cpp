@@ -123,6 +123,7 @@ constexpr u32 VERTEX_PIXCOORD        = 0x800000;
 
 constexpr u32 MAX_FONTS              = 128;
 constexpr u32 MAX_FRAMEBUFFERS       = 128;
+constexpr u32 MAX_FRAMEBUFFER_ATTACHMENTS = 12;
 constexpr u32 MAX_INSTANCE_BUFFERS   = 32;
 constexpr u32 MAX_MESHES             = 4096;
 constexpr u32 MAX_PASSES             = 64;
@@ -2745,6 +2746,65 @@ void add_program
         destroy_if_valid(cache.handles[id]);
 
         cache.handles[id] = program;
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// FRAMEBUFFER & FRAMEBUFFER RECORDING & FRAMEBUFFER CACHE
+// -----------------------------------------------------------------------------
+
+struct FramebufferRecorder
+{
+    FixedArray<bgfx::TextureHandle, MAX_FRAMEBUFFER_ATTACHMENTS> textures;
+    u32                                                          count = 0;
+};
+
+void start(FramebufferRecorder& recorder)
+{
+    recorder.count = 0;
+}
+
+struct Framebuffer
+{
+    bgfx::FrameBufferHandle handle = BGFX_INVALID_HANDLE;
+    u16                     width  = 0;
+    u16                     height = 0;
+};
+
+struct FramebufferCache
+{
+    Mutex                                     mutex;
+    FixedArray<Framebuffer, MAX_FRAMEBUFFERS> framebuffers;
+};
+
+void destroy(Framebuffer& framebuffer)
+{
+    destroy_if_valid(framebuffer.handle);
+
+    framebuffer = {};
+}
+
+void deinit(FramebufferCache& cache)
+{
+    for (u32 i = 0; i < cache.framebuffers.size; i++)
+    {
+        destroy(cache.framebuffers[i]);
+    }
+}
+
+void add_framebuffer(FramebufferCache& cache)
+{
+    // ...
+
+    Framebuffer framebuffer;
+
+    {
+        MutexScope lock(cache.mutex);
+
+        // destroy(cache.framebuffers[info.id]);
+
+        // cache.framebuffers[info.id] = framebuffer;
     }
 }
 
