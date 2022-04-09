@@ -2348,6 +2348,190 @@ void destroy(Texture& texture)
     texture = {};
 }
 
+void deinit(TextureCache& cache)
+{
+    for (u32 i = 0; i < cache.textures.size; i++)
+    {
+        destroy(cache.textures[i]);
+    }
+}
+
+void add_texture
+(
+    TextureCache& cache,
+    u16           id,
+    u16           flags,
+    u16           width,
+    u16           height,
+    u16           stride,
+    const void*   data
+)
+{
+    constexpr u64 sampling_flags[] =
+    {
+        BGFX_SAMPLER_NONE,
+        BGFX_SAMPLER_POINT,
+    };
+
+    constexpr u64 border_flags[] =
+    {
+        BGFX_SAMPLER_NONE,
+        BGFX_SAMPLER_UVW_MIRROR,
+        BGFX_SAMPLER_UVW_CLAMP,
+    };
+
+    constexpr u64 target_flags[] =
+    {
+        BGFX_TEXTURE_NONE,
+        BGFX_TEXTURE_RT,
+    };
+
+    struct FormatInfo
+    {
+        u32                       size;
+        bgfx::TextureFormat::Enum type;
+    };
+
+    constexpr FormatInfo formats[] =
+    {
+        { 4, bgfx::TextureFormat::RGBA8 },
+        { 1, bgfx::TextureFormat::R8    },
+        { 0, bgfx::TextureFormat::D24S8 },
+        { 0, bgfx::TextureFormat::D32F  },
+    };
+
+    const FormatInfo format = formats[
+        (flags & TEXTURE_FORMAT_MASK) >> TEXTURE_FORMAT_SHIFT
+    ];
+
+    bgfx::BackbufferRatio::Enum ratio = bgfx::BackbufferRatio::Count;
+
+    if (width >= SIZE_EQUAL && width <= SIZE_DOUBLE && width == height)
+    {
+        ratio = bgfx::BackbufferRatio::Enum(width - SIZE_EQUAL);
+    }
+
+    // TODO : Use a scratch memory / frame allocator.
+    const bgfx::Memory* memory = nullptr;
+
+    if (data && format.size > 0 && ratio == bgfx::BackbufferRatio::Count)
+    {
+        if (stride == 0 || stride == width * format.size)
+        {
+            memory = bgfx::copy(data, width * height * format.size);
+        }
+        else
+        {
+            memory = bgfx::alloc(width * height * format.size);
+
+            const u8* src = static_cast<const u8*>(data);
+            u8*       dst = memory->data;
+
+            for (u16 y = 0; y < height; y++)
+            {
+                (void)memcpy(dst, src, width * format.size);
+
+                src += stride;
+                dst += width * format.size;
+            }
+        }
+    }
+
+    const u64 texture_flags =
+        sampling_flags[(flags & TEXTURE_SAMPLING_MASK) >> TEXTURE_SAMPLING_SHIFT] |
+        border_flags  [(flags & TEXTURE_BORDER_MASK  ) >> TEXTURE_BORDER_SHIFT  ] |
+        target_flags  [(flags & TEXTURE_TARGET_MASK  ) >> TEXTURE_TARGET_SHIFT  ] ;
+
+    Texture texture;
+
+    if (ratio == bgfx::BackbufferRatio::Count)
+    {
+        texture.handle = bgfx::createTexture2D(
+            width, height, false, 1, format.type, texture_flags, memory
+        );
+    }
+    else
+    {
+        WARN(!memory, "Content of texture %" PRIu16 " ignored.", id);
+
+        texture.handle = bgfx::createTexture2D(
+            ratio, false, 1, format.type, texture_flags
+        );
+    }
+
+    ASSERT(
+        bgfx::isValid(texture.handle),
+        "Creation of texture %" PRIu16 " failed.", id
+    );
+
+    texture.format = format.type;
+    texture.ratio  = ratio;
+    texture.width  = width;
+    texture.height = height;
+
+    {
+        MutexScope lock(cache.mutex);
+
+        destroy(cache.textures[id]);
+
+        cache.textures[id] = texture;
+    }
+}
+
+void remove_texture(TextureCache& cache, u16 id)
+{
+    MutexScope lock(cache.mutex);
+
+    destroy(cache.textures[id]);
+}
+
+void schedule_texture_read
+(
+    TextureCache&  cache,
+    u16            id,
+    bgfx::ViewId   pass,
+    bgfx::Encoder* encoder,
+    void*          output_data
+)
+{
+    MutexScope lock(cache.mutex);
+
+    Texture& texture = cache.textures[id];
+    ASSERT(
+        bgfx::isValid(texture.handle),
+        "Invalid BGFX handle of texture %" PRIu16 " .", id
+    );
+
+    if (!bgfx::isValid(texture.blit_handle))
+    {
+        constexpr u64 flags =
+            BGFX_TEXTURE_BLIT_DST  |
+            BGFX_TEXTURE_READ_BACK |
+            BGFX_SAMPLER_MIN_POINT |
+            BGFX_SAMPLER_MAG_POINT |
+            BGFX_SAMPLER_MIP_POINT |
+            BGFX_SAMPLER_U_CLAMP   |
+            BGFX_SAMPLER_V_CLAMP   ;
+
+        texture.blit_handle = texture.ratio == bgfx::BackbufferRatio::Count
+            ? texture.blit_handle = bgfx::createTexture2D(
+                texture.width, texture.height, false, 1, texture.format, flags
+            )
+            : texture.blit_handle = bgfx::createTexture2D(
+                texture.ratio, false, 1, texture.format, flags
+            );
+
+        ASSERT(
+            bgfx::isValid(texture.blit_handle),
+            "Creating blitting texture failed for texture %" PRIu16 " .", id
+        );
+    }
+
+    encoder->blit(pass, texture.blit_handle, 0, 0, texture.handle);
+
+    texture.read_frame = bgfx::readTexture(texture.blit_handle, output_data);
+}
+
 
 // -----------------------------------------------------------------------------
 // INSTANCE RECORDING
