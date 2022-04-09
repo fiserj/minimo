@@ -123,7 +123,6 @@ constexpr u32 VERTEX_PIXCOORD        = 0x800000;
 
 constexpr u32 MAX_FONTS              = 128;
 constexpr u32 MAX_FRAMEBUFFERS       = 128;
-constexpr u32 MAX_FRAMEBUFFER_ATTACHMENTS = 12;
 constexpr u32 MAX_INSTANCE_BUFFERS   = 32;
 constexpr u32 MAX_MESHES             = 4096;
 constexpr u32 MAX_PASSES             = 64;
@@ -2331,8 +2330,14 @@ struct Texture
     u16                 height      = 0;
     BgfxTextureFormat   format      = { bgfx::TextureFormat  ::Count };
     BgfxBackbufferRatio ratio       = { bgfx::BackbufferRatio::Count };
-    bgfx::TextureHandle blit_handle = BGFX_INVALID_HANDLE;
     u32                 read_frame  = U32_MAX;
+    bgfx::TextureHandle blit_handle = BGFX_INVALID_HANDLE;
+};
+
+struct TextureCache
+{
+    Mutex                             mutex;
+    FixedArray<Texture, MAX_TEXTURES> textures;
 };
 
 void destroy(Texture& texture)
@@ -2940,13 +2945,46 @@ void add_program
 
 struct FramebufferRecorder
 {
-    FixedArray<bgfx::TextureHandle, MAX_FRAMEBUFFER_ATTACHMENTS> textures;
-    u32                                                          count = 0;
+    FixedArray<bgfx::TextureHandle, 16> attachments;
+    u16                                 count  = 0;
+    u16                                 width  = 0;
+    u16                                 height = 0;
 };
 
 void start(FramebufferRecorder& recorder)
 {
-    recorder.count = 0;
+    recorder.count  = 0;
+    recorder.width  = 0;
+    recorder.height = 0;
+}
+
+void add_attachment(FramebufferRecorder& recorder, const Texture& attachment)
+{
+    ASSERT(
+        attachment.width > 0 && attachment.height > 0,
+        "Zero attachment texture width or height."
+    );
+
+    if (!recorder.count)
+    {
+        recorder.width  = attachment.width;
+        recorder.height = attachment.height;
+    }
+
+    ASSERT(
+        attachment.width == recorder.width && attachment.height == recorder.height,
+        "Mismatched framebuffer recording size. Started as %" PRIu16 "x%" PRIu16
+        ", but the next attachment texture has size %" PRIu16 "x%" PRIu16".",
+        recorder.width, recorder.height, attachment.width, attachment.height
+    );
+
+    ASSERT(
+        recorder.count < recorder.attachments.size,
+        "Maximum attachment texture count (" PRIu32 ") exhausted.",
+        recorder.attachments.size
+    );
+
+    recorder.attachments[recorder.count++] = attachment.handle;
 }
 
 struct Framebuffer
@@ -2977,18 +3015,35 @@ void deinit(FramebufferCache& cache)
     }
 }
 
-void add_framebuffer(FramebufferCache& cache)
+void add_framebuffer
+(
+    FramebufferCache&                cache,
+    u16                              id,
+    u16                              width,
+    u16                              height,
+    const Span<bgfx::TextureHandle>& attachments
+)
 {
-    // ...
+    ASSERT(attachments.size, "Attachment texture list empty.");
 
     Framebuffer framebuffer;
+    framebuffer.width  = width;
+    framebuffer.height = height;
+
+    framebuffer.handle = bgfx::createFrameBuffer(
+        u8(attachments.size),
+        attachments.data,
+        false
+    );
+
+    ASSERT(bgfx::isValid(framebuffer.handle), "Framebuffer creation failed.");
 
     {
         MutexScope lock(cache.mutex);
 
-        // destroy(cache.framebuffers[info.id]);
+        destroy(cache.framebuffers[id]);
 
-        // cache.framebuffers[info.id] = framebuffer;
+        cache.framebuffers[id] = framebuffer;
     }
 }
 
@@ -3282,6 +3337,8 @@ struct GlobalContext
 
     MeshCache         mesh_cache;
     InstanceCache     instance_cache;
+    TextureCache      texture_cache;
+    FramebufferCache  framebuffer_cache;
     ProgramCache      program_cache;
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
@@ -3398,7 +3455,10 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     //        * memory allocators
     //        * recorders (mesh, ...)
 
-    defer(deinit(g_ctx->mesh_cache)); // NOTE : No init needed.
+    // NOTE : No `init` needed for these systems.
+    defer(deinit(g_ctx->mesh_cache));
+    defer(deinit(g_ctx->texture_cache));
+    defer(deinit(g_ctx->framebuffer_cache));
 
     init(g_ctx->vertex_layout_cache);
     defer(deinit(g_ctx->vertex_layout_cache));
