@@ -67,6 +67,8 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 
 BX_PRAGMA_DIAGNOSTIC_POP();
 
+#include <TaskScheduler.h>         // ITaskSet, TaskScheduler, TaskSetPartition
+
 #include <mnm_shaders.h>           // *_fs, *_vs
 
 
@@ -3309,6 +3311,92 @@ void submit_mesh
 
 
 // -----------------------------------------------------------------------------
+// TASK MANAGEMENT
+// -----------------------------------------------------------------------------
+
+using TaskScheduler = enki::TaskScheduler;
+
+struct TaskPool;
+
+struct Task : enki::ITaskSet
+{
+    void    (*func)(void*) = nullptr;
+    void*     data         = nullptr;
+    TaskPool* pool         = nullptr;
+
+    void ExecuteRange(enki::TaskSetPartition, u32) override;
+};
+
+struct TaskPool
+{
+    Mutex                       mutex;
+    Task                        tasks[MAX_TASKS]; // TODO : `FixedArray` is limited to trivially copyable types now.
+    FixedArray<u8  , MAX_TASKS> nexts;
+    u8                          head = 0;
+
+    static_assert(
+        MAX_TASKS <= UINT8_MAX,
+        "`MAX_TASKS` too big, change the ID type to a bigger type."
+    );
+};
+
+void init(TaskPool& pool)
+{
+    for (u8 i = 0; i < MAX_TASKS; i++)
+    {
+        pool.tasks[i].pool = &pool;
+        pool.nexts[i]      = i + 1;
+    }
+}
+
+Task* acquire_task(TaskPool& pool)
+{
+    MutexScope lock(pool.mutex);
+
+    Task* task = nullptr;
+
+    if (pool.head < MAX_TASKS)
+    {
+        const u32 i = pool.head;
+
+        task          = &pool.tasks[i];
+        pool.head     =  pool.nexts[i];
+        pool.nexts[i] = MAX_TASKS;
+    }
+
+    return task;
+}
+
+void release_task(TaskPool& pool, const Task* task)
+{
+    ASSERT(task, "Invalid task pointer.");
+    ASSERT(
+        task >= &pool.tasks[0] && task <= &pool.tasks[MAX_TASKS - 1],
+        "Task not owned by the pool."
+    );
+
+    MutexScope lock(pool.mutex);
+
+    const ptrdiff_t i = task - &pool.tasks[0];
+
+    pool.tasks[i].func = nullptr;
+    pool.tasks[i].data = nullptr;
+    pool.nexts[i]      = pool.head;
+    pool.head          = u8(i);
+}
+
+void Task::ExecuteRange(enki::TaskSetPartition, u32)
+{
+    ASSERT(func, "Invalid task function pointer.");
+    ASSERT(pool, "Invalid taks pool pointer.");
+
+    (*func)(data);
+
+    release_task(*pool, this);
+}
+
+
+// -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
@@ -3347,6 +3435,9 @@ struct GlobalContext
     GLFWwindow*       window_handle     = nullptr;
     WindowInfo        window_info;
     WindowCursors     window_cursors;
+
+    TaskScheduler     task_scheduler;
+    TaskPool          task_pool;
 
     Timer             total_time;
     Timer             frame_time;
@@ -3407,6 +3498,8 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     GlobalContext ctx;
     g_ctx = &ctx;
+
+    const u32 thread_count = bx::max(3u, std::thread::hardware_concurrency()) - 1u;
 
     g_ctx->window_handle = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
@@ -3472,10 +3565,20 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     init(g_ctx->program_cache);
     defer(deinit(g_ctx->program_cache));
 
+    init(g_ctx->task_pool); // NOTE : No `deinit` needed.
+
+    g_ctx->task_scheduler.Initialize(thread_count);
+    defer(g_ctx->task_scheduler.WaitforAllAndShutdown());
+
     if (setup)
     {
         (*setup)();
     }
+
+    g_ctx->bgfx_frame_number = bgfx::frame();
+
+    u32 debug_state = BGFX_DEBUG_NONE;
+    bgfx::setDebug(debug_state);
 
     // ...
 
