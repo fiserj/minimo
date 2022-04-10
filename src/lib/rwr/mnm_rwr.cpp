@@ -2,9 +2,10 @@
 
 #include <inttypes.h>             // PRI*
 #include <stddef.h>               // size_t
-#include <stdint.h>               // *int*_t, UINT*_MAX, uintptr_t
+#include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
 
-#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
+#include <thread>                 // hardware_concurrency
+#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_trivially_destructible, is_unsigned
 
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
@@ -14,6 +15,7 @@
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
 #include <bx/string.h>            // strCat, strCopy
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
+#include <bx/uint32_t.h>          // alignUp
 
 BX_PRAGMA_DIAGNOSTIC_PUSH();
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4127);
@@ -380,7 +382,7 @@ union Vec2i
 // DEFAULT ALLOCATORS
 // -----------------------------------------------------------------------------
 
-using Allocator  = bx::AllocatorI;
+using Allocator    = bx::AllocatorI;
 
 using CrtAllocator = bx::DefaultAllocator;
 
@@ -3432,6 +3434,8 @@ struct GlobalContext
     DefaultUniforms   default_uniforms;
     DefaultPrograms   default_programs;
 
+    Allocator*        default_allocator = nullptr;
+
     GLFWwindow*       window_handle     = nullptr;
     WindowInfo        window_info;
     WindowCursors     window_cursors;
@@ -3453,12 +3457,57 @@ struct GlobalContext
 
 struct ThreadLocalContext
 {
-    MeshRecorder    mesh_recorder;
+    DrawState           draw_state;
 
-    DrawState       draw_state;
+    MatrixStack<16>     matrix_stack;
 
-    MatrixStack<16> matrix_stack;
+    MeshRecorder        mesh_recorder;
+    InstanceRecorder    instance_recorder;
+    FramebufferRecorder framebuffer_recorder;
 };
+
+void init(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
+{
+    ASSERT(!ctxs, "Valid thread-local context pointer.");
+    ASSERT(allocator, "Invalid allocator pointer.");
+    ASSERT(count, "Zero thread-local contexts inited.");
+
+    constexpr u32 align = std::alignment_of<ThreadLocalContext>::value;
+    const     u32 size  = bx::alignUp(sizeof(ThreadLocalContext), align);
+
+    ctxs = reinterpret_cast<ThreadLocalContext*>(BX_ALIGNED_ALLOC(allocator, size * count, align));
+    ASSERT(ctxs, "Allocation of %" PRIu16 " thread-local contexts failed.", count);
+
+    for (u32 i = 0; i < count; i++)
+    {
+        BX_PLACEMENT_NEW(ctxs + i, ThreadLocalContext);
+
+        // TODO : Call `init` on selected members.
+    }
+}
+
+void deinit(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
+{
+    ASSERT(ctxs, "Invalid thread-local context pointer.");
+    ASSERT(allocator, "Invalid allocator pointer.");
+    ASSERT(count, "Zero thread-local contexts deinited.");
+
+    for (u32 i = 0; i < count; i++)
+    {
+        // TODO : Call `deinit` on selected members.
+
+        // NOTE : No need to call the destructor.
+        static_assert(
+            std::is_trivially_destructible<ThreadLocalContext>::value,
+            "Invalid `ThreadLocalContext` destructor assumption."
+        );
+    }
+
+    constexpr u32 align = std::alignment_of<ThreadLocalContext>::value;
+    BX_ALIGNED_FREE(allocator, ctxs, align);
+
+    ctxs = nullptr;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -3499,7 +3548,14 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     GlobalContext ctx;
     g_ctx = &ctx;
 
+    CrtAllocator crt_allocator;
+    g_ctx->default_allocator = &crt_allocator;
+
     const u32 thread_count = bx::max(3u, std::thread::hardware_concurrency()) - 1u;
+
+    ThreadLocalContext* local_ctxs = nullptr;
+    init(local_ctxs, g_ctx->default_allocator, thread_count);
+    defer(deinit(local_ctxs, g_ctx->default_allocator, thread_count));
 
     g_ctx->window_handle = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
