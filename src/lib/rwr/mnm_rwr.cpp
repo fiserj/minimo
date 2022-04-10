@@ -5,7 +5,7 @@
 #include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
 
 #include <thread>                 // hardware_concurrency
-#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_trivially_destructible, is_unsigned
+#include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
 
 #include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
@@ -639,6 +639,7 @@ TEST_CASE("Stack Allocator")
 
 struct BackedStackAllocator : StackAllocator
 {
+    // TODO : Provide this via an init.
     CrtAllocator allocator;
 
     virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
@@ -3457,16 +3458,32 @@ struct GlobalContext
 
 struct ThreadLocalContext
 {
-    DrawState           draw_state;
+    DrawState            draw_state;
 
-    MatrixStack<16>     matrix_stack;
+    MatrixStack<16>      matrix_stack;
 
-    MeshRecorder        mesh_recorder;
-    InstanceRecorder    instance_recorder;
-    FramebufferRecorder framebuffer_recorder;
+    MeshRecorder         mesh_recorder;
+    InstanceRecorder     instance_recorder;
+    FramebufferRecorder  framebuffer_recorder;
+
+    BackedStackAllocator stack_allocator;
 };
 
-void init(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
+void init(ThreadLocalContext& ctx, Allocator* allocator)
+{
+    const u32 size   = 16_MB; // TODO : Make this configurable.
+    void*     buffer = BX_ALLOC(allocator, size);
+
+    ASSERT(buffer, "Failed to allocate stack memory.");
+    init(ctx.stack_allocator, buffer, size);
+}
+
+void deinit(ThreadLocalContext& ctx, Allocator* allocator)
+{
+    BX_FREE(allocator, ctx.stack_allocator.buffer);
+}
+
+void alloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
 {
     ASSERT(!ctxs, "Valid thread-local context pointer.");
     ASSERT(allocator, "Invalid allocator pointer.");
@@ -3482,11 +3499,11 @@ void init(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
     {
         BX_PLACEMENT_NEW(ctxs + i, ThreadLocalContext);
 
-        // TODO : Call `init` on selected members.
+        init(ctxs[i], allocator);
     }
 }
 
-void deinit(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
+void dealloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
 {
     ASSERT(ctxs, "Invalid thread-local context pointer.");
     ASSERT(allocator, "Invalid allocator pointer.");
@@ -3494,13 +3511,9 @@ void deinit(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
 
     for (u32 i = 0; i < count; i++)
     {
-        // TODO : Call `deinit` on selected members.
+        deinit(ctxs[i], allocator);
 
-        // NOTE : No need to call the destructor.
-        static_assert(
-            std::is_trivially_destructible<ThreadLocalContext>::value,
-            "Invalid `ThreadLocalContext` destructor assumption."
-        );
+        ctxs[i].~ThreadLocalContext();
     }
 
     constexpr u32 align = std::alignment_of<ThreadLocalContext>::value;
@@ -3554,8 +3567,8 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     const u32 thread_count = bx::max(3u, std::thread::hardware_concurrency()) - 1u;
 
     ThreadLocalContext* local_ctxs = nullptr;
-    init(local_ctxs, g_ctx->default_allocator, thread_count);
-    defer(deinit(local_ctxs, g_ctx->default_allocator, thread_count));
+    alloc(local_ctxs, g_ctx->default_allocator, thread_count);
+    defer(dealloc(local_ctxs, g_ctx->default_allocator, thread_count));
 
     g_ctx->window_handle = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
