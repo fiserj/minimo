@@ -639,8 +639,7 @@ TEST_CASE("Stack Allocator")
 
 struct BackedStackAllocator : StackAllocator
 {
-    // TODO : Provide this via an init.
-    CrtAllocator allocator;
+    Allocator* backing = nullptr;
 
     virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
     {
@@ -654,7 +653,7 @@ struct BackedStackAllocator : StackAllocator
             }
             else
             {
-                memory = allocator.realloc(ptr, 0, align, file, line);
+                memory = backing->realloc(ptr, 0, align, file, line);
             }
         }
         else if (!ptr)
@@ -663,7 +662,7 @@ struct BackedStackAllocator : StackAllocator
 
             if (!memory)
             {
-                memory = allocator.realloc(nullptr, size, align, file, line);
+                memory = backing->realloc(nullptr, size, align, file, line);
             }
         }
         else
@@ -675,13 +674,28 @@ struct BackedStackAllocator : StackAllocator
 
             if (!memory)
             {
-                memory = allocator.realloc(ptr, size, align, file, line);
+                memory = backing->realloc(ptr, size, align, file, line);
             }
         }
 
         return memory;
     }
 };
+
+void init
+(
+    BackedStackAllocator& allocator,
+    Allocator*            backing,
+    void*                 buffer,
+    u32                   size
+)
+{
+    ASSERT(backing, "Invalid backing allocator pointer.");
+
+    allocator.backing = backing;
+
+    init(allocator, buffer, size);
+}
 
 
 // -----------------------------------------------------------------------------
