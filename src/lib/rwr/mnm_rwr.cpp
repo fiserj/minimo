@@ -2596,6 +2596,7 @@ void start(InstanceRecorder& recorder, u32 type)
 void end(InstanceRecorder& recorder)
 {
     clear(recorder.buffer);
+
     recorder.instance_size = 0;
 }
 
@@ -3489,7 +3490,11 @@ void init(ThreadLocalContext& ctx, Allocator* allocator)
     void*     buffer = BX_ALLOC(allocator, size);
 
     ASSERT(buffer, "Failed to allocate stack memory.");
-    init(ctx.stack_allocator, buffer, size);
+    init(ctx.stack_allocator, allocator, buffer, size);
+
+    // NOTE : No `deinit` needed.
+    init(ctx.mesh_recorder    , &ctx.stack_allocator);
+    init(ctx.instance_recorder, &ctx.stack_allocator);
 }
 
 void deinit(ThreadLocalContext& ctx, Allocator* allocator)
