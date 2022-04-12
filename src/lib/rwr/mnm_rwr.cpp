@@ -13,6 +13,7 @@
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>             // Mutex, MutexScope
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
+#include <bx/ringbuffer.h>        // RingBufferControl
 #include <bx/string.h>            // strCat, strCopy
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
 #include <bx/uint32_t.h>          // alignUp
@@ -3415,6 +3416,49 @@ void Task::ExecuteRange(enki::TaskSetPartition, u32)
 
 
 // -----------------------------------------------------------------------------
+// CODEPOINT QUEUE
+// -----------------------------------------------------------------------------
+
+struct CodepointQueue
+{
+    static constexpr u32 CAPACITY = 32;
+
+    bx::RingBufferControl     buffer = { CAPACITY };
+    FixedArray<u32, CAPACITY> codepoints;
+};
+
+
+void flush(CodepointQueue& queue)
+{
+    queue.buffer.reset();
+}
+
+u32 next(CodepointQueue& queue)
+{
+    if (queue.buffer.available())
+    {
+        const u32 codepoint = queue.codepoints[queue.buffer.m_read];
+        queue.buffer.consume(1);
+
+        return codepoint;
+    }
+
+    return 0;
+}
+
+void append(CodepointQueue& queue, u32 codepoint)
+{
+    while (!queue.buffer.reserve(1))
+    {
+        next(queue);
+    }
+
+    queue.codepoints[queue.buffer.m_current] = codepoint;
+    queue.buffer.commit(1);
+}
+
+
+// -----------------------------------------------------------------------------
 // PLATFORM HELPERS
 // -----------------------------------------------------------------------------
 
@@ -3449,6 +3493,7 @@ struct GlobalContext
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
     DefaultPrograms   default_programs;
+    CodepointQueue    codepoint_queue;
 
     Allocator*        default_allocator = nullptr;
 
@@ -3720,6 +3765,8 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
         toc(g_ctx->total_time);
         toc(g_ctx->frame_time, true);
+
+        flush(g_ctx->codepoint_queue);
 
         glfwPollEvents();
 
