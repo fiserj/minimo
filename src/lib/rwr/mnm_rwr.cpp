@@ -3518,16 +3518,21 @@ struct GlobalContext
 
 struct ThreadLocalContext
 {
+    bgfx::Encoder*       encoder        = nullptr;
     DrawState            draw_state;
 
     MatrixStack<16>      matrix_stack;
 
+    RecordInfo           record_info;
     MeshRecorder         mesh_recorder;
     InstanceRecorder     instance_recorder;
     FramebufferRecorder  framebuffer_recorder;
 
+    Timer                stop_watch;
+
     BackedStackAllocator stack_allocator;
 
+    bgfx::ViewId         active_pass    = 0;
     bool                 is_main_thread = false;
 };
 
@@ -3755,6 +3760,16 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     // ...
 
+    // g_ctx.pass_cache[0].set_viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
+
+    g_ctx->mouse.update_position(
+        g_ctx->window_handle,
+        HMM_Vec2(
+            g_ctx->window_info.position_scale.X,
+            g_ctx->window_info.position_scale.Y
+        )
+    );
+
     tic(g_ctx->total_time);
     tic(g_ctx->frame_time);
 
@@ -3770,14 +3785,121 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
         glfwPollEvents();
 
-        // ...
+        bool   update_cursor_position = false;
+        double scroll_accumulator[2]  = { 0.0, 0.0 }; // NOTE : Not sure if we can get multiple scroll events in a single frame.
+
+        GLEQevent event;
+        while (gleqNextEvent(&event))
+        {
+            switch (event.type)
+            {
+            case GLEQ_KEY_PRESSED:
+                g_ctx->keyboard.update_input(event.keyboard.key, InputState::DOWN, f32(g_ctx->total_time.elapsed));
+                break;
+
+            case GLEQ_KEY_REPEATED:
+                g_ctx->keyboard.update_input(event.keyboard.key, InputState::REPEATED);
+                break;
+
+            case GLEQ_KEY_RELEASED:
+                g_ctx->keyboard.update_input(event.keyboard.key, InputState::UP);
+                break;
+
+            case GLEQ_BUTTON_PRESSED:
+                g_ctx->mouse.update_input(event.mouse.button, InputState::DOWN, f32(g_ctx->total_time.elapsed));
+                break;
+
+            case GLEQ_BUTTON_RELEASED:
+                g_ctx->mouse.update_input(event.mouse.button, InputState::UP);
+                break;
+
+            case GLEQ_CURSOR_MOVED:
+                update_cursor_position = true;
+                break;
+
+            case GLEQ_SCROLLED:
+                scroll_accumulator[0] += event.scroll.x;
+                scroll_accumulator[1] += event.scroll.y;
+                break;
+
+            case GLEQ_CODEPOINT_INPUT:
+                append(g_ctx->codepoint_queue, event.codepoint);
+                break;
+
+            case GLEQ_FRAMEBUFFER_RESIZED:
+            case GLEQ_WINDOW_SCALE_CHANGED:
+                g_ctx->reset_back_buffer = true;
+                break;
+
+            default:;
+                break;
+            }
+
+            gleqFreeEvent(&event);
+        }
+
+        g_ctx->mouse.scroll[0] = f32(scroll_accumulator[0]);
+        g_ctx->mouse.scroll[1] = f32(scroll_accumulator[1]);
+
+        if (g_ctx->reset_back_buffer)
+        {
+            g_ctx->reset_back_buffer = false;
+
+            update_window_info(g_ctx->window_handle, g_ctx->window_info);
+
+            const u16 width  = u16(g_ctx->window_info.framebuffer_size.X);
+            const u16 height = u16(g_ctx->window_info.framebuffer_size.Y);
+
+            const u32 vsync  = g_ctx->vsync_on ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
+
+            bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
+
+            // g_ctx->pass_cache.backbuffer_size_changed = true;
+        }
+
+        if (update_cursor_position)
+        {
+            g_ctx->mouse.update_position(
+                g_ctx->window_handle,
+                HMM_Vec2(
+                    g_ctx->window_info.position_scale.X,
+                    g_ctx->window_info.position_scale.Y
+                )
+            );
+        }
+
+        g_ctx->mouse.update_position_delta();
+
+        if (key_down(KEY_F12))
+        {
+            debug_state = debug_state ? BGFX_DEBUG_NONE : BGFX_DEBUG_STATS;
+            bgfx::setDebug(debug_state);
+        }
+
+        init_frame(g_ctx->mesh_cache);
+
+        // TODO : Add some sort of sync mechanism for the tasks that intend to
+        //        submit primitives for rendering in a given frame.
 
         if (draw)
         {
             (*draw)();
         }
 
+        // TODO : Add some sort of sync mechanism for the tasks that intend to
+        //        submit primitives for rendering in a given frame.
+
         // ...
+
+        for (u32 i = 0; i < thread_count; i++)
+        {
+            if (local_ctxs[i].encoder)
+            {
+                bgfx::end(local_ctxs[i].encoder);
+
+                local_ctxs[i].encoder = nullptr;
+            }
+        }
 
         g_ctx->bgfx_frame_number = bgfx::frame();
         bx::atomicFetchAndAdd(&g_ctx->frame_number, 1u);
