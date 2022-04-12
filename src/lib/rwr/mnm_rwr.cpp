@@ -3482,6 +3482,8 @@ struct ThreadLocalContext
     FramebufferRecorder  framebuffer_recorder;
 
     BackedStackAllocator stack_allocator;
+
+    bool                 is_main_thread = false;
 };
 
 void init(ThreadLocalContext& ctx, Allocator* allocator)
@@ -3589,6 +3591,49 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     alloc(local_ctxs, g_ctx->default_allocator, thread_count);
     defer(dealloc(local_ctxs, g_ctx->default_allocator, thread_count));
 
+    init(g_ctx->task_pool); // NOTE : No `deinit` needed.
+
+    g_ctx->task_scheduler.Initialize(thread_count);
+    defer(g_ctx->task_scheduler.WaitforAllAndShutdown());
+
+    ASSERT(
+        thread_count == g_ctx->task_scheduler.GetNumTaskThreads(),
+        "Mismatched thread-local contexts and task threads count."
+    );
+
+    t_ctx = &local_ctxs[0];
+    t_ctx->is_main_thread = true;
+
+    struct PinnedTask : enki::IPinnedTask
+    {
+        ThreadLocalContext* ctx;
+
+        PinnedTask(u32 idx, ThreadLocalContext* ctx)
+            : enki::IPinnedTask(idx)
+            , ctx(ctx)
+        {
+        }
+
+        void Execute() override
+        {
+            ASSERT(
+                !t_ctx,
+                "Thread-local context for thread %" PRIu32 " already set.",
+                threadNum
+            );
+
+            t_ctx = ctx;
+        }
+    };
+
+    for (u32 i = 1; i < g_ctx->task_scheduler.GetNumTaskThreads(); i++)
+    {
+        PinnedTask task(i, &local_ctxs[i]);
+
+        g_ctx->task_scheduler.AddPinnedTask(&task);
+        g_ctx->task_scheduler.WaitforTask(&task);
+    }
+
     g_ctx->window_handle = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
         DEFAULT_WINDOW_HEIGHT,
@@ -3652,11 +3697,6 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     init(g_ctx->program_cache);
     defer(deinit(g_ctx->program_cache));
-
-    init(g_ctx->task_pool); // NOTE : No `deinit` needed.
-
-    g_ctx->task_scheduler.Initialize(thread_count);
-    defer(g_ctx->task_scheduler.WaitforAllAndShutdown());
 
     if (setup)
     {
