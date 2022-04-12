@@ -3485,6 +3485,7 @@ struct GlobalContext
     KeyboardInput     keyboard;
     MouseInput        mouse;
 
+    PassCache         pass_cache;
     MeshCache         mesh_cache;
     InstanceCache     instance_cache;
     TextureCache      texture_cache;
@@ -3758,9 +3759,16 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     u32 debug_state = BGFX_DEBUG_NONE;
     bgfx::setDebug(debug_state);
 
-    // ...
+    {
+        Pass& pass = g_ctx->pass_cache.passes[0];
 
-    // g_ctx.pass_cache[0].set_viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
+        pass.viewport_x      = 0;
+        pass.viewport_y      = 0;
+        pass.viewport_width  = SIZE_EQUAL;
+        pass.viewport_height = SIZE_EQUAL;
+
+        pass.dirty_flags |= Pass::DIRTY_RECT;
+    }
 
     g_ctx->mouse.update_position(
         g_ctx->window_handle,
@@ -3854,7 +3862,7 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
             bgfx::reset(width, height, BGFX_RESET_NONE | vsync);
 
-            // g_ctx->pass_cache.backbuffer_size_changed = true;
+            g_ctx->pass_cache.backbuffer_size_changed = true;
         }
 
         if (update_cursor_position)
@@ -3889,7 +3897,19 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
 
-        // ...
+        if (t_ctx->is_main_thread)
+        {
+            if (!t_ctx->encoder)
+            {
+                t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+                ASSERT(t_ctx->encoder, "Failed to acquire BGFX encoder.");
+            }
+
+            // TODO : ??? Touch all active passes in all local contexts ???
+            g_ctx->pass_cache.passes[t_ctx->active_pass].dirty_flags |= Pass::DIRTY_TOUCH;
+
+            update_passes(g_ctx->pass_cache, t_ctx->encoder);
+        }
 
         for (u32 i = 0; i < thread_count; i++)
         {
