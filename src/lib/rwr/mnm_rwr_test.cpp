@@ -1,4 +1,4 @@
-#include "mnm_rwr.cpp"
+#include "mnm_rwr_lib.cpp"
 
 int main(int, char**)
 {
