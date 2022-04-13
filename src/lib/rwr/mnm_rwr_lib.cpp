@@ -240,3 +240,38 @@ unsigned int codepoint(void)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TIME
+// -----------------------------------------------------------------------------
+
+double elapsed(void)
+{
+    return g_ctx->total_time.elapsed;
+}
+
+double dt(void)
+{
+    return g_ctx->frame_time.elapsed;
+}
+
+void sleep_for(double seconds)
+{
+    ASSERT(
+        !t_ctx->is_main_thread,
+        "`sleep_for` must not be called from the main thread."
+    );
+
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+}
+
+void tic(void)
+{
+    tic(t_ctx->stop_watch);
+}
+
+double toc(void)
+{
+    return toc(t_ctx->stop_watch);
+}
+
+
+// -----------------------------------------------------------------------------
