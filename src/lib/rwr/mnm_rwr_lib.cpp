@@ -150,3 +150,93 @@ void cursor(int type)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INPUT
+// -----------------------------------------------------------------------------
+
+float mouse_x(void)
+{
+    return g_ctx->mouse.current.X;
+}
+
+float mouse_y(void)
+{
+    return g_ctx->mouse.current.Y;
+}
+
+float mouse_dx(void)
+{
+    return g_ctx->mouse.delta.X;
+}
+
+float mouse_dy(void)
+{
+    return g_ctx->mouse.delta.Y;
+}
+
+int mouse_down(int button)
+{
+    return g_ctx->mouse.is(button, InputState::DOWN);
+}
+
+int mouse_held(int button)
+{
+    return g_ctx->mouse.is(button, InputState::HELD);
+}
+
+int mouse_up(int button)
+{
+    return g_ctx->mouse.is(button, InputState::UP);
+}
+
+int mouse_clicked(int button)
+{
+    return g_ctx->mouse.repeated_click_count(button);
+}
+
+float mouse_held_time(int button)
+{
+    return g_ctx->mouse.held_time(button, f32(g_ctx->total_time.elapsed));
+}
+
+float scroll_x(void)
+{
+    return g_ctx->mouse.scroll.X;
+}
+
+float scroll_y(void)
+{
+    return g_ctx->mouse.scroll.Y;
+}
+
+int key_down(int key)
+{
+    return g_ctx->keyboard.is(key, InputState::DOWN);
+}
+
+int key_repeated(int key)
+{
+    return g_ctx->keyboard.is(key, InputState::REPEATED);
+}
+
+int key_held(int key)
+{
+    return g_ctx->keyboard.is(key, InputState::HELD);
+}
+
+int key_up(int key)
+{
+    return g_ctx->keyboard.is(key, InputState::UP);
+}
+
+float key_held_time(int key)
+{
+    return g_ctx->keyboard.held_time(key, f32(g_ctx->total_time.elapsed));
+}
+
+unsigned int codepoint(void)
+{
+    return int(next(g_ctx->codepoint_queue));
+}
+
+
+// -----------------------------------------------------------------------------
