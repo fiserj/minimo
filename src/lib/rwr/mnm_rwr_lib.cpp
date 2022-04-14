@@ -443,7 +443,7 @@ void mesh(int id)
     state.pass = t_ctx->active_pass;
     state.framebuffer = g_ctx->pass_cache.passes[t_ctx->active_pass].framebuffer;
 
-    const Mesh mesh = g_ctx->mesh_cache.meshes[u16(id)];
+    const Mesh& mesh = g_ctx->mesh_cache.meshes[u16(id)];
 
     u32 mesh_flags = mesh.flags;
 
@@ -491,10 +491,11 @@ void mesh(int id)
     if (!bgfx::isValid(state.program))
     {
         // TODO : Figure out how to do this without this ugliness.
-        // if (state.sampler.idx == g_ctx->default_uniforms.color_texture_r.idx)
-        // {
-        //     mesh_flags |= SAMPLER_COLOR_R;
-        // }
+        if (state.sampler.idx ==
+            g_ctx->default_uniforms[u32(DefaultUniform::COLOR_TEXTURE_RED)].idx)
+        {
+            mesh_flags |= SAMPLER_COLOR_R;
+        }
 
         const u32 index = default_program_index(mesh_flags);
         state.program = g_ctx->default_programs[index];
@@ -571,6 +572,116 @@ void scissor(int x, int y, int width, int height)
     }
 
     t_ctx->encoder->setScissor(u16(x), u16(y), u16(width), u16(height));
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXTURING
+// -----------------------------------------------------------------------------
+
+void load_texture(int id, int flags, int width, int height, int stride, const void* data)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_TEXTURES),
+        "Texture ID %i out of available range 1 ... %i.",
+        id, int(MAX_TEXTURES - 1)
+    );
+
+    ASSERT(width > 0, "Non-positive texture width (%i).", width);
+
+    ASSERT(height > 0, "Non-positive texture height (%i).", height);
+
+    ASSERT(
+        (width < SIZE_EQUAL && height < SIZE_EQUAL) ||
+        (width <= SIZE_DOUBLE && width == height), // TODO : Inspect necessity of this.
+        "Non-conforming texture width (%i) or height (%i).",
+        width, height
+    );
+
+    ASSERT(stride > 0, "Negative texture stride (%i).", stride);
+
+    add_texture(
+        g_ctx->texture_cache,
+        u16(id),
+        u16(flags),
+        u16(width),
+        u16(height),
+        u16(stride),
+        data
+    );
+}
+
+void create_texture(int id, int flags, int width, int height)
+{
+    load_texture(id, flags, width, height, 0, nullptr);
+}
+
+void texture(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_TEXTURES),
+        "Texture ID %i out of available range 1 ... %i.",
+        id, int(MAX_TEXTURES - 1)
+    );
+
+    const Texture& texture = g_ctx->texture_cache.textures[u16(id)];
+
+    if (t_ctx->record_info.type != RecordType::FRAMEBUFFER)
+    {
+        // TODO : Samplers should be set by default state and only overwritten when
+        //        non-default shader is used.
+        t_ctx->draw_state.texture = texture.handle;
+        t_ctx->draw_state.sampler = default_sampler(g_ctx->default_uniforms, texture.format);
+        t_ctx->draw_state.texture_size[0] = texture.width;
+        t_ctx->draw_state.texture_size[1] = texture.height;
+    }
+    else
+    {
+        add_attachment(t_ctx->framebuffer_recorder, texture);
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXTURE READBACK
+// -----------------------------------------------------------------------------
+
+void read_texture(int id, void* data)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_TEXTURES),
+        "Texture ID %i out of available range 1 ... %i.",
+        id, int(MAX_TEXTURES - 1)
+    );
+
+    ASSERT(data, "Invalid data pointer.");
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder, "Failed to acquire BGFX encoder.");
+    }
+
+    schedule_texture_read(
+        g_ctx->texture_cache,
+        u16(id),
+        t_ctx->active_pass + MAX_PASSES, // TODO : It might be better to let the user specify the pass explicitly.
+        t_ctx->encoder,
+        data
+    );
+}
+
+int readable(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_TEXTURES),
+        "Texture ID %i out of available range 1 ... %i.",
+        id, int(MAX_TEXTURES - 1)
+    );
+
+    const u32 read_frame = g_ctx->texture_cache.textures[u16(id)].read_frame;
+
+    return g_ctx->bgfx_frame_number >= read_frame;
 }
 
 
