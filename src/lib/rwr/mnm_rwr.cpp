@@ -1750,12 +1750,22 @@ TEST_CASE("Vertex Attribute State")
 // GENERIC RECORDING INFO
 // -----------------------------------------------------------------------------
 
+enum struct RecordType : u8
+{
+    NONE,
+
+    FRAMEBUFFER,
+    INSTANCES,
+    MESH,
+};
+
 struct RecordInfo
 {
-    u32  flags        = 0;
-    u32  extra_data   = 0;
-    u16  id           = 0;
-    bool is_transform = false;
+    u32        flags        = 0;
+    u32        extra_data   = 0;
+    u16        id           = 0;
+    bool       is_transform = false;
+    RecordType type         = RecordType::NONE;
 };
 
 
