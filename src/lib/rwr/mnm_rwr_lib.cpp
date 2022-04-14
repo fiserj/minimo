@@ -449,7 +449,12 @@ void mesh(int id)
 
     if (bgfx::isValid(state.vertex_alias))
     {
-        // state.vertex_alias = g_ctx->vertex_layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
+        const u32 skips = vertex_layout_skips(mesh_flags, state.vertex_alias.idx);
+        const u32 index = vertex_layout_index(mesh_flags, skips);
+
+        mesh_flags &= ~skips;
+
+        state.vertex_alias = g_ctx->vertex_layout_cache.handles[index];
     }
 
     if (!t_ctx->encoder)

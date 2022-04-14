@@ -1503,6 +1503,11 @@ constexpr u32 vertex_layout_index(u32 attribs, u32 skips = 0)
         ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
 }
 
+constexpr u32 vertex_layout_skips(u32 attribs, u32 alias)
+{
+    return (attribs & VERTEX_ATTRIB_MASK) & ~(alias & VERTEX_ATTRIB_MASK);
+}
+
 void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 {
     ASSERT((attribs & skips) == 0, "`Attribute and skip flags must be disjoint.");
