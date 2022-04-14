@@ -3353,8 +3353,8 @@ struct DrawState
 {
     const InstanceData*      instances       = nullptr;
     u32                      element_start   = 0;
-    u32                      element_count   = UINT32_MAX;
-    bgfx::ViewId             pass            = UINT16_MAX;
+    u32                      element_count   = U32_MAX;
+    bgfx::ViewId             pass            = U16_MAX;
     bgfx::FrameBufferHandle  framebuffer     = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle      program         = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle      texture         = BGFX_INVALID_HANDLE;
@@ -3442,7 +3442,7 @@ void submit_mesh
     if (type == MESH_STATIC)
     {
                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
-        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, U32_MAX, state.vertex_alias);
                          encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
     }
     else if (type == MESH_TRANSIENT)
@@ -3453,7 +3453,7 @@ void submit_mesh
     else if (type == MESH_DYNAMIC)
     {
                          encoder.setVertexBuffer(0, mesh.positions.static_buffer);
-        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, UINT32_MAX, state.vertex_alias);
+        if (has_attribs) encoder.setVertexBuffer(1, mesh.attribs  .static_buffer, 0, U32_MAX, state.vertex_alias);
                          encoder.setIndexBuffer (   mesh.indices  .static_buffer, state.element_start, state.element_count);
     }
 
