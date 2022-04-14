@@ -275,3 +275,156 @@ double toc(void)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MESH RECORDING
+// -----------------------------------------------------------------------------
+
+void begin_mesh(int id, int flags)
+{
+    ASSERT(
+        !t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording already started. Call `end_mesh` first."
+    );
+
+    ASSERT(
+        id > 0 && id < int(MAX_MESHES),
+        "Mesh ID %i out of available range 1 ... %i.",
+        id, int(MAX_MESHES - 1)
+    );
+
+    t_ctx->record_info.flags      = u32(flags);
+    t_ctx->record_info.extra_data = 0;
+    t_ctx->record_info.id         = u16(id);
+
+    start(t_ctx->mesh_recorder, t_ctx->record_info.flags);
+}
+
+void end_mesh(void)
+{
+    ASSERT(
+        t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording not started. Call `begin_mesh` first."
+    );
+
+    if (t_ctx->record_info.flags & (GENEREATE_FLAT_NORMALS | GENEREATE_SMOOTH_NORMALS))
+    {
+        ASSERT(
+            t_ctx->mesh_recorder.attrib_state.size / sizeof(PackedNormal) == 0,
+            "Vertex attribute state size (%" PRIu32 ") not divisible by the "
+            "packed normal size (%zu).",
+            t_ctx->mesh_recorder.attrib_state.size,
+            sizeof(PackedNormal)
+        );
+
+        const u32 stride = t_ctx->mesh_recorder.attrib_state.size /
+            sizeof(PackedNormal);
+        const u32 offset = reinterpret_cast<u8*>(
+            t_ctx->mesh_recorder.attrib_state.packed_normal
+        ) - t_ctx->mesh_recorder.attrib_state.data;
+        const Vec3* positions = reinterpret_cast<Vec3*>(
+            t_ctx->mesh_recorder.position_buffer.data
+        );
+        PackedNormal* normals = reinterpret_cast<PackedNormal*>(
+            t_ctx->mesh_recorder.position_buffer.data + offset
+        );
+
+        if (t_ctx->record_info.flags & GENEREATE_FLAT_NORMALS)
+        {
+            generate_flat_normals(
+                t_ctx->mesh_recorder.vertex_count,
+                stride,
+                positions,
+                normals
+            );
+        }
+        else
+        {
+            generate_smooth_normals(
+                t_ctx->mesh_recorder.vertex_count,
+                stride,
+                positions,
+                &t_ctx->stack_allocator,
+                normals
+            );
+        }
+    }
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    add_mesh(
+        g_ctx->mesh_cache,
+        t_ctx->record_info,
+        t_ctx->mesh_recorder,
+        g_ctx->vertex_layout_cache.layouts,
+        &t_ctx->stack_allocator
+    );
+
+    end(t_ctx->mesh_recorder);
+}
+
+void vertex(float x, float y, float z)
+{
+    ASSERT(
+        t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording not started. Call `begin_mesh` first."
+    );
+
+    // TODO : We should measure whether branch prediction minimizes the cost of
+    //        having a condition in here.
+    if (!(t_ctx->record_info.flags & NO_VERTEX_TRANSFORM))
+    {
+        (*t_ctx->mesh_recorder.store_vertex)(
+            (t_ctx->matrix_stack.top * HMM_Vec4(x, y, z, 1.0f)).XYZ,
+            t_ctx->mesh_recorder.attrib_state,
+            t_ctx->mesh_recorder
+        );
+    }
+    else
+    {
+        (*t_ctx->mesh_recorder.store_vertex)(
+            HMM_Vec3(x, y, z),
+            t_ctx->mesh_recorder.attrib_state,
+            t_ctx->mesh_recorder
+        );
+    }
+}
+
+void color(unsigned int rgba)
+{
+    ASSERT(
+        t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording not started. Call `begin_mesh` first."
+    );
+
+    (*t_ctx->mesh_recorder.attrib_state.store_color)(
+        t_ctx->mesh_recorder.attrib_state,
+        rgba
+    );
+}
+
+void normal(float nx, float ny, float nz)
+{
+    ASSERT(
+        t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording not started. Call `begin_mesh` first."
+    );
+
+    (*t_ctx->mesh_recorder.attrib_state.store_normal)(
+        t_ctx->mesh_recorder.attrib_state,
+        nx, ny, nz
+    );
+}
+
+void texcoord(float u, float v)
+{
+    ASSERT(
+        t_ctx->mesh_recorder.store_vertex,
+        "Mesh recording not started. Call `begin_mesh` first."
+    );
+
+    (*t_ctx->mesh_recorder.attrib_state.store_texcoord)(
+        t_ctx->mesh_recorder.attrib_state,
+        u, v
+    );
+}
+
+
+// -----------------------------------------------------------------------------
