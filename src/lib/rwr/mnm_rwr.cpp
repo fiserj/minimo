@@ -1,6 +1,7 @@
 #include <mnm/mnm.h>
 
 #include <inttypes.h>             // PRI*
+#include <math.h>                 // acosf
 #include <stddef.h>               // size_t
 #include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
 
@@ -2044,6 +2045,164 @@ bool create_transient_vertex_buffer
     bx::memCopy(tvb->data, buffer.data, buffer.size);
 
     return true;
+}
+
+
+// -----------------------------------------------------------------------------
+// NORMALS' GENERATION
+// -----------------------------------------------------------------------------
+
+void generate_flat_normals
+(
+    u32           vertex_count,
+    u32           vertex_stride,
+    const Vec3*   vertices,
+    PackedNormal* normals
+)
+{
+    ASSERT(
+        vertex_count % 3 == 0,
+        "Vertex count %" PRIu32 " not divisible by 3.",
+        vertex_count
+    );
+
+    for (u32 i = 0; i < vertex_count; i += 3)
+    {
+        const Vec3 a = vertices[i + 1] - vertices[i];
+        const Vec3 b = vertices[i + 2] - vertices[i];
+        const Vec3 n = HMM_Normalize(HMM_Cross(a, b));
+
+        const f32 normalized[] =
+        {
+            n.X * 0.5f + 0.5f,
+            n.Y * 0.5f + 0.5f,
+            n.Z * 0.5f + 0.5f,
+        };
+
+        // TODO : Accessing `normals` is wrong when attributes contains anything else.
+
+        bx::packRgb8(&normals[i], normalized);
+
+        normals[i + vertex_stride    ] = normals[i];
+        normals[i + vertex_stride * 2] = normals[i];
+    }
+}
+
+float HMM_AngleVec3(Vec3 Left, Vec3 Right)
+{
+    return acosf(HMM_Clamp(-1.0f, HMM_DotVec3(Left, Right), 1.0f));
+}
+
+bool HMM_EpsilonEqualVec3(Vec3 Left, Vec3 Right, float eps = 1e-4f)
+{
+    const Vec3 diff = Left - Right;
+
+    return
+        (HMM_ABS(diff.X) < eps) &
+        (HMM_ABS(diff.Y) < eps) &
+        (HMM_ABS(diff.Z) < eps);
+}
+
+void generate_smooth_normals
+(
+    u32           vertex_count,
+    u32           vertex_stride,
+    const Vec3*   vertices,
+    Allocator*    temp_allocator,
+    PackedNormal* normals
+)
+{
+    ASSERT(
+        vertex_count % 3 == 0,
+        "Vertex count %" PRIu32 " not divisible by 3.",
+        vertex_count
+    )
+
+    DynamicArray<u32> unique;
+    init(unique, temp_allocator);
+    resize(unique, vertex_count, 0u);
+
+    u32 unique_vertex_count = 0;
+
+    for (u32 i = 0; i < vertex_count; i++)
+    for (u32 j = 0; j <= i; j++)
+    {
+        if (HMM_EpsilonEqualVec3(vertices[i], vertices[j]))
+        {
+            if (i == j)
+            {
+                unique[i] = unique_vertex_count;
+                unique_vertex_count += (i == j);
+            }
+            else
+            {
+                unique[i] = unique[j];
+            }
+
+            break;
+        }
+    }
+
+#ifndef NDEBUG
+    for (u32 i = 0; i < vertex_count; i++)
+    {
+        ASSERT(
+            unique[i] < unique_vertex_count,
+            "Vertex %" PRIu32 " out of the vertex count of %" PRIu32 ".",
+            unique[i], unique_vertex_count
+        );
+    }
+#endif // NDEBUG
+
+    union Normal
+    {
+        Vec3         full;
+        PackedNormal packed;
+    };
+
+    DynamicArray<Normal> smooth;
+    init(smooth, temp_allocator);
+    resize(smooth, unique_vertex_count, Normal{HMM_Vec3(0.0f, 0.0f, 0.0f)});
+
+    // https://stackoverflow.com/a/45496726
+    for (u32 i = 0; i < vertex_count; i += 3)
+    {
+        const Vec3 p0 = vertices[i    ];
+        const Vec3 p1 = vertices[i + 1];
+        const Vec3 p2 = vertices[i + 2];
+
+        const float a0 = HMM_AngleVec3(HMM_NormalizeVec3(p1 - p0), HMM_NormalizeVec3(p2 - p0));
+        const float a1 = HMM_AngleVec3(HMM_NormalizeVec3(p2 - p1), HMM_NormalizeVec3(p0 - p1));
+        const float a2 = HMM_AngleVec3(HMM_NormalizeVec3(p0 - p2), HMM_NormalizeVec3(p1 - p2));
+
+        const Vec3 n = HMM_Cross(p1 - p0, p2 - p0);
+
+        smooth[unique[i    ]].full += (n * a0);
+        smooth[unique[i + 1]].full += (n * a1);
+        smooth[unique[i + 2]].full += (n * a2);
+    }
+
+    for (u32 i = 0; i < smooth.size; i++)
+    {
+        if (!HMM_EqualsVec3(smooth[i].full, HMM_Vec3(0.0f, 0.0f, 0.0f)))
+        {
+            const Vec3 n = HMM_NormalizeVec3(smooth[i].full);
+
+            const f32 normalized[] =
+            {
+                n.X * 0.5f + 0.5f,
+                n.Y * 0.5f + 0.5f,
+                n.Z * 0.5f + 0.5f,
+            };
+
+            bx::packRgb8(&smooth[i].packed, normalized);
+        }
+    }
+
+    for (u32 i = 0, j = 0; i < vertex_count; i++, j += vertex_stride)
+    {
+        normals[j] = smooth[unique[i]].packed;
+    }
 }
 
 
