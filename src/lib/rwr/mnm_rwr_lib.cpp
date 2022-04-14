@@ -428,3 +428,147 @@ void texcoord(float u, float v)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MESH SUBMISSION
+// -----------------------------------------------------------------------------
+
+void mesh(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_MESHES),
+        "Mesh ID %i out of available range 1 ... %i.",
+        id, int(MAX_MESHES - 1)
+    );
+
+    DrawState& state = t_ctx->draw_state;
+    state.pass = t_ctx->active_pass;
+    state.framebuffer = g_ctx->pass_cache.passes[t_ctx->active_pass].framebuffer;
+
+    const Mesh mesh = g_ctx->mesh_cache.meshes[u16(id)];
+
+    u32 mesh_flags = mesh.flags;
+
+    if (bgfx::isValid(state.vertex_alias))
+    {
+        // state.vertex_alias = g_ctx->vertex_layout_cache.resolve_alias(mesh_flags, state.vertex_alias.idx);
+    }
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder, "Failed to acquire BGFX encoder.");
+    }
+
+    // TODO : Check whether instancing works together with the aliasing.
+    if (state.instances)
+    {
+        t_ctx->encoder->setInstanceDataBuffer(&state.instances->buffer);
+
+        if (state.instances->is_transform)
+        {
+            mesh_flags |= INSTANCING_SUPPORTED;
+        }
+    }
+
+    if (mesh_flags & TEXT_MESH)
+    {
+        if (!bgfx::isValid(state.texture))
+        {
+            // texture(mesh.extra_data);
+        }
+
+        if (state.flags == STATE_DEFAULT)
+        {
+            // NOTE : Maybe we just want ensure that the blending is added?
+            state.flags = STATE_BLEND_ALPHA | STATE_WRITE_RGB;
+        }
+    }
+
+    if (!bgfx::isValid(state.program))
+    {
+        // TODO : Figure out how to do this without this ugliness.
+        // if (state.sampler.idx == g_ctx->default_uniforms.color_texture_r.idx)
+        // {
+        //     mesh_flags |= SAMPLER_COLOR_R;
+        // }
+
+        const u32 index = default_program_index(mesh_flags);
+        state.program = g_ctx->default_programs[index];
+
+        ASSERT(bgfx::isValid(state.program), "Invalid state program.");
+    }
+
+    if (state.element_start != 0 || state.element_count != U32_MAX)
+    {
+        WARN(
+            mesh_flags & OPTIMIZE_GEOMETRY,
+            "Mesh %i has optimized geometry. Using sub-range might not work.",
+            id
+        );
+
+        if (mesh_flags & PRIMITIVE_QUADS)
+        {
+            ASSERT(
+                state.element_start % 4 == 0,
+                "Sub-range start not divisble by 4."
+            );
+
+            ASSERT(
+                state.element_count % 4 == 0,
+                "Sub-range count not divisble by 4."
+            );
+
+            state.element_start = (state.element_start >> 1) * 3;
+            state.element_count = (state.element_count >> 1) * 3;
+        }
+    }
+
+    submit_mesh(
+        mesh,
+        t_ctx->matrix_stack.top,
+        state,
+        g_ctx->mesh_cache.transient_buffers,
+        g_ctx->default_uniforms,
+        *t_ctx->encoder
+    );
+
+    state = {};
+}
+
+void alias(int flags)
+{
+    t_ctx->draw_state.vertex_alias = { u16(flags) };
+}
+
+void range(int start, int count)
+{
+    ASSERT(start >= 0, "Non-positive start index.");
+
+    t_ctx->draw_state.element_start = u32(start) ;
+    t_ctx->draw_state.element_count = count >= 0 ? u32(count) : U32_MAX;
+}
+
+void state(int flags)
+{
+    t_ctx->draw_state.flags = u16(flags);
+}
+
+void scissor(int x, int y, int width, int height)
+{
+    using namespace mnm;
+
+    ASSERT(x >= 0, "Non-positive scissor X (%i).", x);
+    ASSERT(y >= 0, "Non-positive scissor Y (%i).", y);
+    ASSERT(width >= 0, "Non-positive scissor width (%i).", width);
+    ASSERT(height >= 0, "Non-positive scissor height (%i).", height);
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder, "Failed to acquire BGFX encoder.");
+    }
+
+    t_ctx->encoder->setScissor(u16(x), u16(y), u16(width), u16(height));
+}
+
+
+// -----------------------------------------------------------------------------
