@@ -765,7 +765,7 @@ struct FixedArray
 
     operator Span<T>() const
     {
-        return { data, Size };
+        return { const_cast<T*>(data), Size };
     }
 };
 
@@ -811,7 +811,7 @@ struct DynamicArray
 
     operator Span<T>() const
     {
-        return { data, size };
+        return { const_cast<T*>(data), size };
     }
 };
 
