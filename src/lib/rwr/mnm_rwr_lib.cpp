@@ -546,7 +546,7 @@ void alias(int flags)
 
 void range(int start, int count)
 {
-    ASSERT(start >= 0, "Non-positive start index.");
+    ASSERT(start >= 0, "Negative start index.");
 
     t_ctx->draw_state.element_start = u32(start) ;
     t_ctx->draw_state.element_count = count >= 0 ? u32(count) : U32_MAX;
@@ -559,12 +559,10 @@ void state(int flags)
 
 void scissor(int x, int y, int width, int height)
 {
-    using namespace mnm;
-
-    ASSERT(x >= 0, "Non-positive scissor X (%i).", x);
-    ASSERT(y >= 0, "Non-positive scissor Y (%i).", y);
-    ASSERT(width >= 0, "Non-positive scissor width (%i).", width);
-    ASSERT(height >= 0, "Non-positive scissor height (%i).", height);
+    ASSERT(x >= 0, "Negative scissor X (%i).", x);
+    ASSERT(y >= 0, "Negative scissor Y (%i).", y);
+    ASSERT(width >= 0, "Negative scissor width (%i).", width);
+    ASSERT(height >= 0, "Negative scissor height (%i).", height);
 
     if (!t_ctx->encoder)
     {
