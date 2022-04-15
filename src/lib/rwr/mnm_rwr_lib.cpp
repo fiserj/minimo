@@ -686,3 +686,76 @@ int readable(int id)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - INSTANCING
+// -----------------------------------------------------------------------------
+
+void begin_instancing(int id, int type)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_INSTANCE_BUFFERS),
+        "Instance buffer ID %i out of available range 1 ... %i.",
+        id, int(MAX_INSTANCE_BUFFERS - 1)
+    );
+
+    ASSERT(
+        type >= INSTANCE_TRANSFORM && type <= INSTANCE_DATA_112,
+        "Invalid instance buffer data type %i.",
+        type
+    );
+
+    start(t_ctx->instance_recorder, u32(type));
+
+    t_ctx->record_info.id           = u16(id);
+    t_ctx->record_info.is_transform = type == INSTANCE_TRANSFORM;
+    t_ctx->record_info.type         = RecordType::INSTANCES;
+}
+
+void end_instancing(void)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::INSTANCES,
+        "Instance buffer recording not started. Call `begin_instancing` first."
+    );
+
+    // TODO : Figure out error handling - crash or just ignore the submission?
+    add_instances(
+        g_ctx->instance_cache,
+        t_ctx->instance_recorder,
+        t_ctx->record_info.id,
+        t_ctx->record_info.is_transform
+    );
+
+    end(t_ctx->instance_recorder);
+
+    t_ctx->record_info = {};
+}
+
+void instance(const void* data)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::INSTANCES,
+        "Instance buffer recording not started. Call `begin_instancing` first."
+    );
+
+    ASSERT(data, "Invalid data pointer.");
+
+    append(
+        t_ctx->instance_recorder,
+        t_ctx->record_info.is_transform ? &t_ctx->matrix_stack.top : data
+    );
+}
+
+void instances(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_INSTANCE_BUFFERS),
+        "Instance buffer ID %i out of available range 1 ... %i.",
+        id, int(MAX_INSTANCE_BUFFERS - 1)
+    );
+
+    // TODO : Assert that instance ID is active in the cache in the current frame.
+    t_ctx->draw_state.instances = &g_ctx->instance_cache.data[u16(id)];
+}
+
+
+// -----------------------------------------------------------------------------
