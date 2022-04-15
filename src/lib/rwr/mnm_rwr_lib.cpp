@@ -767,3 +767,118 @@ void instances(int id)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - PASSES
+// -----------------------------------------------------------------------------
+
+void pass(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_PASSES),
+        "Pass ID %i out of available range 1 ... %i.",
+        id, int(MAX_PASSES - 1)
+    );
+
+    t_ctx->active_pass = u16(id);
+    g_ctx->pass_cache.passes[t_ctx->active_pass].dirty_flags |= Pass::DIRTY_TOUCH;
+}
+
+void no_clear(void)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    if (pass.clear_flags != BGFX_CLEAR_NONE)
+    {
+        pass.clear_flags  = BGFX_CLEAR_NONE;
+        pass.dirty_flags |= Pass::DIRTY_CLEAR;
+    }
+}
+
+void clear_depth(float depth)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    if (  pass.clear_depth != depth            ||
+        !(pass.dirty_flags & BGFX_CLEAR_DEPTH) ||
+        !(pass.clear_flags & BGFX_CLEAR_DEPTH)
+    )
+    {
+        pass.dirty_flags |= Pass::DIRTY_CLEAR;
+    }
+}
+
+void clear_color(unsigned int rgba)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    if (  pass.clear_rgba != rgba              ||
+        !(pass.dirty_flags & BGFX_CLEAR_COLOR) ||
+        !(pass.clear_flags & BGFX_CLEAR_COLOR)
+    )
+    {
+        pass.clear_flags |= BGFX_CLEAR_COLOR;
+        pass.clear_rgba   = rgba;
+        pass.dirty_flags |= Pass::DIRTY_CLEAR;
+    }
+}
+
+void no_framebuffer(void)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    pass.framebuffer  = BGFX_INVALID_HANDLE;
+    pass.dirty_flags |= Pass::DIRTY_FRAMEBUFFER;
+}
+
+void framebuffer(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_FRAMEBUFFERS),
+        "Framebuffer ID %i out of available range 1 ... %i.",
+        id, int(MAX_FRAMEBUFFERS - 1)
+    );
+
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    pass.framebuffer  = g_ctx->framebuffer_cache.framebuffers[u16(id)].handle;
+    pass.dirty_flags |= Pass::DIRTY_FRAMEBUFFER;
+}
+
+void viewport(int x, int y, int width, int height)
+{
+    ASSERT(x >= 0, "Negative viewport X (%i).", x);
+
+    ASSERT(y >= 0, "Negative viewport Y (%i).", y);
+
+    ASSERT(width >= 0, "Negative viewport width (%i).", width);
+
+    ASSERT(height >= 0, "Negative viewport height (%i).", height);
+
+    ASSERT(
+        (width < SIZE_EQUAL && height < SIZE_EQUAL) ||
+        (width <= SIZE_DOUBLE && width == height), // TODO : Inspect necessity of this.
+        "Non-conforming texture width (%i) or height (%i).",
+        width, height
+    );
+
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    if (pass.viewport_x      != x     ||
+        pass.viewport_y      != y     ||
+        pass.viewport_width  != width ||
+        pass.viewport_height != height)
+    {
+        pass.viewport_x      = u16(x);
+        pass.viewport_y      = u16(y);
+        pass.viewport_width  = u16(width);
+        pass.viewport_height = u16(height);
+        pass.dirty_flags    |= Pass::DIRTY_RECT;
+    }
+}
+
+void full_viewport(void)
+{
+    viewport(0, 0, SIZE_EQUAL, SIZE_EQUAL);
+}
+
+
+// -----------------------------------------------------------------------------
