@@ -2865,8 +2865,57 @@ const DefaultUniformInfo s_default_uniforms[] =
     { "u_tex_size"        , bgfx::UniformType::Vec4   , DefaultUniform::TEXTURE_SIZE       },
 };
 
-
 using DefaultUniforms = FixedArray<bgfx::UniformHandle, BX_COUNTOF(s_default_uniforms)>;
+
+struct UniformCache
+{
+    Mutex                                         mutex;
+    FixedArray<bgfx::UniformHandle, MAX_UNIFORMS> handles;
+};
+
+void init(UniformCache& cache)
+{
+    for (u32 i = 0; i < cache.handles.size; i++)
+    {
+        cache.handles[i] = BGFX_INVALID_HANDLE;
+    }
+}
+
+void deinit(UniformCache& cache)
+{
+    for (u32 i = 0; i < cache.handles.size; i++)
+    {
+        destroy_if_valid(cache.handles[i]);
+    }
+}
+
+void add_uniform
+(
+    UniformCache& cache,
+    u16           id,
+    u16           type,
+    u16           count,
+    const char*   name
+)
+{
+    constexpr bgfx::UniformType::Enum types[] =
+    {
+        bgfx::UniformType::Count,
+
+        bgfx::UniformType::Vec4,
+        bgfx::UniformType::Mat4,
+        bgfx::UniformType::Mat3,
+        bgfx::UniformType::Sampler,
+    };
+
+    bgfx::UniformHandle handle = bgfx::createUniform(name, types[type], count);
+    ASSERT(bgfx::isValid(handle), "Uniform creation failed.");
+
+    MutexScope lock(cache.mutex);
+
+    destroy_if_valid(cache.handles[id]);
+    cache.handles[id] = handle;
+}
 
 void init(DefaultUniforms& uniforms)
 {
@@ -3669,6 +3718,7 @@ struct GlobalContext
     InstanceCache     instance_cache;
     TextureCache      texture_cache;
     FramebufferCache  framebuffer_cache;
+    UniformCache      uniform_cache;
     ProgramCache      program_cache;
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
@@ -3921,6 +3971,9 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     init(g_ctx->default_uniforms);
     defer(deinit(g_ctx->default_uniforms));
+
+    init(g_ctx->uniform_cache);
+    defer(deinit(g_ctx->uniform_cache));
 
     init(g_ctx->default_programs, bgfx::getRendererType());
     defer(deinit(g_ctx->default_programs));
