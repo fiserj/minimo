@@ -281,8 +281,8 @@ double toc(void)
 void begin_mesh(int id, int flags)
 {
     ASSERT(
-        !t_ctx->mesh_recorder.store_vertex,
-        "Mesh recording already started. Call `end_mesh` first."
+        t_ctx->record_info.type == RecordType::NONE,
+        "Another recording in progress. Call respective `end_*` first."
     );
 
     ASSERT(
@@ -294,6 +294,7 @@ void begin_mesh(int id, int flags)
     t_ctx->record_info.flags      = u32(flags);
     t_ctx->record_info.extra_data = 0;
     t_ctx->record_info.id         = u16(id);
+    t_ctx->record_info.type       = RecordType::MESH;
 
     start(t_ctx->mesh_recorder, t_ctx->record_info.flags);
 }
@@ -301,7 +302,7 @@ void begin_mesh(int id, int flags)
 void end_mesh(void)
 {
     ASSERT(
-        t_ctx->mesh_recorder.store_vertex,
+        t_ctx->record_info.type == RecordType::MESH,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -358,12 +359,14 @@ void end_mesh(void)
     );
 
     end(t_ctx->mesh_recorder);
+
+    t_ctx->record_info = {};
 }
 
 void vertex(float x, float y, float z)
 {
     ASSERT(
-        t_ctx->mesh_recorder.store_vertex,
+        t_ctx->record_info.type == RecordType::MESH,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -390,7 +393,7 @@ void vertex(float x, float y, float z)
 void color(unsigned int rgba)
 {
     ASSERT(
-        t_ctx->mesh_recorder.store_vertex,
+        t_ctx->record_info.type == RecordType::MESH,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -403,7 +406,7 @@ void color(unsigned int rgba)
 void normal(float nx, float ny, float nz)
 {
     ASSERT(
-        t_ctx->mesh_recorder.store_vertex,
+        t_ctx->record_info.type == RecordType::MESH,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -416,7 +419,7 @@ void normal(float nx, float ny, float nz)
 void texcoord(float u, float v)
 {
     ASSERT(
-        t_ctx->mesh_recorder.store_vertex,
+        t_ctx->record_info.type == RecordType::MESH,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -691,6 +694,11 @@ int readable(int id)
 
 void begin_instancing(int id, int type)
 {
+    ASSERT(
+        t_ctx->record_info.type == RecordType::NONE,
+        "Another recording in progress. Call respective `end_*` first."
+    );
+
     ASSERT(
         id > 0 && id < int(MAX_INSTANCE_BUFFERS),
         "Instance buffer ID %i out of available range 1 ... %i.",
