@@ -929,3 +929,95 @@ void end_framebuffer(void)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - SHADERS
+// -----------------------------------------------------------------------------
+
+void create_uniform(int id, int type, int count, const char* name)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_UNIFORMS),
+        "Uniform ID %i out of available range 1 ... %i.",
+        id, int(MAX_UNIFORMS - 1)
+    );
+
+    ASSERT(
+        type > 0 && type <= UNIFORM_SAMPLER,
+        "Invalid uniform type %i.",
+        type
+    );
+
+    ASSERT(count > 0, "Non-positive uniform count (%i).", count);
+
+    ASSERT(name, "Invalid name string.");
+
+    add_uniform(
+        g_ctx->uniform_cache,
+        u16(id),
+        u16(type),
+        u16(count),
+        name
+    );
+}
+
+void uniform(int id, const void* value)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_UNIFORMS),
+        "Uniform ID %i out of available range 1 ... %i.",
+        id, int(MAX_UNIFORMS - 1)
+    );
+
+    ASSERT(value, "Invalid uniform value pointer.");
+
+    if (!t_ctx->encoder)
+    {
+        t_ctx->encoder = bgfx::begin(!t_ctx->is_main_thread);
+        ASSERT(t_ctx->encoder, "Failed to acquire BGFX encoder.");
+    }
+
+    t_ctx->encoder->setUniform(
+        g_ctx->uniform_cache.handles[u16(id)],
+        value,
+        U16_MAX
+    );
+}
+
+void create_shader(int id, const void* vs_data, int vs_size, const void* fs_data, int fs_size)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_PROGRAMS),
+        "Program ID %i out of available range 1 ... %i.",
+        id, int(MAX_PROGRAMS - 1)
+    );
+
+    ASSERT(vs_data, "Invalid vertex shader data pointer.");
+
+    ASSERT(vs_size > 0, "Non-positive vertex shader data size (%i).", vs_size);
+
+    ASSERT(fs_data, "Invalid fragment shader data pointer.");
+
+    ASSERT(fs_size > 0, "Non-positive fragment shader data size (%i).", fs_size);
+
+    add_program(
+        g_ctx->program_cache,
+        u16(id),
+        vs_data,
+        u32(vs_size),
+        fs_data,
+        u32(fs_size)
+    );
+}
+
+void shader(int id)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_PROGRAMS),
+        "Program ID %i out of available range 1 ... %i.",
+        id, int(MAX_PROGRAMS - 1)
+    );
+
+    t_ctx->draw_state.program = g_ctx->program_cache.handles[u16(id)];
+}
+
+
+// -----------------------------------------------------------------------------
