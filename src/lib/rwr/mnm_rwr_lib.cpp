@@ -1021,3 +1021,101 @@ void shader(int id)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TRANSFORMATIONS
+// -----------------------------------------------------------------------------
+
+void view(void)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    pass.view_matrix  = t_ctx->matrix_stack.top;
+    pass.dirty_flags |= Pass::DIRTY_TRANSFORM;
+}
+
+void projection(void)
+{
+    Pass& pass = g_ctx->pass_cache.passes[t_ctx->active_pass];
+
+    pass.proj_matrix  = t_ctx->matrix_stack.top;
+    pass.dirty_flags |= Pass::DIRTY_TRANSFORM;
+}
+
+void push(void)
+{
+    push(t_ctx->matrix_stack);
+}
+
+void pop(void)
+{
+    pop(t_ctx->matrix_stack);
+}
+
+void identity(void)
+{
+    t_ctx->matrix_stack.top = HMM_Mat4d(1.0f);
+}
+
+void ortho(float left, float right, float bottom, float top, float near_, float far_)
+{
+    multiply_top(
+        t_ctx->matrix_stack,
+        HMM_Orthographic(left, right, bottom, top, near_, far_)
+    );
+}
+
+void perspective(float fovy, float aspect, float near_, float far_)
+{
+    multiply_top(
+        t_ctx->matrix_stack,
+        HMM_Perspective(fovy, aspect, near_, far_)
+    );
+}
+
+void look_at(float eye_x, float eye_y, float eye_z, float at_x, float at_y,
+    float at_z, float up_x, float up_y, float up_z)
+{
+    multiply_top(
+        t_ctx->matrix_stack,
+        HMM_LookAt(
+            HMM_Vec3(eye_x, eye_y, eye_z),
+            HMM_Vec3( at_x,  at_y,  at_z),
+            HMM_Vec3( up_x,  up_y,  up_z)
+        )
+    );
+}
+
+void rotate(float angle, float x, float y, float z)
+{
+    multiply_top(t_ctx->matrix_stack, HMM_Rotate(angle, HMM_Vec3(x, y, z)));
+}
+
+void rotate_x(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 1.0f, 0.0f, 0.0f);
+}
+
+void rotate_y(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 1.0f, 0.0f);
+}
+
+void rotate_z(float angle)
+{
+    // TODO : General rotation matrix is wasteful here.
+    rotate(angle, 0.0f, 0.0f, 1.0f);
+}
+
+void scale(float scale)
+{
+    multiply_top(t_ctx->matrix_stack, HMM_Scale(HMM_Vec3(scale, scale, scale)));
+}
+
+void translate(float x, float y, float z)
+{
+    multiply_top(t_ctx->matrix_stack, HMM_Translate(HMM_Vec3(x, y, z)));
+}
+
+
+// -----------------------------------------------------------------------------
