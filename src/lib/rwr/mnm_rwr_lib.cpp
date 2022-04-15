@@ -1119,3 +1119,25 @@ void translate(float x, float y, float z)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MULTITHREADING
+// -----------------------------------------------------------------------------
+
+int task(void (* func)(void* data), void* data)
+{
+    ASSERT(func, "Invalid task function pointer.");
+
+    Task* task = acquire_task(g_ctx->task_pool);
+
+    if (task)
+    {
+        task->func = func;
+        task->data = data;
+
+        g_ctx->task_scheduler.AddTaskSetToPipe(task);
+    }
+
+    return task != nullptr;
+}
+
+
+// -----------------------------------------------------------------------------
