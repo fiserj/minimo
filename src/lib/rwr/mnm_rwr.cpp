@@ -3153,6 +3153,11 @@ void start(FramebufferRecorder& recorder)
     recorder.height = 0;
 }
 
+void end(FramebufferRecorder& recorder)
+{
+    start(recorder);
+}
+
 void add_attachment(FramebufferRecorder& recorder, const Texture& attachment)
 {
     ASSERT(

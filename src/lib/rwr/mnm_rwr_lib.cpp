@@ -882,3 +882,50 @@ void full_viewport(void)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - FRAMEBUFFERS
+// -----------------------------------------------------------------------------
+
+void begin_framebuffer(int id)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::NONE,
+        "Another recording in progress. Call respective `end_*` first."
+    );
+
+    ASSERT(
+        id > 0 && id < int(MAX_FRAMEBUFFERS),
+        "Framebuffer ID %i out of available range 1 ... %i.",
+        id, int(MAX_FRAMEBUFFERS - 1)
+    );
+
+    start(t_ctx->framebuffer_recorder);
+
+    t_ctx->record_info.id   = u16(id);
+    t_ctx->record_info.type = RecordType::FRAMEBUFFER;
+}
+
+void end_framebuffer(void)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::FRAMEBUFFER,
+        "Framebuffer recording not started. Call `begin_framebuffer` first."
+    );
+
+    add_framebuffer(
+        g_ctx->framebuffer_cache,
+        t_ctx->record_info.id,
+        t_ctx->framebuffer_recorder.width,
+        t_ctx->framebuffer_recorder.height,
+        {
+            t_ctx->framebuffer_recorder.attachments.data,
+            t_ctx->framebuffer_recorder.count
+        }
+    );
+
+    end(t_ctx->framebuffer_recorder);
+
+    t_ctx->record_info = {};
+}
+
+
+// -----------------------------------------------------------------------------
