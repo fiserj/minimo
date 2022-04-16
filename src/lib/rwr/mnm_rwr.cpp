@@ -390,17 +390,27 @@ using CrtAllocator = bx::DefaultAllocator;
 
 
 // -----------------------------------------------------------------------------
+// OWNING ALLOCATOR
+// -----------------------------------------------------------------------------
+
+struct OwningAllocator : Allocator
+{
+    virtual bool owns(const void* ptr) const = 0;
+};
+
+
+// -----------------------------------------------------------------------------
 // ARENA ALLOCATOR
 // -----------------------------------------------------------------------------
 
-struct ArenaAllocator : Allocator
+struct ArenaAllocator : OwningAllocator
 {
     u8* buffer;
     u32 size;
     u32 top;  // Offset to first free byte in buffer.
     u32 last; // Offset of last allocated block.
 
-    bool owns(const void* ptr) const
+    virtual bool owns(const void* ptr) const override
     {
         // NOTE : > (not >=) because the first four bytes are reserved for head.
         // TODO : Should really just check against the allocated portion.
@@ -463,7 +473,7 @@ void init(ArenaAllocator& allocator, void* buffer, u32 size)
 // STACK ALLOCATOR
 // -----------------------------------------------------------------------------
 
-struct StackAllocator : Allocator
+struct StackAllocator : OwningAllocator
 {
     enum : u32
     {
@@ -509,7 +519,7 @@ struct StackAllocator : Allocator
     u32 top;    // Offset to first free byte in buffer.
     u32 last;   // Offset of last block header.
 
-    bool owns(const void* ptr) const
+    virtual bool owns(const void* ptr) const override
     {
         // NOTE : > (not >=) because the first four bytes are reserved for head.
         // TODO : Should really just check against the allocated portion.
@@ -636,7 +646,7 @@ struct StackAllocator : Allocator
 void init(StackAllocator& allocator, void* buffer, u32 size)
 {
     ASSERT(buffer, "Invalid buffer pointer.");
-    ASSERT(size >= 64, "Too small buffer size %" PRIu32".", size);
+    ASSERT(size >= 64, "Too small buffer size %" PRIu32 ".", size);
     ASSERT(size <= StackAllocator::SIZE_MASK, "Too big buffer size %" PRIu32".", size);
 
     allocator.buffer = reinterpret_cast<u8*>(buffer);
