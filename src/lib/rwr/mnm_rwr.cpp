@@ -716,6 +716,59 @@ TEST_CASE("Stack Allocator")
 
 
 // -----------------------------------------------------------------------------
+// BACKED ALLOCATOR
+// -----------------------------------------------------------------------------
+
+struct BackedAllocator : Allocator
+{
+    OwningAllocator* primary = nullptr;
+    Allocator*       backing = nullptr;
+
+    virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
+    {
+        ASSERT(primary, "");
+
+        void* memory = nullptr;
+
+        if (!size)
+        {
+            if (primary->owns(ptr))
+            {
+                memory = primary->realloc(ptr, 0, align, file, line);
+            }
+            else
+            {
+                memory = backing->realloc(ptr, 0, align, file, line);
+            }
+        }
+        else if (!ptr)
+        {
+            memory = primary->realloc(nullptr, size, align, file, line);
+
+            if (!memory)
+            {
+                memory = backing->realloc(nullptr, size, align, file, line);
+            }
+        }
+        else
+        {
+            if (primary->owns(ptr))
+            {
+                memory = primary->realloc(ptr, size, align, file, line);
+            }
+
+            if (!memory)
+            {
+                memory = backing->realloc(ptr, size, align, file, line);
+            }
+        }
+
+        return memory;
+    }
+};
+
+
+// -----------------------------------------------------------------------------
 // BACKED STACK ALLOCATOR
 // -----------------------------------------------------------------------------
 
