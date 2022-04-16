@@ -3644,6 +3644,91 @@ void Task::ExecuteRange(enki::TaskSetPartition, u32)
 
 
 // -----------------------------------------------------------------------------
+// MEMORY CACHING
+// -----------------------------------------------------------------------------
+
+struct MemoryBlock
+{
+    enum : u16
+    {
+        FREE_BIT  = 0x8000,
+        NEXT_MASK = 0x7fff,
+    };
+
+    u8* data;
+    u32 size;
+    u16 flags;
+};
+
+struct MemoryCache
+{
+    Mutex                     mutex;
+    DynamicArray<MemoryBlock> persistent_blocks;
+    DynamicArray<MemoryBlock> scratch_blocks;
+    BackedStackAllocator      scratch_allocator; // TODO : Replace with "backed arena allocator".
+    Allocator*                persistent_allocator = nullptr;
+};
+
+void init(MemoryCache& cache, Allocator* allocator, u32 scratch_size)
+{
+    void* scratch_buffer = BX_ALLOC(allocator, scratch_size);
+    ASSERT(scratch_buffer, "Failed to allocate memory cache's scratch memory.");
+
+    init(cache.scratch_allocator, allocator, scratch_buffer, scratch_size);
+    init(cache.scratch_blocks, &cache.scratch_allocator);
+
+    cache.persistent_allocator = allocator;
+
+    init   (cache.persistent_blocks, cache.persistent_allocator);
+    reserve(cache.persistent_blocks, 32);
+}
+
+void deinit(MemoryCache& cache)
+{
+    deinit(cache.persistent_blocks);
+    deinit(cache.scratch_blocks);
+}
+
+void init_frame(MemoryCache& cache)
+{
+    for (u32 i = 0; i < cache.scratch_blocks.size; i++)
+    {
+        BX_REALLOC(&cache.scratch_allocator, cache.scratch_blocks[i].data, 0);
+    }
+
+    // TODO : Replace this hack with a `reset` function.
+    init(
+        cache.scratch_allocator,
+        cache.scratch_allocator.buffer,
+        cache.scratch_allocator.size
+    );
+    cache.scratch_blocks = {};
+
+    init   (cache.scratch_blocks, &cache.scratch_allocator);
+    reserve(cache.scratch_blocks, 32);
+}
+
+Span<u8> alloc_content(MemoryCache& cache, u32 size)
+{
+    // ...
+
+    return {};
+}
+
+Span<u8> add_file_content(MemoryCache& cache, const char* file_name, bool as_string)
+{
+    // ...
+
+    return {};
+}
+
+void dealloc_content(MemoryCache& cache, void* content)
+{
+
+}
+
+
+// -----------------------------------------------------------------------------
 // CODEPOINT QUEUE
 // -----------------------------------------------------------------------------
 
@@ -3741,7 +3826,8 @@ struct GlobalContext
     u32               frame_number      = 0;
     u32               bgfx_frame_number = 0;
 
-    u32               transient_memory  = 32_MB;
+    u32               transient_memory  = 32_MB; // TODO : Make the name clearer.
+    u32               frame_memory      = 8_MB;  // TODO : Make the name clearer.
     u32               vsync_on          = 0;
     bool              reset_back_buffer = true;
 };
