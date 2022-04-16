@@ -8,7 +8,7 @@
 #include <thread>                 // hardware_concurrency
 #include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
 
-#include <bx/allocator.h>         // AllocatorI, BX_ALIGNED_*
+#include <bx/allocator.h>         // alignPtr, AllocatorI, BX_ALIGNED_*
 #include <bx/bx.h>                // BX_ASSERT, BX_CONCATENATE, BX_WARN, memCmp, memCopy, min/max
 #include <bx/cpu.h>               // atomicFetchAndAdd, atomicCompareAndSwap
 #include <bx/endian.h>            // endianSwap
@@ -387,6 +387,76 @@ union Vec2i
 using Allocator    = bx::AllocatorI;
 
 using CrtAllocator = bx::DefaultAllocator;
+
+
+// -----------------------------------------------------------------------------
+// ARENA ALLOCATOR
+// -----------------------------------------------------------------------------
+
+struct ArenaAllocator : Allocator
+{
+    u8* buffer;
+    u32 size;
+    u32 top;  // Offset to first free byte in buffer.
+    u32 last; // Offset of last allocated block.
+
+    bool owns(const void* ptr) const
+    {
+        // NOTE : > (not >=) because the first four bytes are reserved for head.
+        // TODO : Should really just check against the allocated portion.
+        return ptr > buffer && ptr < buffer + size;
+    }
+
+    virtual void* realloc(void* ptr, size_t size_, size_t align, const char* file, u32 line) override
+    {
+        BX_UNUSED(file);
+        BX_UNUSED(line);
+
+        if (ptr && !owns(ptr))
+        {
+            ASSERT(false, "Invalid or not-owned pointer ptr.");
+            return nullptr;
+        }
+
+        u8* memory = nullptr;
+
+        if (size_)
+        {
+            u8* data = ptr != buffer + last
+                ? reinterpret_cast<u8*>(bx::alignPtr(buffer + top, 0, align))
+                : buffer + last;
+
+            if (data + size_ <= buffer + size)
+            {
+                if (data != ptr)
+                {
+                    last = top;
+
+                    // NOTE : We only know the previous allocation's size, but
+                    //        since the blocks are allocated linearly, the copy
+                    //        will never access data beyond `buffer`.
+                    bx::memCopy(memory, ptr, size_);
+                }
+
+                memory = data;
+                top    = u32((data + size_) - buffer);
+            }
+        }
+
+        return memory;
+    }
+};
+
+void init(ArenaAllocator& allocator, void* buffer, u32 size)
+{
+    ASSERT(buffer, "Invalid buffer pointer.");
+    ASSERT(size >= 64, "Too small buffer size %" PRIu32 ".", size);
+
+    allocator.buffer = reinterpret_cast<u8*>(buffer);
+    allocator.size   = size;
+    allocator.top    = 0;
+    allocator.last   = 0;
+}
 
 
 // -----------------------------------------------------------------------------
