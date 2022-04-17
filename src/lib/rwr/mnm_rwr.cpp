@@ -744,7 +744,8 @@ struct BackedAllocator : Allocator
 
     virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
     {
-        ASSERT(primary, "");
+        ASSERT(primary, "Invalid primary allocator pointer.");
+        ASSERT(backing, "Invalid backing allocator pointer.");
 
         void* memory = nullptr;
 
@@ -3760,19 +3761,26 @@ struct MemoryCache
     Mutex                     mutex;
     DynamicArray<MemoryBlock> persistent_blocks;
     DynamicArray<MemoryBlock> scratch_blocks;
-    BackedStackAllocator      scratch_allocator; // TODO : Replace with "backed arena allocator".
-    Allocator*                persistent_allocator = nullptr;
+    ArenaAllocator            arena_allocator;
+    BackedAllocator           backed_scratch_allocator;
+    Allocator*                persistent_allocator;
 };
 
 void init(MemoryCache& cache, Allocator* allocator, u32 scratch_size)
 {
-    void* scratch_buffer = BX_ALLOC(allocator, scratch_size);
-    ASSERT(scratch_buffer, "Failed to allocate memory cache's scratch memory.");
-
-    init(cache.scratch_allocator, allocator, scratch_buffer, scratch_size);
-    init(cache.scratch_blocks, &cache.scratch_allocator);
+    ASSERT(allocator, "Invalid allocator pointer.");
+    ASSERT(scratch_size, "Zero scratch memory size.");
 
     cache.persistent_allocator = allocator;
+
+    void* scratch_buffer = BX_ALLOC(cache.persistent_allocator, scratch_size);
+    ASSERT(scratch_buffer, "Failed to allocate scratch memory.");
+
+    init(cache.arena_allocator, scratch_buffer, scratch_size);
+
+    init(cache.backed_scratch_allocator, &cache.arena_allocator, cache.persistent_allocator);
+
+    init(cache.scratch_blocks, &cache.backed_scratch_allocator);
 
     init   (cache.persistent_blocks, cache.persistent_allocator);
     reserve(cache.persistent_blocks, 32);
@@ -3780,26 +3788,36 @@ void init(MemoryCache& cache, Allocator* allocator, u32 scratch_size)
 
 void deinit(MemoryCache& cache)
 {
+    for (u32 i = 0; i < cache.persistent_blocks.size; i++)
+    {
+        BX_REALLOC(cache.persistent_allocator, cache.persistent_blocks[i].data, 0);
+    }
+
     deinit(cache.persistent_blocks);
+
+    for (u32 i = 0; i < cache.scratch_blocks.size; i++)
+    {
+        BX_REALLOC(&cache.backed_scratch_allocator, cache.scratch_blocks[i].data, 0);
+    }
+
     deinit(cache.scratch_blocks);
+
+    BX_FREE(cache.persistent_allocator, cache.arena_allocator.buffer);
 }
 
 void init_frame(MemoryCache& cache)
 {
     for (u32 i = 0; i < cache.scratch_blocks.size; i++)
     {
-        BX_REALLOC(&cache.scratch_allocator, cache.scratch_blocks[i].data, 0);
+        BX_REALLOC(&cache.backed_scratch_allocator, cache.scratch_blocks[i].data, 0);
     }
 
     // TODO : Replace this hack with a `reset` function.
-    init(
-        cache.scratch_allocator,
-        cache.scratch_allocator.buffer,
-        cache.scratch_allocator.size
-    );
+    reset(cache.arena_allocator);
+
     cache.scratch_blocks = {};
 
-    init   (cache.scratch_blocks, &cache.scratch_allocator);
+    init   (cache.scratch_blocks, &cache.backed_scratch_allocator);
     reserve(cache.scratch_blocks, 32);
 }
 
@@ -3941,7 +3959,8 @@ struct ThreadLocalContext
 
     Timer                stop_watch;
 
-    BackedStackAllocator stack_allocator;
+    StackAllocator       stack_allocator;
+    BackedAllocator      backed_scratch_allocator;
 
     bgfx::ViewId         active_pass    = 0;
     bool                 is_main_thread = false;
@@ -3949,11 +3968,14 @@ struct ThreadLocalContext
 
 void init(ThreadLocalContext& ctx, Allocator* allocator)
 {
-    const u32 size   = 16_MB; // TODO : Make this configurable.
-    void*     buffer = BX_ALLOC(allocator, size);
+    const u32 size = 16_MB; // TODO : Make this configurable.
 
+    void* buffer = BX_ALLOC(allocator, size);
     ASSERT(buffer, "Failed to allocate stack memory.");
-    init(ctx.stack_allocator, allocator, buffer, size);
+
+    init(ctx.stack_allocator, buffer, size);
+
+    init(ctx.backed_scratch_allocator, &ctx.stack_allocator, allocator);
 
     // NOTE : No `deinit` needed.
     init(ctx.mesh_recorder    , &ctx.stack_allocator);
