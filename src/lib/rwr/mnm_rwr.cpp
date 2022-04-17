@@ -785,69 +785,13 @@ struct BackedAllocator : Allocator
     }
 };
 
-
-// -----------------------------------------------------------------------------
-// BACKED STACK ALLOCATOR
-// -----------------------------------------------------------------------------
-
-struct BackedStackAllocator : StackAllocator
+void init(BackedAllocator& allocator, OwningAllocator* primary, Allocator* backing)
 {
-    Allocator* backing = nullptr;
-
-    virtual void* realloc(void* ptr, size_t size, size_t align, const char* file, u32 line) override
-    {
-        void* memory = nullptr;
-
-        if (!size)
-        {
-            if (owns(ptr))
-            {
-                memory = StackAllocator::realloc(ptr, 0, align, file, line);
-            }
-            else
-            {
-                memory = backing->realloc(ptr, 0, align, file, line);
-            }
-        }
-        else if (!ptr)
-        {
-            memory = StackAllocator::realloc(nullptr, size, align, file, line);
-
-            if (!memory)
-            {
-                memory = backing->realloc(nullptr, size, align, file, line);
-            }
-        }
-        else
-        {
-            if (owns(ptr))
-            {
-                memory = StackAllocator::realloc(ptr, size, align, file, line);
-            }
-
-            if (!memory)
-            {
-                memory = backing->realloc(ptr, size, align, file, line);
-            }
-        }
-
-        return memory;
-    }
-};
-
-void init
-(
-    BackedStackAllocator& allocator,
-    Allocator*            backing,
-    void*                 buffer,
-    u32                   size
-)
-{
+    ASSERT(primary, "Invalid primary allocator pointer.");
     ASSERT(backing, "Invalid backing allocator pointer.");
 
+    allocator.primary = primary;
     allocator.backing = backing;
-
-    init(allocator, buffer, size);
 }
 
 
