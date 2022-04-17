@@ -2,7 +2,7 @@
 
 #include <inttypes.h>             // PRI*
 #include <math.h>                 // acosf
-#include <stddef.h>               // size_t
+#include <stddef.h>               // offsetof, size_t
 #include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
 
 #include <thread>                 // hardware_concurrency
@@ -2519,7 +2519,8 @@ void add_mesh
     if (type != MESH_TRANSIENT)
     {
         static_assert(
-            &mesh.positions + 1 == &mesh.attribs,
+            offsetof(Mesh, positions) + sizeof(Mesh::positions) ==
+            offsetof(Mesh, attribs),
             "Invalid `Mesh` structure layout assumption."
         );
 
