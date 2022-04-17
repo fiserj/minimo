@@ -468,6 +468,15 @@ void init(ArenaAllocator& allocator, void* buffer, u32 size)
     allocator.last   = 0;
 }
 
+void reset(ArenaAllocator& allocator)
+{
+    ASSERT(allocator.buffer, "Invalid buffer pointer.");
+    ASSERT(allocator.size, "Invalid buffer size.");
+
+    allocator.top  = 0;
+    allocator.last = 0;
+}
+
 
 // -----------------------------------------------------------------------------
 // STACK ALLOCATOR
@@ -643,6 +652,20 @@ struct StackAllocator : OwningAllocator
     }
 };
 
+void reset(StackAllocator& allocator)
+{
+    ASSERT(allocator.buffer, "Invalid buffer pointer.");
+    ASSERT(allocator.size, "Invalid buffer size.");
+
+    allocator.top    = 0;
+    allocator.last   = 0;
+
+    StackAllocator::Block block = allocator.next_block(0);
+    block.reset(0, 0);
+
+    allocator.top = block.data - allocator.buffer;
+}
+
 void init(StackAllocator& allocator, void* buffer, u32 size)
 {
     ASSERT(buffer, "Invalid buffer pointer.");
@@ -651,13 +674,8 @@ void init(StackAllocator& allocator, void* buffer, u32 size)
 
     allocator.buffer = reinterpret_cast<u8*>(buffer);
     allocator.size   = size;
-    allocator.top    = 0;
-    allocator.last   = 0;
 
-    StackAllocator::Block block = allocator.next_block(0);
-    block.reset(0, 0);
-
-    allocator.top = block.data - allocator.buffer;
+    reset(allocator);
 }
 
 TEST_CASE("Stack Allocator")
