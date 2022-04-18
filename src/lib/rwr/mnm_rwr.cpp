@@ -3741,104 +3741,81 @@ void Task::ExecuteRange(enki::TaskSetPartition, u32)
 
 
 // -----------------------------------------------------------------------------
-// MEMORY CACHING
+// MEMORY MANAGEMENT & CACHING
 // -----------------------------------------------------------------------------
 
-struct MemoryBlock
+struct TempMemoryCache
 {
-    enum : u16
-    {
-        FREE_BIT  = 0x8000,
-        NEXT_MASK = 0x7fff,
-    };
-
-    u8* data;
-    u32 size;
-    u16 flags;
+    ArenaAllocator      allocator[2];
+    DynamicArray<void*> blocks   [2]; // Blocks allocated outside the arena.
+    u8                  active;
 };
 
-struct MemoryCache
+struct PersistentMemoryCache
 {
-    Mutex                     mutex;
-    DynamicArray<MemoryBlock> persistent_blocks;
-    DynamicArray<MemoryBlock> scratch_blocks;
-    ArenaAllocator            arena_allocator;
-    BackedAllocator           backed_scratch_allocator;
-    Allocator*                persistent_allocator;
+    Mutex               mutex;
+    DynamicArray<void*> blocks;
 };
 
-void init(MemoryCache& cache, Allocator* allocator, u32 scratch_size)
+void init(TempMemoryCache& cache, Allocator* allocator, u32 arena_size)
 {
     ASSERT(allocator, "Invalid allocator pointer.");
-    ASSERT(scratch_size, "Zero scratch memory size.");
+    ASSERT(arena_size, "Zero arena memory size.");
 
-    cache.persistent_allocator = allocator;
+    void* buffer = BX_ALLOC(allocator, 2 * arena_size);
 
-    void* scratch_buffer = BX_ALLOC(cache.persistent_allocator, scratch_size);
-    ASSERT(scratch_buffer, "Failed to allocate scratch memory.");
+    init(cache.allocator[0], buffer, arena_size);
+    init(cache.allocator[1], reinterpret_cast<u8*>(buffer) + arena_size, arena_size);
 
-    init(cache.arena_allocator, scratch_buffer, scratch_size);
+    init(cache.blocks[0], allocator);
+    init(cache.blocks[1], allocator);
 
-    init(cache.backed_scratch_allocator, &cache.arena_allocator, cache.persistent_allocator);
-
-    init(cache.scratch_blocks, &cache.backed_scratch_allocator);
-
-    init   (cache.persistent_blocks, cache.persistent_allocator);
-    reserve(cache.persistent_blocks, 32);
+    cache.active = 0;
 }
 
-void deinit(MemoryCache& cache)
+void deinit(TempMemoryCache& cache)
 {
-    for (u32 i = 0; i < cache.persistent_blocks.size; i++)
+    BX_FREE(cache.blocks[0].allocator, cache.allocator[0].buffer);
+
+    for (u32 i = 0; i < 2; i++)
     {
-        BX_REALLOC(cache.persistent_allocator, cache.persistent_blocks[i].data, 0);
+        DynamicArray<void*>& blocks = cache.blocks[i];
+
+        for (u32 j = 0; j < blocks.size; j++)
+        {
+            BX_FREE(blocks.allocator, blocks[j]);
+        }
+
+        deinit(blocks);
     }
 
-    deinit(cache.persistent_blocks);
+    cache = {};
+}
 
-    for (u32 i = 0; i < cache.scratch_blocks.size; i++)
+void init_frame(TempMemoryCache& cache)
+{
+    cache.active = !bool(cache.active);
+
+    DynamicArray<void*>& blocks = cache.blocks[cache.active];
+
+    for (u32 i = 0; i < blocks.size; i++)
     {
-        BX_REALLOC(&cache.backed_scratch_allocator, cache.scratch_blocks[i].data, 0);
+        BX_FREE(blocks.allocator, blocks[i]);
     }
 
-    deinit(cache.scratch_blocks);
-
-    BX_FREE(cache.persistent_allocator, cache.arena_allocator.buffer);
+    reset(cache.allocator[cache.active]);
 }
 
-void init_frame(MemoryCache& cache)
+void init(PersistentMemoryCache& cache, Allocator* allocator)
 {
-    for (u32 i = 0; i < cache.scratch_blocks.size; i++)
-    {
-        BX_REALLOC(&cache.backed_scratch_allocator, cache.scratch_blocks[i].data, 0);
-    }
+    ASSERT(allocator, "Invalid allocator pointer.");
 
-    // TODO : Replace this hack with a `reset` function.
-    reset(cache.arena_allocator);
-
-    cache.scratch_blocks = {};
-
-    init   (cache.scratch_blocks, &cache.backed_scratch_allocator);
-    reserve(cache.scratch_blocks, 32);
+    init(cache.blocks, allocator);
 }
 
-Span<u8> alloc_content(MemoryCache& cache, u32 size)
+void deinit(PersistentMemoryCache& cache)
 {
-    // ...
-
-    return {};
-}
-
-Span<u8> add_file_content(MemoryCache& cache, const char* file_name, bool as_string)
-{
-    // ...
-
-    return {};
-}
-
-void dealloc_content(MemoryCache& cache, void* content)
-{
-
+    deinit(cache.blocks);
 }
 
 
