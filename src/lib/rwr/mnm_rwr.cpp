@@ -3939,12 +3939,13 @@ struct ThreadLocalContext
 
     StackAllocator       stack_allocator;
     BackedAllocator      backed_scratch_allocator;
+    TempMemoryCache      temp_memory_cache;
 
     bgfx::ViewId         active_pass    = 0;
     bool                 is_main_thread = false;
 };
 
-void init(ThreadLocalContext& ctx, Allocator* allocator)
+void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size)
 {
     const u32 size = 16_MB; // TODO : Make this configurable.
 
@@ -3955,14 +3956,23 @@ void init(ThreadLocalContext& ctx, Allocator* allocator)
 
     init(ctx.backed_scratch_allocator, &ctx.stack_allocator, allocator);
 
+    init(ctx.temp_memory_cache, allocator, arena_size);
+
     // NOTE : No `deinit` needed.
     init(ctx.mesh_recorder    , &ctx.stack_allocator);
     init(ctx.instance_recorder, &ctx.stack_allocator);
 }
 
-void deinit(ThreadLocalContext& ctx, Allocator* allocator)
+void deinit(ThreadLocalContext& ctx)
 {
-    BX_FREE(allocator, ctx.stack_allocator.buffer);
+    BX_FREE(ctx.backed_scratch_allocator.backing, ctx.stack_allocator.buffer);
+
+    deinit(ctx.temp_memory_cache);
+}
+
+void init()
+{
+
 }
 
 void alloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
@@ -3980,8 +3990,6 @@ void alloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
     for (u32 i = 0; i < count; i++)
     {
         BX_PLACEMENT_NEW(ctxs + i, ThreadLocalContext);
-
-        init(ctxs[i], allocator);
     }
 }
 
@@ -3993,8 +4001,6 @@ void dealloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
 
     for (u32 i = 0; i < count; i++)
     {
-        deinit(ctxs[i], allocator);
-
         ctxs[i].~ThreadLocalContext();
     }
 
@@ -4050,7 +4056,20 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     ThreadLocalContext* local_ctxs = nullptr;
     alloc(local_ctxs, g_ctx->default_allocator, thread_count);
-    defer(dealloc(local_ctxs, g_ctx->default_allocator, thread_count));
+
+    for (u32 i = 0; i < thread_count; i++)
+    {
+        init(local_ctxs[i], g_ctx->default_allocator, g_ctx->frame_memory);
+    }
+
+    defer(
+        for (u32 i = 0; i < thread_count; i++)
+        {
+            deinit(local_ctxs[i]);
+        }
+
+        dealloc(local_ctxs, g_ctx->default_allocator, thread_count);
+    );
 
     init(g_ctx->task_pool); // NOTE : No `deinit` needed.
 
