@@ -1141,3 +1141,26 @@ int task(void (* func)(void* data), void* data)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - GENERAL MEMORY MANAGEMENT
+// -----------------------------------------------------------------------------
+
+void* alloc(int size, int type)
+{
+    ASSERT(size >= 0, "Negative requested memory size (%i).", size);
+    ASSERT(type >= 0 && type <= 1, "Invalid requested memory type (%i).", type);
+
+    return type == MEMORY_TEMPORARY
+        ? alloc(t_ctx->temp_memory_cache      , u32(size))
+        : alloc(g_ctx->persistent_memory_cache, u32(size));
+}
+
+void dealloc(void* memory)
+{
+    if (memory)
+    {
+        dealloc(g_ctx->persistent_memory_cache, memory);
+    }
+}
+
+
+// -----------------------------------------------------------------------------

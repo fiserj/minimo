@@ -3806,6 +3806,24 @@ void init_frame(TempMemoryCache& cache)
     reset(cache.allocator[cache.active]);
 }
 
+void* alloc(TempMemoryCache& cache, u32 size)
+{
+    if (!size)
+    {
+        return nullptr;
+    }
+
+    void* memory = BX_ALLOC(&cache.allocator[cache.active], size);
+
+    if (!memory)
+    {
+        void* memory = BX_ALLOC(cache.blocks[cache.active].allocator, size);
+        WARN(memory, "Temporary memory allocation of %" PRIu32 " bytes failed.", size);
+    }
+
+    return memory;
+}
+
 void init(PersistentMemoryCache& cache, Allocator* allocator)
 {
     ASSERT(allocator, "Invalid allocator pointer.");
@@ -3816,6 +3834,53 @@ void init(PersistentMemoryCache& cache, Allocator* allocator)
 void deinit(PersistentMemoryCache& cache)
 {
     deinit(cache.blocks);
+}
+
+void* alloc(PersistentMemoryCache& cache, u32 size)
+{
+    if (!size)
+    {
+        return nullptr;
+    }
+
+    void* memory = BX_ALLOC(cache.blocks.allocator, size);
+    WARN(memory, "Persistent memory allocation of %" PRIu32 " bytes failed.", size);
+
+    if (memory)
+    {
+        MutexScope lock(cache.mutex);
+
+        append(cache.blocks, memory);
+    }
+
+    return memory;
+}
+
+void dealloc(PersistentMemoryCache& cache, void* memory)
+{
+    if (!memory)
+    {
+        return;
+    }
+
+    MutexScope lock(cache.mutex);
+
+    for (u32 i = 0; i < cache.blocks.size; i++)
+    {
+        if (cache.blocks[i] == memory)
+        {
+            BX_FREE(cache.blocks.allocator, cache.blocks[i]);
+
+            if (i + 1 < cache.blocks.size)
+            {
+                cache.blocks[i] = cache.blocks[cache.blocks.size - 1];
+            }
+
+            resize(cache.blocks, cache.blocks.size - 1);
+
+            break;
+        }
+    }
 }
 
 
@@ -3899,6 +3964,7 @@ struct GlobalContext
     VertexLayoutCache vertex_layout_cache;
     DefaultUniforms   default_uniforms;
     DefaultPrograms   default_programs;
+    PersistentMemoryCache persistent_memory_cache;
     CodepointQueue    codepoint_queue;
 
     Allocator*        default_allocator = nullptr;
@@ -4161,6 +4227,9 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
     //        * memory allocators
     //        * recorders (mesh, ...)
 
+    init(g_ctx->persistent_memory_cache, g_ctx->default_allocator);
+    defer(deinit(g_ctx->persistent_memory_cache));
+
     // NOTE : No `init` needed for these systems.
     defer(deinit(g_ctx->mesh_cache));
     defer(deinit(g_ctx->texture_cache));
@@ -4317,6 +4386,11 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
         }
 
         init_frame(g_ctx->mesh_cache);
+
+        for (u32 i = 0; i < thread_count; i++)
+        {
+            init_frame(local_ctxs[i].temp_memory_cache);
+        }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.

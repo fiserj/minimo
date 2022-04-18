@@ -1095,6 +1095,34 @@ int task(void (* func)(void* data), void* data);
 
 
 // -----------------------------------------------------------------------------
+/// @section GENERAL MEMORY MANAGEMENT
+///
+/// ...
+
+/// Memory allocation strategies / types.
+///
+enum
+{
+    // Memory is preserved until the end of the program run, or until an
+    // explicit call to `dealloc` is made.
+    MEMORY_PERSISTENT,
+
+    // Memory is deallocated when 
+    MEMORY_TEMPORARY,
+};
+
+// Allocates memory of requested size and type. The returned memory is always
+// aligned at a 16 byte boundary.
+//
+void* alloc(int size, int type);
+
+// Deallocates memory previously allocated with `alloc`. The call is only
+// permitted if the `memory` is of type `MEMORY_PERSISTENT`.
+//
+void dealloc(void* memory);
+
+
+// -----------------------------------------------------------------------------
 /// @section IMAGE IO
 ///
 /// ...
