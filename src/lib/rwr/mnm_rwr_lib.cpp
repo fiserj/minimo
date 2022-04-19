@@ -610,7 +610,8 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
         u16(width),
         u16(height),
         u16(stride),
-        data
+        data,
+        nullptr // TODO : Pass proper allocator!
     );
 }
 

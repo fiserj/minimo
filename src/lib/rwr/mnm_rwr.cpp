@@ -2046,21 +2046,24 @@ VertexBufferUnion create_persistent_vertex_buffer
     u32                       vertex_count,
     u32                       remapped_vertex_count,
     const u32*                remap_table,
-    void**                    remapped_memory = nullptr
+    Allocator*                temp_allocator,
+    void**                    output_remapped_memory = nullptr
 )
 {
     ASSERT(type == MESH_STATIC || type == MESH_DYNAMIC, "Invalid mesh type.");
     ASSERT(remap_table, "Invalid remapping table.");
 
-    // TODO : This should use some scratch / frame memory.
-    const bgfx::Memory* memory = bgfx::alloc(u32(remapped_vertex_count * stream.size));
+    const bgfx::Memory* memory = alloc_bgfx_memory(
+        temp_allocator,
+        u32(remapped_vertex_count * stream.size)
+    );
     ASSERT(memory && memory->data, "Invalid BGFX-created memory.");
 
     meshopt_remapVertexBuffer(memory->data, stream.data, vertex_count, stream.size, remap_table);
 
-    if (remapped_memory)
+    if (output_remapped_memory)
     {
-        *remapped_memory = memory->data;
+        *output_remapped_memory = memory->data;
     }
 
     u16 handle = bgfx::kInvalidHandle;
@@ -2087,6 +2090,7 @@ IndexBufferUnion create_persistent_index_buffer
     u32        indexed_vertex_count,
     const f32* vertex_positions,
     const u32* remap_table,
+    Allocator* temp_allocator,
     bool       optimize
 )
 {
@@ -2104,8 +2108,10 @@ IndexBufferUnion create_persistent_index_buffer
 
     // meshoptimizer works only with `u32`, so we allocate the memory for it
     // anyway, to avoid doing an additional copy.
-    // TODO : This should use some scratch / frame memory.
-    const bgfx::Memory* memory = bgfx::alloc(vertex_count * sizeof(u32));
+    const bgfx::Memory* memory = alloc_bgfx_memory(
+        temp_allocator,
+        vertex_count * sizeof(u32)
+    );
     ASSERT(memory && memory->data, "Invalid BGFX-created memory.");
 
     u32* indices = reinterpret_cast<u32*>(memory->data);
@@ -2115,10 +2121,12 @@ IndexBufferUnion create_persistent_index_buffer
     if (optimize && vertex_positions)
     {
         meshopt_optimizeVertexCache(indices, indices, vertex_count,
-            indexed_vertex_count);
+            indexed_vertex_count
+        );
 
         meshopt_optimizeOverdraw(indices, indices, vertex_count,
-            vertex_positions, indexed_vertex_count, 3 * sizeof(f32), 1.05f);
+            vertex_positions, indexed_vertex_count, 3 * sizeof(f32), 1.05f
+        );
 
         // TODO : Consider also doing `meshopt_optimizeVertexFetch`?
     }
@@ -2454,7 +2462,7 @@ bool create_persistent_geometry
     {
         output_vertex_buffers[i] = create_persistent_vertex_buffer(
             type, streams[i], *layouts[i], vertex_count, indexed_vertex_count,
-            remap_table.data, i ? nullptr : &vertex_positions
+            remap_table.data, temp_allocator, i ? nullptr : &vertex_positions
         );
     }
 
@@ -2464,7 +2472,8 @@ bool create_persistent_geometry
 
     output_index_buffer = create_persistent_index_buffer(
         type, vertex_count, indexed_vertex_count,
-        static_cast<f32*>(vertex_positions), remap_table.data, optimize_geometry
+        static_cast<f32*>(vertex_positions), remap_table.data, temp_allocator,
+        optimize_geometry
     );
 
     // TODO : Check that all the buffers were successfully created and perform
@@ -2682,9 +2691,12 @@ void add_texture
     u16           width,
     u16           height,
     u16           stride,
-    const void*   data
+    const void*   data,
+    Allocator*    temp_allocator
 )
 {
+    ASSERT(temp_allocator, "Invalid temporary allocator pointer.");
+
     constexpr u64 sampling_flags[] =
     {
         BGFX_SAMPLER_NONE,
@@ -2734,20 +2746,21 @@ void add_texture
 
     if (data && format.size > 0 && ratio == bgfx::BackbufferRatio::Count)
     {
+        memory = alloc_bgfx_memory(temp_allocator, width * height * format.size);
+        ASSERT(memory && memory->data, "Invalid BGFX-created memory.");
+
         if (stride == 0 || stride == width * format.size)
         {
-            memory = bgfx::copy(data, width * height * format.size);
+            bx::memCopy(memory->data, data, memory->size);
         }
         else
         {
-            memory = bgfx::alloc(width * height * format.size);
-
             const u8* src = static_cast<const u8*>(data);
             u8*       dst = memory->data;
 
             for (u16 y = 0; y < height; y++)
             {
-                (void)memcpy(dst, src, width * format.size);
+                bx::memCopy(dst, src, width * format.size);
 
                 src += stride;
                 dst += width * format.size;
@@ -3850,7 +3863,11 @@ void* alloc(TempMemoryCache& cache, u32 size)
 
     if (!memory)
     {
-        void* memory = BX_ALIGNED_ALLOC(cache.blocks[cache.active].allocator, size);
+        void* memory = BX_ALIGNED_ALLOC(
+            cache.blocks[cache.active].allocator,
+            size,
+            MANAGED_MEMORY_ALIGNMENT
+        );
         WARN(memory, "Temporary memory allocation of %" PRIu32 " bytes failed.", size);
     }
 
