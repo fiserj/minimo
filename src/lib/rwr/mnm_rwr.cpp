@@ -115,6 +115,8 @@ constexpr i32 DEFAULT_WINDOW_HEIGHT  = 600;
 constexpr i32 DEFAULT_WINDOW_WIDTH   = 800;
 constexpr i32 MIN_WINDOW_SIZE        = 240;
 
+constexpr u32 MANAGED_MEMORY_ALIGNMENT = 16;
+
 constexpr u32 ATLAS_FREE             = 0x08000;
 constexpr u32 ATLAS_MONOSPACED       = 0x00002;
 constexpr u32 MESH_INVALID           = 0x00006;
@@ -3762,10 +3764,11 @@ void init(TempMemoryCache& cache, Allocator* allocator, u32 arena_size)
     ASSERT(allocator, "Invalid allocator pointer.");
     ASSERT(arena_size, "Zero arena memory size.");
 
-    void* buffer = BX_ALLOC(allocator, 2 * arena_size);
+    const u32 size = bx::alignUp(arena_size, MANAGED_MEMORY_ALIGNMENT);
+    void* buffer   = BX_ALIGNED_ALLOC(allocator, 2 * size, MANAGED_MEMORY_ALIGNMENT);
 
-    init(cache.allocator[0], buffer, arena_size);
-    init(cache.allocator[1], reinterpret_cast<u8*>(buffer) + arena_size, arena_size);
+    init(cache.allocator[0], buffer, size);
+    init(cache.allocator[1], reinterpret_cast<u8*>(buffer) + size, size);
 
     init(cache.blocks[0], allocator);
     init(cache.blocks[1], allocator);
@@ -3775,7 +3778,11 @@ void init(TempMemoryCache& cache, Allocator* allocator, u32 arena_size)
 
 void deinit(TempMemoryCache& cache)
 {
-    BX_FREE(cache.blocks[0].allocator, cache.allocator[0].buffer);
+    BX_ALIGNED_FREE(
+        cache.blocks[0].allocator,
+        cache.allocator[0].buffer,
+        MANAGED_MEMORY_ALIGNMENT
+    );
 
     for (u32 i = 0; i < 2; i++)
     {
@@ -3783,7 +3790,7 @@ void deinit(TempMemoryCache& cache)
 
         for (u32 j = 0; j < blocks.size; j++)
         {
-            BX_FREE(blocks.allocator, blocks[j]);
+            BX_ALIGNED_FREE(blocks.allocator, blocks[j], MANAGED_MEMORY_ALIGNMENT);
         }
 
         deinit(blocks);
@@ -3800,7 +3807,7 @@ void init_frame(TempMemoryCache& cache)
 
     for (u32 i = 0; i < blocks.size; i++)
     {
-        BX_FREE(blocks.allocator, blocks[i]);
+        BX_ALIGNED_FREE(blocks.allocator, blocks[i], MANAGED_MEMORY_ALIGNMENT);
     }
 
     reset(cache.allocator[cache.active]);
@@ -3813,12 +3820,50 @@ void* alloc(TempMemoryCache& cache, u32 size)
         return nullptr;
     }
 
-    void* memory = BX_ALLOC(&cache.allocator[cache.active], size);
+    // NOTE : `BX_ALIGNED_ALLOC` note needed, since the arena buffer is already
+    //        aligned, and we make allocations that are multiple of
+    //        `MANAGED_MEMORY_ALIGNMENT`.
+    void* memory = BX_ALLOC(
+        &cache.allocator[cache.active],
+        bx::alignUp(size, MANAGED_MEMORY_ALIGNMENT)
+    );
 
     if (!memory)
     {
-        void* memory = BX_ALLOC(cache.blocks[cache.active].allocator, size);
+        void* memory = BX_ALIGNED_ALLOC(cache.blocks[cache.active].allocator, size);
         WARN(memory, "Temporary memory allocation of %" PRIu32 " bytes failed.", size);
+    }
+
+    ASSERT(
+        bx::isAligned(memory, MANAGED_MEMORY_ALIGNMENT),
+        "Allocated data not aligned to %" PRIu32 " bytes.",
+        MANAGED_MEMORY_ALIGNMENT
+    );
+
+    return memory;
+}
+
+const bgfx::Memory* alloc_bgfx_memory(TempMemoryCache& cache, u32 size)
+{
+    const u32 header_size = bx::alignUp(
+        sizeof(bgfx::Memory),
+        MANAGED_MEMORY_ALIGNMENT
+    );
+
+    bgfx::Memory* memory = reinterpret_cast<bgfx::Memory*>(
+        alloc(cache, size + header_size)
+    );
+
+    if (memory)
+    {
+        memory->data = reinterpret_cast<u8*>(memory) + header_size;
+        memory->size = size;
+
+        ASSERT(
+            bx::isAligned(memory, MANAGED_MEMORY_ALIGNMENT),
+            "Allocated data not aligned to %" PRIu32 " bytes.",
+            MANAGED_MEMORY_ALIGNMENT
+        );
     }
 
     return memory;
@@ -3843,7 +3888,11 @@ void* alloc(PersistentMemoryCache& cache, u32 size)
         return nullptr;
     }
 
-    void* memory = BX_ALLOC(cache.blocks.allocator, size);
+    void* memory = BX_ALIGNED_ALLOC(
+        cache.blocks.allocator,
+        size,
+        MANAGED_MEMORY_ALIGNMENT
+    );
     WARN(memory, "Persistent memory allocation of %" PRIu32 " bytes failed.", size);
 
     if (memory)
@@ -3869,7 +3918,11 @@ void dealloc(PersistentMemoryCache& cache, void* memory)
     {
         if (cache.blocks[i] == memory)
         {
-            BX_FREE(cache.blocks.allocator, cache.blocks[i]);
+            BX_ALIGNED_FREE(
+                cache.blocks.allocator,
+                cache.blocks[i],
+                MANAGED_MEMORY_ALIGNMENT
+            );
 
             if (i + 1 < cache.blocks.size)
             {
