@@ -799,6 +799,26 @@ void init(BackedAllocator& allocator, OwningAllocator* primary, Allocator* backi
 
 
 // -----------------------------------------------------------------------------
+// ALLOCATION UTILS
+// -----------------------------------------------------------------------------
+
+void dealloc_bgfx_memory(void* memory, void* allocator)
+{
+    BX_FREE(static_cast<Allocator*>(allocator), memory);
+}
+
+const bgfx::Memory* alloc_bgfx_memory(Allocator* allocator, u32 size)
+{
+    return bgfx::makeRef(
+        BX_ALLOC(allocator, size),
+        size,
+        dealloc_bgfx_memory,
+        allocator
+    );
+}
+
+
+// -----------------------------------------------------------------------------
 // SPAN
 // -----------------------------------------------------------------------------
 
@@ -3839,32 +3859,6 @@ void* alloc(TempMemoryCache& cache, u32 size)
         "Allocated data not aligned to %" PRIu32 " bytes.",
         MANAGED_MEMORY_ALIGNMENT
     );
-
-    return memory;
-}
-
-const bgfx::Memory* alloc_bgfx_memory(TempMemoryCache& cache, u32 size)
-{
-    const u32 header_size = bx::alignUp(
-        sizeof(bgfx::Memory),
-        MANAGED_MEMORY_ALIGNMENT
-    );
-
-    bgfx::Memory* memory = reinterpret_cast<bgfx::Memory*>(
-        alloc(cache, size + header_size)
-    );
-
-    if (memory)
-    {
-        memory->data = reinterpret_cast<u8*>(memory) + header_size;
-        memory->size = size;
-
-        ASSERT(
-            bx::isAligned(memory, MANAGED_MEMORY_ALIGNMENT),
-            "Allocated data not aligned to %" PRIu32 " bytes.",
-            MANAGED_MEMORY_ALIGNMENT
-        );
-    }
 
     return memory;
 }
