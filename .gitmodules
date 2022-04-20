@@ -7,9 +7,6 @@
 [submodule "third_party/bgfx"]
 	path = third_party/bgfx
 	url = https://github.com/bkaradzic/bgfx
-[submodule "third_party/Handmade-Math"]
-	path = third_party/Handmade-Math
-	url = https://github.com/HandmadeMath/Handmade-Math
 [submodule "third_party/stb"]
 	path = third_party/stb
 	url = https://github.com/nothings/stb.git
