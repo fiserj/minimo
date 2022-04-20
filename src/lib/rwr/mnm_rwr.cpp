@@ -804,6 +804,14 @@ void init(BackedAllocator& allocator, OwningAllocator* primary, Allocator* backi
 
 
 // -----------------------------------------------------------------------------
+// DOUBLE FRAME ALLOCATOR (I/II)
+// -----------------------------------------------------------------------------
+
+// NOTE : Prototype only since it needs the `DynamicArray` to be defined.
+struct DoubleFrameAllocator;
+
+
+// -----------------------------------------------------------------------------
 // ALLOCATION UTILS
 // -----------------------------------------------------------------------------
 
@@ -1095,6 +1103,141 @@ TEST_CASE("Dynamic Array")
     TEST_REQUIRE(array.size == 0);
     TEST_REQUIRE(array.capacity == 0);
     TEST_REQUIRE(array.allocator == nullptr);
+}
+
+
+// -----------------------------------------------------------------------------
+// DOUBLE FRAME ALLOCATOR (II/II)
+// -----------------------------------------------------------------------------
+
+struct DoubleFrameAllocator : Allocator
+{
+    ArenaAllocator      arenas[2];
+    DynamicArray<void*> blocks[2]; // Blocks that didn't fit the arena memory.
+    bool                frame;
+
+    virtual void* realloc(void* ptr_, size_t size_, size_t align_, const char* file, u32 line) override
+    {
+        // NOTE : `ptr_` points to the data itself. Two `u32` values are stored
+        //        right before it that contain size of the data (without the
+        //         header) and the alignment.
+
+        ArenaAllocator&      arena = arenas[frame];
+        DynamicArray<void*>& block = blocks[frame];
+
+        static_assert(
+            MANAGED_MEMORY_ALIGNMENT >= sizeof(u32) * 2 &&
+            MANAGED_MEMORY_ALIGNMENT >= std::alignment_of<u32>::value,
+            "Invalid `DoubleFrameAllocator`'s header assumptions."
+        );
+
+        const size_t align = bx::max(align_, size_t(MANAGED_MEMORY_ALIGNMENT));
+        const size_t size  = size_ + align;
+        void*        ptr   = ptr_ ? reinterpret_cast<u8*>(ptr_) - align : ptr_;
+
+        if (!size_)
+        {
+            if (arena.owns(ptr))
+            {
+                arena.realloc(ptr, 0, align, file, line);
+            }
+
+            return nullptr;
+        }
+
+        void* memory = nullptr;
+
+        if (arena.owns(ptr))
+        {
+            memory = arena.realloc(ptr, size, align, file, line);
+        }
+
+        if (!memory)
+        {
+            // NOTE : `nullptr` memory pointer because we do the copy ourselves.
+            memory = block.allocator->realloc(nullptr, size, align, file, line);
+        }
+
+        if (memory)
+        {
+            if (!arena.owns(memory))
+            {
+                append(block, memory);
+            }
+
+            u8*  data   = reinterpret_cast<u8*>(memory) + align;
+            u32* header = reinterpret_cast<u32*>(data) - 2;
+
+            WARN(
+                bx::isAligned(header, i32(std::alignment_of<u32>::value)),
+                "`DoubleFrameAllocator`'s header info not aligned properly."
+            );
+
+            if (memory != ptr)
+            {
+                bx::memCopy(data, ptr_, *(reinterpret_cast<u32*>(ptr_) - 2));
+            }
+
+            header[0] = u32(size_);
+            header[1] = u32(align);
+
+            memory = data;
+        }
+
+        return memory;
+    }
+};
+
+void init(DoubleFrameAllocator& allocator, Allocator* backing, void* buffer, u32 size)
+{
+    void* start = bx::alignPtr(buffer, MANAGED_MEMORY_ALIGNMENT);
+    const u32 half_size = (size - u32(uintptr_t(start) - uintptr_t(buffer))) / 2;
+
+    init(allocator.arenas[0], start, half_size);
+    init(allocator.arenas[1], reinterpret_cast<u8*>(start) + half_size, half_size);
+
+    for (u32 i = 0; i < 2; i++)
+    {
+        init   (allocator.blocks[i], backing);
+        reserve(allocator.blocks[i], 32);
+    }
+}
+
+void deinit(DoubleFrameAllocator& allocator)
+{
+    for (u32 i = 0; i < 2; i++)
+    {
+        DynamicArray<void*>& blocks = allocator.blocks[i];
+
+        for (u32 j = 0; j < blocks.size; j++)
+        {
+            BX_ALIGNED_FREE(
+                blocks.allocator, 
+                blocks[j],
+                *(reinterpret_cast<u32*>(blocks[j]) - 1)
+            );
+        }
+
+        deinit(blocks);
+    }
+}
+
+void init_frame(DoubleFrameAllocator& allocator)
+{
+    allocator.frame = !allocator.frame;
+
+    DynamicArray<void*>& blocks = allocator.blocks[allocator.frame];
+
+    for (u32 i = 0; i < blocks.size; i++)
+    {
+        BX_ALIGNED_FREE(
+            blocks.allocator, 
+            blocks[i],
+            *(reinterpret_cast<u32*>(blocks[i]) - 1)
+        );
+    }
+
+    reset(allocator.arenas[allocator.frame]);
 }
 
 
