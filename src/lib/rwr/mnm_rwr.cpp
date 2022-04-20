@@ -454,6 +454,11 @@ struct ArenaAllocator : OwningAllocator
                 top    = u32((data + size_) - buffer);
             }
         }
+        else if (reinterpret_cast<u8*>(ptr) == buffer + last)
+        {
+            top  = last;
+            last = 0;
+        }
 
         return memory;
     }
