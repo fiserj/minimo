@@ -7,6 +7,12 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    gleq
+    GIT_REPOSITORY https://github.com/glfw/gleq.git
+    GIT_TAG        4dd5070341fa17856d06a38f948a100df2fc34cd
+)
+
+FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.3.7
@@ -14,6 +20,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(
     enkiTS
+    gleq
     glfw
 )
 
