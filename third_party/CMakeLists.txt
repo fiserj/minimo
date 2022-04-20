@@ -64,6 +64,12 @@ FetchContent_Declare(
     GIT_TAG        v0.17
 )
 
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        af1a5bc352164740c1cc1354942b1c6b72eacb8a
+)
+
 FetchContent_MakeAvailable(
     enkiTS
     glfw
@@ -75,6 +81,7 @@ FetchContent_Populate(bx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)
+FetchContent_Populate(stb)
 
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)
