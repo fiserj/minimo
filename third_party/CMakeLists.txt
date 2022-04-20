@@ -70,6 +70,12 @@ FetchContent_Declare(
     GIT_TAG        af1a5bc352164740c1cc1354942b1c6b72eacb8a
 )
 
+FetchContent_Declare(
+    tinycc
+    GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
+    GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
+)
+
 FetchContent_MakeAvailable(
     enkiTS
     glfw
@@ -82,6 +88,7 @@ FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
+FetchContent_Populate(tinycc)
 
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)

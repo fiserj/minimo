@@ -1,4 +1,4 @@
-set(TCC_DIR tinycc)
+set(TCC_DIR ${tinycc_SOURCE_DIR})
 
 # Patch the variable-length array usage for MSVC.
 if(MSVC)
@@ -26,9 +26,8 @@ add_library(tinycc STATIC
 
 target_include_directories(tinycc
     PUBLIC
-        ${TCC_DIR}/.. # Stupid, but something in macOS C++ stdlib seems to include `VERSION` file.
-    PRIVATE
         ${TCC_DIR}
+    PRIVATE
         ${PROJECT_BINARY_DIR}/tinycc-config
 )
 
