@@ -17,6 +17,12 @@ TURN_OFF(GLFW_VULKAN_STATIC)
 include(FetchContent)
 
 FetchContent_Declare(
+    bgfx
+    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.git
+    GIT_TAG        3cc0de333528d546f1518ebb9111233eee168022
+)
+
+FetchContent_Declare(
     enkiTS
     GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
     GIT_TAG        v1.11
@@ -51,6 +57,7 @@ FetchContent_MakeAvailable(
     glfw
 )
 
+FetchContent_Populate(bgfx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)

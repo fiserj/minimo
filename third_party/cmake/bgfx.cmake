@@ -1,4 +1,4 @@
-set(BGFX_DIR bgfx)
+set(BGFX_DIR ${bgfx_SOURCE_DIR})
 
 if(APPLE)
     add_library(bgfx STATIC
