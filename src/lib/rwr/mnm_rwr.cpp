@@ -4217,24 +4217,29 @@ struct ThreadLocalContext
 
     StackAllocator       stack_allocator;
     BackedAllocator      backed_scratch_allocator;
-    TempMemoryCache      temp_memory_cache;
+    DoubleFrameAllocator frame_allocator;
 
     bgfx::ViewId         active_pass    = 0;
     bool                 is_main_thread = false;
 };
 
-void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size)
+void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size, u32 stack_size)
 {
-    const u32 size = 16_MB; // TODO : Make this configurable.
+    void* arena_buffer = BX_ALIGNED_ALLOC(
+        allocator,
+        arena_size,
+        MANAGED_MEMORY_ALIGNMENT
+    );
+    ASSERT(arena_buffer, "Failed to allocate arena memory.");
 
-    void* buffer = BX_ALLOC(allocator, size);
-    ASSERT(buffer, "Failed to allocate stack memory.");
+    void* stack_buffer = BX_ALLOC(allocator, stack_size);
+    ASSERT(stack_buffer, "Failed to allocate stack memory.");
 
-    init(ctx.stack_allocator, buffer, size);
+    init(ctx.stack_allocator, stack_buffer, stack_size);
 
     init(ctx.backed_scratch_allocator, &ctx.stack_allocator, allocator);
 
-    init(ctx.temp_memory_cache, allocator, arena_size);
+    init(ctx.frame_allocator, allocator, arena_buffer, arena_size);
 
     // NOTE : No `deinit` needed.
     init(ctx.mesh_recorder    , &ctx.stack_allocator);
@@ -4243,14 +4248,17 @@ void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size)
 
 void deinit(ThreadLocalContext& ctx)
 {
-    BX_FREE(ctx.backed_scratch_allocator.backing, ctx.stack_allocator.buffer);
+    Allocator* allocator = ctx.backed_scratch_allocator.backing;
 
-    deinit(ctx.temp_memory_cache);
-}
+    BX_FREE(allocator, ctx.stack_allocator.buffer);
 
-void init()
-{
+    BX_ALIGNED_FREE(
+        allocator,
+        ctx.frame_allocator.arenas[0].buffer,
+        MANAGED_MEMORY_ALIGNMENT
+    );
 
+    deinit(ctx.frame_allocator);
 }
 
 void alloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
@@ -4337,7 +4345,8 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
     for (u32 i = 0; i < thread_count; i++)
     {
-        init(local_ctxs[i], g_ctx->default_allocator, g_ctx->frame_memory);
+        // TODO : Make scratch size configurable.
+        init(local_ctxs[i], g_ctx->default_allocator, g_ctx->frame_memory, 16_MB);
     }
 
     defer(
@@ -4601,7 +4610,7 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
         for (u32 i = 0; i < thread_count; i++)
         {
-            init_frame(local_ctxs[i].temp_memory_cache);
+            init_frame(local_ctxs[i].frame_allocator);
         }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to

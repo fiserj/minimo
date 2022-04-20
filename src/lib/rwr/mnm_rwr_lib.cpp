@@ -1150,9 +1150,12 @@ void* alloc(int size, int type)
     ASSERT(size >= 0, "Negative requested memory size (%i).", size);
     ASSERT(type >= 0 && type <= 1, "Invalid requested memory type (%i).", type);
 
-    return type == MEMORY_TEMPORARY
-        ? alloc(t_ctx->temp_memory_cache      , u32(size))
-        : alloc(g_ctx->persistent_memory_cache, u32(size));
+    if (type == MEMORY_TEMPORARY)
+    {
+        return BX_ALLOC(&t_ctx->frame_allocator, size);
+    }
+
+    return alloc(g_ctx->persistent_memory_cache, u32(size));
 }
 
 void dealloc(void* memory)
