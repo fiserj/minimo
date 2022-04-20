@@ -1,12 +1,19 @@
 include(FetchContent)
 
 FetchContent_Declare(
+    enkiTS
+    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
+    GIT_TAG        v1.11
+)
+
+FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.3.7
 )
 
 FetchContent_MakeAvailable(
+    enkiTS
     glfw
 )
 
@@ -26,8 +33,6 @@ TURN_OFF(GLFW_DOCUMENT_INTERNALS)
 TURN_OFF(GLFW_INSTALL)
 TURN_OFF(GLFW_VULKAN_STATIC)
 
-add_subdirectory(enkiTS)
-
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)
 include(cmake/bx.cmake)
@@ -42,5 +47,5 @@ include(cmake/tree-sitter-c.cmake)
 include(cmake/utf8.cmake)
 
 target_include_directories(enkiTS PUBLIC
-    enkiTS/src
+    ${enkits_SOURCE_DIR}/src
 )
