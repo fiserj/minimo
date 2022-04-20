@@ -1,3 +1,15 @@
+include(FetchContent)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.3.7
+)
+
+FetchContent_MakeAvailable(
+    glfw
+)
+
 macro(TURN_OFF option)
     set(${option} OFF CACHE INTERNAL "" FORCE)
 endmacro()
@@ -15,7 +27,6 @@ TURN_OFF(GLFW_INSTALL)
 TURN_OFF(GLFW_VULKAN_STATIC)
 
 add_subdirectory(enkiTS)
-add_subdirectory(glfw)
 
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)
