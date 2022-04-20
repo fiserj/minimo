@@ -18,11 +18,19 @@ FetchContent_Declare(
     GIT_TAG        3.3.7
 )
 
+FetchContent_Declare(
+    meshoptimizer
+    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+    GIT_TAG        v0.17
+)
+
 FetchContent_MakeAvailable(
     enkiTS
-    gleq
     glfw
 )
+
+FetchContent_Populate(gleq)
+FetchContent_Populate(meshoptimizer)
 
 macro(TURN_OFF option)
     set(${option} OFF CACHE INTERNAL "" FORCE)
