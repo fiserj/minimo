@@ -1,6 +1,3 @@
-[submodule "third_party/bimg"]
-	path = third_party/bimg
-	url = https://github.com/bkaradzic/bimg
 [submodule "third_party/bx"]
 	path = third_party/bx
 	url = https://github.com/bkaradzic/bx
