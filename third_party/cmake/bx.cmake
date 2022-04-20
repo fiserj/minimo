@@ -1,4 +1,4 @@
-set(BX_DIR bx)
+set(BX_DIR ${bx_SOURCE_DIR})
 
 add_library(bx STATIC
     ${BX_DIR}/src/amalgamated.cpp

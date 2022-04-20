@@ -29,6 +29,12 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    bx
+    GIT_REPOSITORY https://github.com/bkaradzic/bx.git
+    GIT_TAG        ad018d47c6c107e2fe2f3ba0716f9e728ed59a39
+)
+
+FetchContent_Declare(
     enkiTS
     GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
     GIT_TAG        v1.11
@@ -65,6 +71,7 @@ FetchContent_MakeAvailable(
 
 FetchContent_Populate(bgfx)
 FetchContent_Populate(bimg)
+FetchContent_Populate(bx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)
