@@ -59,6 +59,12 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    librope
+    GIT_REPOSITORY https://github.com/fiserj/librope.git
+    GIT_TAG        2bb786327f4abf95c38f32aa87378d2cb4dd85cf
+)
+
+FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
     GIT_TAG        v0.17
@@ -75,7 +81,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
     GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
     SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
-
 )
 
 FetchContent_Declare(
@@ -100,6 +105,7 @@ FetchContent_Populate(bimg)
 FetchContent_Populate(bx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
+FetchContent_Populate(librope)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
 FetchContent_Populate(tinycc)
