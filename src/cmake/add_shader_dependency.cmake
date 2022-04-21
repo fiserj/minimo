@@ -14,9 +14,12 @@ if(BUILD_SHADER_TARGET)
         message(FATAL_ERROR "Unknown platform. Must be Apple, Linux or Windows.")
     endif()
 
+    if(NOT BGFX_DIR)
+        message(FATAL_ERROR "Variable BGFX_DIR not set.")
+    endif()
+
     # Verify the shared BGFX shader resources and the compiler binary are at the
     # expected locations.
-    set(BGFX_DIR     "${CMAKE_CURRENT_LIST_DIR}/../../third_party/bgfx")
     set(SRC_DIR      "${BGFX_DIR}/src")
     set(COMMON_DIR   "${BGFX_DIR}/examples/common")
     set(SHADERC_FILE "${CMAKE_CURRENT_LIST_DIR}/../../tools/shaderc/${SHADERC_PLATFORM}/shaderc")
@@ -151,10 +154,11 @@ if(BUILD_SHADER_TARGET)
 else()
     function(add_shader_target TARGET SHADER VARYING RELDIR SCRIPT SHADER_HEADER_CONFIG OUTPUT_DIR)
         string(REGEX REPLACE "[\\/\.]+" "_" NAME ${SHADER})
-    
+
         add_custom_target("${NAME}"
             COMMAND ${CMAKE_COMMAND}
                 -D "BUILD_SHADER_TARGET=1"
+                -D "BGFX_DIR=\"${FETCHCONTENT_BASE_DIR}/bgfx-src\"" # TODO : Hacky, ideally we want directly ${bgfx_SOURCE_DIR}.
                 -D "SHADER=${SHADER}"
                 -D "VARYING=${VARYING}"
                 -D "RELDIR=\"${RELDIR}\""
@@ -164,6 +168,8 @@ else()
         )
 
         add_dependencies(${TARGET} "${NAME}")
+
+        add_dependencies("${NAME}" bgfx)
     endfunction()
 
     set(SHADER_TARGET_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")

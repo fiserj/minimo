@@ -1,4 +1,4 @@
-set(TCC_DIR tinycc)
+set(TCC_DIR ${tinycc_SOURCE_DIR})
 
 # Patch the variable-length array usage for MSVC.
 if(MSVC)

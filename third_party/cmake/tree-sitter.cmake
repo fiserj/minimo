@@ -1,4 +1,4 @@
-set(TREE_SITTER_DIR tree-sitter/lib)
+set(TREE_SITTER_DIR "${tree-sitter_SOURCE_DIR}/lib")
 
 add_library(tree-sitter STATIC
     ${TREE_SITTER_DIR}/src/lib.c

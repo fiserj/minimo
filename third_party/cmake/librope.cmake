@@ -1,4 +1,4 @@
-set(LIBROPE_DIR librope)
+set(LIBROPE_DIR ${librope_SOURCE_DIR})
 
 add_library(librope STATIC
     ${LIBROPE_DIR}/rope.c

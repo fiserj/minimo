@@ -1,4 +1,4 @@
-set(MESHOPT_DIR meshoptimizer/src)
+set(MESHOPT_DIR ${meshoptimizer_SOURCE_DIR}/src)
 
 set(MESHOPT_SOURCE_FILES
     ${MESHOPT_DIR}/indexgenerator.cpp

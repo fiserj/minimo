@@ -14,8 +14,109 @@ TURN_OFF(GLFW_DOCUMENT_INTERNALS)
 TURN_OFF(GLFW_INSTALL)
 TURN_OFF(GLFW_VULKAN_STATIC)
 
-add_subdirectory(enkiTS)
-add_subdirectory(glfw)
+include(FetchContent)
+
+FetchContent_Declare(
+    bgfx
+    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.git
+    GIT_TAG        3cc0de333528d546f1518ebb9111233eee168022
+)
+
+FetchContent_Declare(
+    bimg
+    GIT_REPOSITORY https://github.com/bkaradzic/bimg.git
+    GIT_TAG        663f724186e26caf46494e389ed82409106205fb
+)
+
+FetchContent_Declare(
+    bx
+    GIT_REPOSITORY https://github.com/bkaradzic/bx.git
+    GIT_TAG        ad018d47c6c107e2fe2f3ba0716f9e728ed59a39
+)
+
+FetchContent_Declare(
+    enkiTS
+    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
+    GIT_TAG        v1.11
+)
+
+FetchContent_Declare(
+    gleq
+    GIT_REPOSITORY https://github.com/glfw/gleq.git
+    GIT_TAG        4dd5070341fa17856d06a38f948a100df2fc34cd
+)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.3.7
+)
+
+FetchContent_Declare(
+    HandmadeMath
+    GIT_REPOSITORY https://github.com/HandmadeMath/Handmade-Math.git
+    GIT_TAG        v1.13.0
+)
+
+FetchContent_Declare(
+    librope
+    GIT_REPOSITORY https://github.com/fiserj/librope.git
+    GIT_TAG        2bb786327f4abf95c38f32aa87378d2cb4dd85cf
+)
+
+FetchContent_Declare(
+    meshoptimizer
+    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+    GIT_TAG        v0.17
+)
+
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        af1a5bc352164740c1cc1354942b1c6b72eacb8a
+)
+
+FetchContent_Declare(
+    tinycc
+    GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
+    GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
+    SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
+)
+
+FetchContent_Declare(
+    tree-sitter
+    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
+    GIT_TAG        v0.20.6
+)
+
+FetchContent_Declare(
+    tree-sitter-c
+    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-c.git
+    GIT_TAG        v0.20.1
+)
+
+FetchContent_Declare(
+    utf8
+    GIT_REPOSITORY https://github.com/sheredom/utf8.h.git
+    GIT_TAG        ce48f0eda6cac8f365837edaf8298ad5c03f7f2e
+)
+
+FetchContent_MakeAvailable(
+    enkiTS
+    glfw
+)
+
+FetchContent_Populate(bgfx)
+FetchContent_Populate(bimg)
+FetchContent_Populate(bx)
+FetchContent_Populate(gleq)
+FetchContent_Populate(HandmadeMath)
+FetchContent_Populate(librope)
+FetchContent_Populate(meshoptimizer)
+FetchContent_Populate(stb)
+FetchContent_Populate(tinycc)
+FetchContent_Populate(tree-sitter)
+FetchContent_Populate(tree-sitter-c)
 
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)
@@ -31,5 +132,5 @@ include(cmake/tree-sitter-c.cmake)
 include(cmake/utf8.cmake)
 
 target_include_directories(enkiTS PUBLIC
-    enkiTS/src
+    ${enkits_SOURCE_DIR}/src
 )

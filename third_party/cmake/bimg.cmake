@@ -1,4 +1,4 @@
-set(BIMG_DIR bimg)
+set(BIMG_DIR ${bimg_SOURCE_DIR})
 
 set(BIMG_SOURCE_FILES
     ${BIMG_DIR}/src/image.cpp
