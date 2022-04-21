@@ -15,7 +15,7 @@ function(add_project NAME IS_TEST_RUNNER)
 
     if(IS_TEST_RUNNER)
         list(APPEND SOURCE_FILES
-            mnm_rwr_lib.cpp
+            mnm_rwr_lib_tests.cpp
         )
 
         add_executable(${NAME}
@@ -27,7 +27,7 @@ function(add_project NAME IS_TEST_RUNNER)
         )
     else()
         list(APPEND SOURCE_FILES
-            mnm_rwr_lib_tests.cpp
+            mnm_rwr_lib.cpp
         )
 
         add_library(${NAME} STATIC
