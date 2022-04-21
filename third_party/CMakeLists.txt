@@ -95,6 +95,12 @@ FetchContent_Declare(
     GIT_TAG        v0.20.1
 )
 
+FetchContent_Declare(
+    utf8
+    GIT_REPOSITORY https://github.com/sheredom/utf8.h.git
+    GIT_TAG        ce48f0eda6cac8f365837edaf8298ad5c03f7f2e
+)
+
 FetchContent_MakeAvailable(
     enkiTS
     glfw
