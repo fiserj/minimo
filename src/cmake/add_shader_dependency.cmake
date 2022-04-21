@@ -154,7 +154,7 @@ if(BUILD_SHADER_TARGET)
 else()
     function(add_shader_target TARGET SHADER VARYING RELDIR SCRIPT SHADER_HEADER_CONFIG OUTPUT_DIR)
         string(REGEX REPLACE "[\\/\.]+" "_" NAME ${SHADER})
-        message(FATAL_ERROR "BGFX_DIR=\"${FETCHCONTENT_BASE_DIR}/bgfx-src\"")
+
         add_custom_target("${NAME}"
             COMMAND ${CMAKE_COMMAND}
                 -D "BUILD_SHADER_TARGET=1"
@@ -173,7 +173,7 @@ else()
     set(SHADER_TARGET_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")
     set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders") # TODO : Expose overriding this via some config variable.
     set(SHADER_HEADER_CONFIG "${CMAKE_CURRENT_LIST_DIR}/shader.h.in")
-
+    message(FATAL_ERROR "BGFX_DIR=\"${FETCHCONTENT_BASE_DIR}/bgfx-src\"")
     macro(add_shader_dependency TARGET SHADER)
         add_shader_target(
             ${TARGET}
