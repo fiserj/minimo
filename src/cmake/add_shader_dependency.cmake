@@ -154,7 +154,7 @@ if(BUILD_SHADER_TARGET)
 else()
     function(add_shader_target TARGET SHADER VARYING RELDIR SCRIPT SHADER_HEADER_CONFIG OUTPUT_DIR)
         string(REGEX REPLACE "[\\/\.]+" "_" NAME ${SHADER})
-
+        message(FATAL_ERROR "BGFX_DIR=\"${FETCHCONTENT_BASE_DIR}/bgfx-src\"")
         add_custom_target("${NAME}"
             COMMAND ${CMAKE_COMMAND}
                 -D "BUILD_SHADER_TARGET=1"
