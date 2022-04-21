@@ -134,3 +134,19 @@ include(cmake/utf8.cmake)
 target_include_directories(enkiTS PUBLIC
     ${enkits_SOURCE_DIR}/src
 )
+
+if(MNM_TESTS)
+    TURN_OFF(CATCH_INSTALL_DOCS)
+    TURN_OFF(CATCH_INSTALL_EXTRAS)
+    TURN_OFF(CATCH_DEVELOPMENT_BUILD)
+
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        f526ff0fc37ae00ff2c0dc8f6550bf8209c30afc
+    )
+
+    FetchContent_MakeAvailable(
+        Catch2
+    )
+endif()

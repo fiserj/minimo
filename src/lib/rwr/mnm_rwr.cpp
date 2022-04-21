@@ -193,37 +193,6 @@ static_assert(
 
 
 // -----------------------------------------------------------------------------
-// UNIT TESTING
-// -----------------------------------------------------------------------------
-
-#ifndef CONFIG_TESTING
-#   define CONFIG_TESTING BX_CONFIG_DEBUG
-#endif
-
-#if CONFIG_TESTING
-
-#define TEST_CASE(name)                                            \
-    void BX_CONCATENATE(s_test_func_, __LINE__)();          \
-    const bool BX_CONCATENATE(s_test_var_, __LINE__) = []() \
-    {                                                              \
-        BX_CONCATENATE(s_test_func_, __LINE__)();                  \
-        return true;                                               \
-    }();                                                           \
-    void BX_CONCATENATE(s_test_func_, __LINE__)()
-
-#define TEST_REQUIRE(cond) ASSERT(cond, #cond)
-
-#else
-
-#define TEST_CASE(name) [[maybe_unused]] \
-    void BX_CONCATENATE(s_unused_func_, __LINE__)()
-
-#define TEST_REQUIRE(cond) BX_NOOP(cond)
-
-#endif // CONFIG_TESTING
-
-
-// -----------------------------------------------------------------------------
 // CONCURRENCY-RELATED TYPES
 // -----------------------------------------------------------------------------
 
@@ -330,30 +299,6 @@ Deferred<Func> make_deferred(Func&& func)
 
 #define defer(...) auto BX_CONCATENATE(deferred_ , __LINE__) = \
     make_deferred([&]() mutable { __VA_ARGS__; })
-
-TEST_CASE("Deferred Execution")
-{
-    int value = 1;
-
-    {
-        defer(value++);
-
-        {
-            defer(
-                for (int i = 0; i < 3; i++)
-                {
-                    value++;
-                }
-            );
-
-            TEST_REQUIRE(value == 1);
-        }
-
-        TEST_REQUIRE(value == 4);
-    }
-
-    TEST_REQUIRE(value == 5);
-}
 
 
 // -----------------------------------------------------------------------------
@@ -685,60 +630,6 @@ void init(StackAllocator& allocator, void* buffer, u32 size)
     reset(allocator);
 }
 
-TEST_CASE("Stack Allocator")
-{
-    u64 buffer[16];
-
-    StackAllocator allocator;
-    init(allocator, buffer, sizeof(buffer));
-    TEST_REQUIRE(allocator.size == sizeof(buffer));
-    TEST_REQUIRE(allocator.top == 8);
-    TEST_REQUIRE(allocator.last == 0);
-
-    void* first = BX_ALLOC(&allocator, 16);
-    TEST_REQUIRE(first != nullptr);
-    TEST_REQUIRE(allocator.owns(first));
-    TEST_REQUIRE(allocator.size == sizeof(buffer));
-    TEST_REQUIRE(allocator.top == 32);
-    TEST_REQUIRE(allocator.last == 8);
-
-    void* second = BX_ALLOC(&allocator, 8);
-    TEST_REQUIRE(second != nullptr);
-    TEST_REQUIRE(allocator.owns(second));
-    TEST_REQUIRE(allocator.top == 48);
-    TEST_REQUIRE(allocator.last == 32);
-
-    void* third = BX_ALLOC(&allocator, 128);
-    TEST_REQUIRE(third == nullptr);
-    TEST_REQUIRE(!allocator.owns(third));
-    TEST_REQUIRE(allocator.top == 48);
-    TEST_REQUIRE(allocator.last == 32);
-
-    BX_FREE(&allocator, third);
-    TEST_REQUIRE(allocator.top == 48);
-    TEST_REQUIRE(allocator.last == 32);
-
-    void* second_realloced = BX_REALLOC(&allocator, second, 16);
-    TEST_REQUIRE(second == second_realloced);
-    TEST_REQUIRE(allocator.owns(second_realloced));
-    TEST_REQUIRE(allocator.top == 56);
-    TEST_REQUIRE(allocator.last == 32);
-
-    void* first_realloced = BX_REALLOC(&allocator, first, 8);
-    TEST_REQUIRE(first != first_realloced);
-    TEST_REQUIRE(allocator.owns(first_realloced));
-    TEST_REQUIRE(allocator.top == 72);
-    TEST_REQUIRE(allocator.last == 56);
-
-    BX_FREE(&allocator, second_realloced);
-    TEST_REQUIRE(allocator.top == 72);
-    TEST_REQUIRE(allocator.last == 56);
-
-    BX_FREE(&allocator, first_realloced);
-    TEST_REQUIRE(allocator.top == 8);
-    TEST_REQUIRE(allocator.last == 0);
-}
-
 
 // -----------------------------------------------------------------------------
 // BACKED ALLOCATOR
@@ -1056,53 +947,6 @@ T& pop(DynamicArray<T>& array)
     ASSERT(array.size, "Cannot pop from an empty array.");
 
     return array.data[--array.size];
-}
-
-TEST_CASE("Dynamic Array")
-{
-    CrtAllocator allocator;
-
-    DynamicArray<int> array = {};
-    init(array, &allocator);
-    TEST_REQUIRE(array.allocator == &allocator);
-
-    reserve(array, 3);
-    TEST_REQUIRE(array.size == 0);
-    TEST_REQUIRE(array.capacity >= 3);
-
-    int val = append(array, 10);
-    TEST_REQUIRE(array.size == 1);
-    TEST_REQUIRE(array[0] == 10);
-    TEST_REQUIRE(val == 10);
-
-    val = append(array, 20);
-    TEST_REQUIRE(array.size == 2);
-    TEST_REQUIRE(array[1] == 20);
-    TEST_REQUIRE(val == 20);
-
-    val = append(array, 30);
-    TEST_REQUIRE(array.size == 3);
-    TEST_REQUIRE(array[2] == 30);
-    TEST_REQUIRE(val == 30);
-
-    val = pop(array);
-    TEST_REQUIRE(array.size == 2);
-    TEST_REQUIRE(val == 30);
-
-    resize(array, 10, 100);
-    TEST_REQUIRE(array.size == 10);
-    TEST_REQUIRE(array.capacity >= 10);
-
-    for (u32 i = 2; i < array.size; i++)
-    {
-        TEST_REQUIRE(array[i] == 100);
-    }
-
-    deinit(array);
-    TEST_REQUIRE(array.data == nullptr);
-    TEST_REQUIRE(array.size == 0);
-    TEST_REQUIRE(array.capacity == 0);
-    TEST_REQUIRE(array.allocator == nullptr);
 }
 
 
@@ -2004,11 +1848,6 @@ void reset(VertexAttribState& state, u32 flags)
         state.store_texcoord  = store_full_texcoord;
         state.size           += sizeof(PackedTexcoord);
     }
-}
-
-TEST_CASE("Vertex Attribute State")
-{
-    // ...
 }
 
 
