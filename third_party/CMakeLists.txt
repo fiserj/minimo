@@ -78,6 +78,12 @@ FetchContent_Declare(
 
 )
 
+FetchContent_Declare(
+    tree-sitter
+    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
+    GIT_TAG        v0.20.6
+)
+
 FetchContent_MakeAvailable(
     enkiTS
     glfw
@@ -91,6 +97,7 @@ FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
 FetchContent_Populate(tinycc)
+FetchContent_Populate(tree-sitter)
 
 include(cmake/bgfx.cmake)
 include(cmake/bimg.cmake)
