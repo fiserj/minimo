@@ -26,8 +26,9 @@ add_library(tinycc STATIC
 
 target_include_directories(tinycc
     PUBLIC
-        ${TCC_DIR}
+        ${TCC_DIR}/.. # Stupid, but something in macOS C++ stdlib seems to include `VERSION` file.
     PRIVATE
+        ${TCC_DIR}
         ${PROJECT_BINARY_DIR}/tinycc-config
 )
 

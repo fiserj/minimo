@@ -74,6 +74,8 @@ FetchContent_Declare(
     tinycc
     GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
     GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
+    SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
+
 )
 
 FetchContent_MakeAvailable(

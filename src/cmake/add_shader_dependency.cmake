@@ -168,6 +168,8 @@ else()
         )
 
         add_dependencies(${TARGET} "${NAME}")
+
+        add_dependencies("${NAME}" bgfx)
     endfunction()
 
     set(SHADER_TARGET_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")
