@@ -5,3 +5,5 @@ project(${PROJECT_NAME})
 
 add_subdirectory(third_party)
 add_subdirectory(src)
+
+option(MNM_TESTS "Build MiNiMo Tests" OFF)
