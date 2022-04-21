@@ -168,12 +168,14 @@ else()
         )
 
         add_dependencies(${TARGET} "${NAME}")
+
+        add_dependencies("${NAME}" bgfx)
     endfunction()
 
     set(SHADER_TARGET_SCRIPT "${CMAKE_CURRENT_LIST_FILE}")
     set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders") # TODO : Expose overriding this via some config variable.
     set(SHADER_HEADER_CONFIG "${CMAKE_CURRENT_LIST_DIR}/shader.h.in")
-    message(FATAL_ERROR "BGFX_DIR=\"${FETCHCONTENT_BASE_DIR}/bgfx-src\"")
+
     macro(add_shader_dependency TARGET SHADER)
         add_shader_target(
             ${TARGET}
