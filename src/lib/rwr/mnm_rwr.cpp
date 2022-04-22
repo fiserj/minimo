@@ -350,6 +350,8 @@ struct OwningAllocator : Allocator
 // ARENA ALLOCATOR
 // -----------------------------------------------------------------------------
 
+// Simple linear allocator. Enables in-place reallocation of last item and its
+// freeing (but only once).
 struct ArenaAllocator : OwningAllocator
 {
     u8* buffer;
@@ -359,9 +361,15 @@ struct ArenaAllocator : OwningAllocator
 
     virtual bool owns(const void* ptr) const override
     {
+        ASSERT(
+            top <= size,
+            "Top bigger than the capacity (%" PRIu32 " > %" PRIu32 ").",
+            top, size
+        );
+
         // NOTE : > (not >=) because the first four bytes are reserved for head.
         // TODO : Should really just check against the allocated portion.
-        return ptr > buffer && ptr < buffer + size;
+        return ptr >= buffer && ptr < buffer + top;
     }
 
     virtual void* realloc(void* ptr, size_t size_, size_t align, const char* file, u32 line) override
@@ -379,9 +387,21 @@ struct ArenaAllocator : OwningAllocator
 
         if (size_)
         {
-            u8* data = ptr != buffer + last
-                ? reinterpret_cast<u8*>(bx::alignPtr(buffer + top, 0, align))
-                : buffer + last;
+            u8* data;
+            
+            if (ptr != buffer + last)
+            {
+                data = buffer + top;
+
+                if (align)
+                {
+                    data = reinterpret_cast<u8*>(bx::alignPtr(data, 0, align));
+                }
+            }
+            else
+            {
+                data = buffer + last;
+            }
 
             if (data + size_ <= buffer + size)
             {
@@ -389,10 +409,14 @@ struct ArenaAllocator : OwningAllocator
                 {
                     last = top;
 
-                    // NOTE : We only know the previous allocation's size, but
-                    //        since the blocks are allocated linearly, the copy
-                    //        will never access data beyond `buffer`.
-                    bx::memCopy(memory, ptr, size_);
+                    if (ptr)
+                    {
+                        // NOTE : We only know the previous allocation's size,
+                        //        but since the blocks are allocated linearly,
+                        //        the copy will never access data beyond
+                        //        `buffer`, even if we copy some waste along.
+                        bx::memCopy(data, ptr, size_);
+                    }
                 }
 
                 memory = data;
@@ -401,8 +425,7 @@ struct ArenaAllocator : OwningAllocator
         }
         else if (reinterpret_cast<u8*>(ptr) == buffer + last)
         {
-            top  = last;
-            last = 0;
+            top = last;
         }
 
         return memory;
