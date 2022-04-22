@@ -367,8 +367,6 @@ struct ArenaAllocator : OwningAllocator
             top, size
         );
 
-        // NOTE : > (not >=) because the first four bytes are reserved for head.
-        // TODO : Should really just check against the allocated portion.
         return ptr >= buffer && ptr < buffer + top;
     }
 
@@ -457,6 +455,10 @@ void reset(ArenaAllocator& allocator)
 // STACK ALLOCATOR
 // -----------------------------------------------------------------------------
 
+// Simple linear allocator, similar to `ArenaAllocator`, but capable of
+// reclaiming freed chunks near the end/top, even if they aren't freed in
+// strictly LIFO fashion. Has a bookkeeping overhead of two `u32`s per
+// allocation.
 struct StackAllocator : OwningAllocator
 {
     enum : u32
@@ -501,13 +503,25 @@ struct StackAllocator : OwningAllocator
     u8* buffer; // First 8 bytes reserved for a sentinel block.
     u32 size;   // Total buffer size in bytes.
     u32 top;    // Offset to first free byte in buffer.
-    u32 last;   // Offset of last block header.
+    u32 last;   // Offset of last block header (not necessarily end of previous block data).
 
     virtual bool owns(const void* ptr) const override
     {
         // NOTE : > (not >=) because the first four bytes are reserved for head.
-        // TODO : Should really just check against the allocated portion.
         return ptr > buffer && ptr < buffer + size;
+
+        ASSERT(
+            top <= size,
+            "Top bigger than the capacity (%" PRIu32 " > %" PRIu32 ").",
+            top, size
+        );
+
+        // NOTE : > (not >=) because the first four bytes (plus possibly
+        //        necessary alignment) are reserved for head.
+        // TODO : We could also check the block is still valid, but it would
+        //        require storing a pointer to the first header, or computing it
+        //        anew every time.
+        return ptr > buffer && ptr < buffer + top;
     }
 
     virtual void* realloc(void* ptr, size_t size_, size_t align, const char* file, u32 line) override
@@ -560,6 +574,12 @@ struct StackAllocator : OwningAllocator
                 {
                     block.reset(last, size_);
 
+                    // NOTE : There can be a bit of wasted space before the
+                    //        block's header and end of previously allocated
+                    //        block (to account for proper alignment), that is
+                    //        not reclaimed when the block is released. However,
+                    //        given how small it generally is, it's probably
+                    //        fine as is, without making the logic more complex.
                     last   = block.data - buffer - sizeof(Header);
                     top    = block.data - buffer + size_;
                     memory = block.data;
@@ -623,7 +643,20 @@ struct StackAllocator : OwningAllocator
             bx::max(align, std::alignment_of<Header>::value)
         );
 
-        return make_block(data);
+        Block block = make_block(data);
+
+        ASSERT(
+            bx::isAligned(block.header, i32(std::alignment_of<Header>::value)),
+            "New `StackAllocator` block header not aligned to %zu bytes.",
+            std::alignment_of<Header>::value
+        );
+        ASSERT(
+            !align || bx::isAligned(block.data, i32(align)),
+            "New `StackAllocator` block data not aligned to %zu bytes.",
+            align
+        );
+
+        return block;
     }
 };
 
