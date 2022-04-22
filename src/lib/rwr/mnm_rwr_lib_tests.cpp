@@ -35,6 +35,90 @@ TEST_CASE("Deferred Execution")
 
 
 // -----------------------------------------------------------------------------
+// ARENA ALLOCATOR
+// -----------------------------------------------------------------------------
+
+TEST_CASE("Arena Allocator")
+{
+    BX_ALIGN_DECL_16(struct) Buffer
+    {
+        u8 data[128] = {};
+    };
+
+    Buffer         buffer;
+    ArenaAllocator allocator;
+
+    // Initialization.
+    init(allocator, buffer.data, sizeof(buffer.data));
+    REQUIRE(allocator.size == sizeof(buffer));
+    REQUIRE(allocator.top == 0);
+    REQUIRE(allocator.last == 0);
+
+    // Non-aligned allocation I.
+    void* first = BX_ALLOC(&allocator, 13);
+    REQUIRE(first != nullptr);
+    REQUIRE(allocator.owns(first));
+    REQUIRE(allocator.size == sizeof(buffer));
+    REQUIRE(allocator.top == 13);
+    REQUIRE(allocator.last == 0);
+
+    // Aligned allocation.
+    void* second = BX_ALIGNED_ALLOC(&allocator, 16, 16);
+    REQUIRE(second != nullptr);
+    REQUIRE(second > first);
+    REQUIRE(allocator.owns(second));
+    REQUIRE(allocator.top == 32);
+    REQUIRE(allocator.last == 13);
+
+    // Non-aligned allocation I.
+    void* third = BX_ALLOC(&allocator, 5);
+    REQUIRE(third != nullptr);
+    REQUIRE(third > second);
+    REQUIRE(allocator.owns(third));
+    REQUIRE(allocator.top == 37);
+    REQUIRE(allocator.last == 32);
+
+    // Failed in-place reallocation (out of space).
+    void* third_realloc_failed = BX_REALLOC(&allocator, third, 100);
+    REQUIRE(third_realloc_failed == nullptr);
+    REQUIRE(!allocator.owns(third_realloc_failed));
+    REQUIRE(allocator.top == 37);
+    REQUIRE(allocator.last == 32);
+
+    // Successful in-place reallocation.
+    void* third_realloc_succeeded = BX_REALLOC(&allocator, third, 32);
+    REQUIRE(third_realloc_succeeded != nullptr);
+    REQUIRE(third_realloc_succeeded == third);
+    REQUIRE(allocator.owns(third_realloc_succeeded));
+    REQUIRE(allocator.top == 64);
+    REQUIRE(allocator.last == 32);
+
+    // Freeing of last allocation.
+    BX_FREE(&allocator, third);
+    REQUIRE(allocator.top == 32);
+    REQUIRE(allocator.last == 32);
+
+    // No-op freeing of previous block.
+    BX_FREE(&allocator, second);
+    REQUIRE(allocator.top == 32);
+    REQUIRE(allocator.last == 32);
+
+    // No-op freeing of the first block.
+    BX_FREE(&allocator, first);
+    REQUIRE(allocator.top == 32);
+    REQUIRE(allocator.last == 32);
+
+    // Realloc of second block (can't be done in-place).
+    void* second_realloc_succeeded = BX_ALIGNED_REALLOC(&allocator, second, 64, 16);
+    REQUIRE(second_realloc_succeeded != nullptr);
+    REQUIRE(allocator.owns(second_realloc_succeeded));
+    REQUIRE(allocator.top == 96);
+    REQUIRE(allocator.last == 32);
+    REQUIRE(bx::memCmp(second, second_realloc_succeeded, 16) == 0);
+};
+
+
+// -----------------------------------------------------------------------------
 // STACK ALLOCATOR
 // -----------------------------------------------------------------------------
 
