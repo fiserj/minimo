@@ -1168,3 +1168,36 @@ void dealloc(void* memory)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - PLATFORM INFO
+// -----------------------------------------------------------------------------
+
+int platform(void)
+{
+#if BX_PLATFORM_LINUX
+    return PLATFORM_LINUX;
+#elif BX_PLATFORM_OSX
+    return PLATFORM_MACOS;
+#elif BX_PLATFORM_WINDOWS
+    return PLATFORM_WINDOWS;
+#else
+    return PLATFORM_UNKNOWN;
+#endif
+}
+
+int renderer(void)
+{
+    switch (bgfx::getRendererType())
+    {
+    case bgfx::RendererType::Direct3D11:
+        return RENDERER_DIRECT3D11;
+    case bgfx::RendererType::Metal:
+        return RENDERER_METAL;
+    case bgfx::RendererType::OpenGL:
+        return RENDERER_OPENGL;
+    default:
+        return RENDERER_UNKNOWN;
+    }
+}
+
+
+// -----------------------------------------------------------------------------
