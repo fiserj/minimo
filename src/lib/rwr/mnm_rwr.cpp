@@ -4040,6 +4040,8 @@ void append(CodepointQueue& queue, u32 codepoint)
 
 } // unnamed namespace
 
+} // namespace rwr
+
 // Compiled separately mainly due to the name clash of `normal` function with
 // an enum from MacTypes.h.
 extern bgfx::PlatformData create_platform_data
@@ -4047,6 +4049,9 @@ extern bgfx::PlatformData create_platform_data
     GLFWwindow*              window,
     bgfx::RendererType::Enum renderer
 );
+
+namespace rwr
+{
 
 namespace
 {
@@ -4207,7 +4212,7 @@ thread_local ThreadLocalContext* t_ctx = nullptr;
 // PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
 // -----------------------------------------------------------------------------
 
-int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
+int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
 {
     MutexScope lock(g_mutex);
 
@@ -4564,4 +4569,27 @@ int run(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cl
 
 } // namespace rwr
 
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY FROM C++
+// -----------------------------------------------------------------------------
+
+int run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+{
+    return rwr::run_impl(init, setup, draw, cleanup);
+}
+
+
+// -----------------------------------------------------------------------------
+
 } // namespace mnm
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MAIN ENTRY FROM C
+// -----------------------------------------------------------------------------
+
+int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
+{
+    return mnm::rwr::run_impl(init, setup, draw, cleanup);
+}
