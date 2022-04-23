@@ -14,6 +14,7 @@
 #include <bx/endian.h>            // endianSwap
 #include <bx/mutex.h>             // Mutex, MutexScope
 #include <bx/pixelformat.h>       // packRg16S, packRgb8
+#include <bx/platform.h>          // BX_CACHE_LINE_SIZE
 #include <bx/ringbuffer.h>        // RingBufferControl
 #include <bx/string.h>            // strCat, strCopy
 #include <bx/timer.h>             // getHPCounter, getHPFrequency
@@ -4072,7 +4073,7 @@ void alloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
     ASSERT(allocator, "Invalid allocator pointer.");
     ASSERT(count, "Zero thread-local contexts inited.");
 
-    constexpr u32 align = std::alignment_of<ThreadLocalContext>::value;
+    constexpr u32 align = BX_CACHE_LINE_SIZE;
     const     u32 size  = bx::alignUp(sizeof(ThreadLocalContext), align);
 
     ctxs = reinterpret_cast<ThreadLocalContext*>(BX_ALIGNED_ALLOC(allocator, size * count, align));
@@ -4095,8 +4096,7 @@ void dealloc(ThreadLocalContext*& ctxs, Allocator* allocator, u32 count)
         ctxs[i].~ThreadLocalContext();
     }
 
-    constexpr u32 align = std::alignment_of<ThreadLocalContext>::value;
-    BX_ALIGNED_FREE(allocator, ctxs, align);
+    BX_ALIGNED_FREE(allocator, ctxs, BX_CACHE_LINE_SIZE);
 
     ctxs = nullptr;
 }
