@@ -84,9 +84,9 @@ function(add_project NAME IS_TEST_RUNNER)
         CXX_EXTENSIONS OFF
         CXX_STANDARD_REQUIRED ON
         DEBUG_POSTFIX "_d"
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
-    )
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin$<$<CONFIG:Debug>:>" # The dummy generator expression
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin$<$<CONFIG:Debug>:>" # is to avoid having to list all
+    )                                                                         # *_OUTPUT_DIRECTORY_* properties.
 endfunction()
 
 add_project(${PROJECT_NAME}_rwr OFF)
