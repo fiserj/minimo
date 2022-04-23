@@ -38,8 +38,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v2
-      with:
-        submodules: recursive
 
     - name: Configure
       run: cmake -B ${{github.workspace}}/build -DMNM_TESTS=ON -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
