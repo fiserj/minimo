@@ -2784,7 +2784,6 @@ void add_texture
         ratio = bgfx::BackbufferRatio::Enum(width - SIZE_EQUAL);
     }
 
-    // TODO : Use a scratch memory / frame allocator.
     const bgfx::Memory* memory = nullptr;
 
     if (data && format.size > 0 && ratio == bgfx::BackbufferRatio::Count)

@@ -611,7 +611,7 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
         u16(height),
         u16(stride),
         data,
-        nullptr // TODO : Pass proper allocator!
+        &t_ctx->frame_allocator
     );
 }
 

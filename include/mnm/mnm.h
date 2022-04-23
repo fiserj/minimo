@@ -562,6 +562,9 @@ enum
 ///
 /// Using existing ID will result in destruction of the previously created data.
 ///
+/// The passed data memory must stay valid for at least two frames. See `alloc`
+/// and `MEMORY_TEMPORARY` for creation of autmatically disposed memory.
+///
 /// @param[in] id Texture identifier.
 /// @param[in] flags Texture properties' flags.
 /// @param[in] width Image width in pixels.
@@ -933,6 +936,7 @@ void uniform(int id, const void* value);
 /// Creates a shader program. The shader data must be in specific format
 ///
 /// Using existing ID will result in destruction of the previously created data.
+///
 /// The passed blob data memory must stay valid for at least two frames. See
 /// `alloc` and `MEMORY_TEMPORARY` for creation of autmatically disposed memory.
 ///
