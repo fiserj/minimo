@@ -1114,7 +1114,7 @@ enum
 // Allocates memory of requested size and type. The returned memory is always
 // aligned at a 16 byte boundary.
 //
-void* alloc(int size, int type);
+void* alloc(int type, int size);
 
 // Deallocates memory previously allocated with `alloc`. The call is only
 // permitted if the `memory` is of type `MEMORY_PERSISTENT`.
