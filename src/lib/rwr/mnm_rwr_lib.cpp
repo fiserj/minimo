@@ -1201,3 +1201,29 @@ int renderer(void)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - MISCELLANEOUS
+// -----------------------------------------------------------------------------
+
+void transient_memory(int megabytes)
+{
+    ASSERT(
+        t_ctx->is_main_thread,
+        "`transient_memory` must be called from main thread only."
+    );
+
+    ASSERT(
+        megabytes > 0,
+        "Non-positive amount of transient memory requested (%i).",
+        megabytes
+    );
+
+    g_ctx->transient_memory = u32(megabytes << 20);
+}
+
+int frame(void)
+{
+    return int(g_ctx->frame_number);
+}
+
+
+// -----------------------------------------------------------------------------
