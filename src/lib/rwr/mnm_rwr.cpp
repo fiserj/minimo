@@ -1631,8 +1631,8 @@ using BgfxAttribType = BgfxReducedEnum<bgfx::AttribType, u8>;
 
 struct VertexLayoutCache
 {
-    FixedArray<bgfx::VertexLayout      , 128> layouts;
-    FixedArray<bgfx::VertexLayoutHandle, 128> handles;
+    FixedArray<bgfx::VertexLayout      , 256> layouts;
+    FixedArray<bgfx::VertexLayoutHandle, 256> handles;
 };
 
 struct VertexLayoutAttribInfo
@@ -1658,16 +1658,18 @@ const VertexLayoutAttribInfo s_vertex_layout_attribs[] =
 constexpr u32 vertex_layout_index(u32 attribs, u32 skips = 0)
 {
     static_assert(
-        VERTEX_ATTRIB_MASK  >>  VERTEX_ATTRIB_SHIFT       == 0b0000111 &&
-        (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 3)) == 0b0111000 &&
-        TEXCOORD_F32        >>  6                         == 0b1000000,
+        VERTEX_ATTRIB_MASK  >>  VERTEX_ATTRIB_SHIFT       == 0b00000111 &&
+        TEXCOORD_F32        >>  9                         == 0b00001000 &&
+        (VERTEX_ATTRIB_MASK >> (VERTEX_ATTRIB_SHIFT - 4)) == 0b01110000 &&
+        TEXCOORD_F32        >>  5                         == 0b10000000,
         "Invalid index assumptions in `vertex_layout_index`."
     );
 
     return
-        ((skips   & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
-        ((attribs & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 3)) | // Bits 3..5.
-        ((attribs & TEXCOORD_F32      ) >>  6                       ) ; // Bit 6.
+        ((attribs & VERTEX_ATTRIB_MASK) >>  VERTEX_ATTRIB_SHIFT     ) | // Bits 0..2.
+        ((attribs & TEXCOORD_F32      ) >>  9                       ) | // Bit  3.
+        ((skips   & VERTEX_ATTRIB_MASK) >> (VERTEX_ATTRIB_SHIFT - 4)) | // Bits 4..6.
+        ((skips   & TEXCOORD_F32      ) >>  5                       ) ; // Bit  7.
 }
 
 constexpr u32 vertex_layout_skips(u32 attribs, u32 alias)
@@ -1677,6 +1679,7 @@ constexpr u32 vertex_layout_skips(u32 attribs, u32 alias)
 
 void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
 {
+    ASSERT(attribs, "Empty attributes.");
     ASSERT((attribs & skips) == 0, "`Attribute and skip flags must be disjoint.");
 
     bgfx::VertexLayout layout;
@@ -1760,7 +1763,16 @@ void init(VertexLayoutCache& cache)
                     }
                 }
 
-                add_vertex_layout(cache, attribs, skips);
+                ASSERT(
+                    (attribs & skips) == skips,
+                    "Skips %" PRIu32 "not fully contained in attribs %" PRIu32 ".",
+                    skips, attribs
+                );
+
+                if (attribs != skips)
+                {
+                    add_vertex_layout(cache, attribs & ~skips, skips);
+                }
             }
         }
     }
