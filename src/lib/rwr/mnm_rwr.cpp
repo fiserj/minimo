@@ -313,7 +313,7 @@ using Vec3 = hmm_vec3;
 
 using Vec4 = hmm_vec4;
 
-union Vec2i
+struct Vec2i
 {
     i32 X;
     i32 Y;
