@@ -1,7 +1,7 @@
 set(NAME test)
 
 add_executable(${NAME}
-    element_range.c
+    hello_triangle.c
 )
 
 target_include_directories(${NAME} PRIVATE
@@ -9,14 +9,14 @@ target_include_directories(${NAME} PRIVATE
 )
 
 target_link_libraries(${NAME} PRIVATE
-    ${PROJECT_NAME}
+    ${PROJECT_NAME}_rwr
 )
 
 set_target_properties(${NAME} PROPERTIES
     C_STANDARD 99
     C_STANDARD_REQUIRED ON
     DEBUG_POSTFIX "_d"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin$<$<CONFIG:Debug>:>"
 )
 
 if(MSVC)
