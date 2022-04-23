@@ -3822,106 +3822,11 @@ void Task::ExecuteRange(enki::TaskSetPartition, u32)
 // MEMORY MANAGEMENT & CACHING
 // -----------------------------------------------------------------------------
 
-struct TempMemoryCache
-{
-    ArenaAllocator      allocator[2];
-    DynamicArray<void*> blocks   [2]; // Blocks allocated outside the arena.
-    u8                  active;
-};
-
 struct PersistentMemoryCache
 {
     Mutex               mutex;
     DynamicArray<void*> blocks;
 };
-
-void init(TempMemoryCache& cache, Allocator* allocator, u32 arena_size)
-{
-    ASSERT(allocator, "Invalid allocator pointer.");
-    ASSERT(arena_size, "Zero arena memory size.");
-
-    const u32 size = bx::alignUp(arena_size, MANAGED_MEMORY_ALIGNMENT);
-    void* buffer   = BX_ALIGNED_ALLOC(allocator, 2 * size, MANAGED_MEMORY_ALIGNMENT);
-
-    init(cache.allocator[0], buffer, size);
-    init(cache.allocator[1], reinterpret_cast<u8*>(buffer) + size, size);
-
-    init(cache.blocks[0], allocator);
-    init(cache.blocks[1], allocator);
-
-    cache.active = 0;
-}
-
-void deinit(TempMemoryCache& cache)
-{
-    BX_ALIGNED_FREE(
-        cache.blocks[0].allocator,
-        cache.allocator[0].buffer,
-        MANAGED_MEMORY_ALIGNMENT
-    );
-
-    for (u32 i = 0; i < 2; i++)
-    {
-        DynamicArray<void*>& blocks = cache.blocks[i];
-
-        for (u32 j = 0; j < blocks.size; j++)
-        {
-            BX_ALIGNED_FREE(blocks.allocator, blocks[j], MANAGED_MEMORY_ALIGNMENT);
-        }
-
-        deinit(blocks);
-    }
-
-    cache = {};
-}
-
-void init_frame(TempMemoryCache& cache)
-{
-    cache.active = !bool(cache.active);
-
-    DynamicArray<void*>& blocks = cache.blocks[cache.active];
-
-    for (u32 i = 0; i < blocks.size; i++)
-    {
-        BX_ALIGNED_FREE(blocks.allocator, blocks[i], MANAGED_MEMORY_ALIGNMENT);
-    }
-
-    reset(cache.allocator[cache.active]);
-}
-
-void* alloc(TempMemoryCache& cache, u32 size)
-{
-    if (!size)
-    {
-        return nullptr;
-    }
-
-    // NOTE : `BX_ALIGNED_ALLOC` note needed, since the arena buffer is already
-    //        aligned, and we make allocations that are multiple of
-    //        `MANAGED_MEMORY_ALIGNMENT`.
-    void* memory = BX_ALLOC(
-        &cache.allocator[cache.active],
-        bx::alignUp(size, MANAGED_MEMORY_ALIGNMENT)
-    );
-
-    if (!memory)
-    {
-        void* memory = BX_ALIGNED_ALLOC(
-            cache.blocks[cache.active].allocator,
-            size,
-            MANAGED_MEMORY_ALIGNMENT
-        );
-        WARN(memory, "Temporary memory allocation of %" PRIu32 " bytes failed.", size);
-    }
-
-    ASSERT(
-        bx::isAligned(memory, MANAGED_MEMORY_ALIGNMENT),
-        "Allocated data not aligned to %" PRIu32 " bytes.",
-        MANAGED_MEMORY_ALIGNMENT
-    );
-
-    return memory;
-}
 
 void init(PersistentMemoryCache& cache, Allocator* allocator)
 {
