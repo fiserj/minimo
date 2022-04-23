@@ -2421,7 +2421,6 @@ struct MeshCache
 {
     Mutex                                                          mutex;
     FixedArray<Mesh, MAX_MESHES>                                   meshes;
-    FixedArray<u16, MAX_TRANSIENT_BUFFERS>                         transient_indices;
     FixedArray<bgfx::TransientVertexBuffer, MAX_TRANSIENT_BUFFERS> transient_buffers;
     u32                                                            transient_buffer_count     = 0;
     u32                                                            transient_memory_exhausted = 0;
