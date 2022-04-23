@@ -933,6 +933,8 @@ void uniform(int id, const void* value);
 /// Creates a shader program. The shader data must be in specific format
 ///
 /// Using existing ID will result in destruction of the previously created data.
+/// The passed blob data memory must stay valid for at least two frames. See
+/// `alloc` and `MEMORY_TEMPORARY` for creation of autmatically disposed memory.
 ///
 /// @param[in] id Shader program identifier.
 /// @param[in] vs_data Vertex shader blob data.
@@ -1107,7 +1109,7 @@ enum
     // explicit call to `dealloc` is made.
     MEMORY_PERSISTENT,
 
-    // Memory is deallocated when 
+    // Memory is valid for the duration of the current and the next frame.
     MEMORY_TEMPORARY,
 };
 

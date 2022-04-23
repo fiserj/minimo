@@ -3334,9 +3334,10 @@ void add_program
     ASSERT(fs_data, "Invalid fragment shader blob pointer.");
     ASSERT(fs_size, "Zero fragment shader blob size.");
 
-    // TODO : Use a scratch memory / frame allocator.
-    bgfx::ShaderHandle  vertex   = bgfx::createShader(bgfx::copy(vs_data, vs_size));
-    bgfx::ShaderHandle  fragment = bgfx::createShader(bgfx::copy(fs_data, fs_size));
+    // NOTE : `vs_data` and `fs_data` are assumed to be valid according to
+    //        `bgfx::Memory`'s requirements (i.e., at least for two frames).
+    bgfx::ShaderHandle  vertex   = bgfx::createShader(bgfx::makeRef(vs_data, vs_size));
+    bgfx::ShaderHandle  fragment = bgfx::createShader(bgfx::makeRef(fs_data, fs_size));
     bgfx::ProgramHandle program  = bgfx::createProgram(vertex, fragment, true);
 
     if (!bgfx::isValid(program))
