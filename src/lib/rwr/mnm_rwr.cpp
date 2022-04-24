@@ -1184,9 +1184,9 @@ template <u32 Size>
 using MatrixStack = FixedStack<Mat4, Size>;
 
 template <u32 Size>
-void reset(MatrixStack<Size>& stack)
+void init(MatrixStack<Size>& stack)
 {
-    reset(stack, HMM_Mat4d(1.0f));
+    init(stack, HMM_Mat4d(1.0f));
 }
 
 template <u32 Size>
@@ -4061,13 +4061,19 @@ void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size, u32 sta
     // NOTE : No `deinit` needed.
     init(ctx.mesh_recorder    , &ctx.stack_allocator);
     init(ctx.instance_recorder, &ctx.stack_allocator);
+
+    init(ctx.matrix_stack);
 }
 
 void deinit(ThreadLocalContext& ctx)
 {
     Allocator* allocator = ctx.backed_scratch_allocator.backing;
 
-    BX_FREE(allocator, ctx.stack_allocator.buffer);
+    BX_ALIGNED_FREE(
+        allocator,
+        ctx.stack_allocator.buffer,
+        MANAGED_MEMORY_ALIGNMENT
+    );
 
     BX_ALIGNED_FREE(
         allocator,
