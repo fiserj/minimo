@@ -803,6 +803,8 @@ void clear_depth(float depth)
         !(pass.clear_flags & BGFX_CLEAR_DEPTH)
     )
     {
+        pass.clear_flags |= BGFX_CLEAR_DEPTH;
+        pass.clear_depth  = depth;
         pass.dirty_flags |= Pass::DIRTY_CLEAR;
     }
 }
