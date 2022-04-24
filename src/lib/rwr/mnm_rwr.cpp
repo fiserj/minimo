@@ -4293,12 +4293,21 @@ int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void
     init(g_ctx->program_cache);
     defer(deinit(g_ctx->program_cache));
 
-    if (setup)
     {
-        (*setup)();
-    }
+        init_frame(g_ctx->mesh_cache);
 
-    g_ctx->bgfx_frame_number = bgfx::frame();
+        for (u32 i = 0; i < thread_count; i++)
+        {
+            init_frame(local_ctxs[i].frame_allocator);
+        }
+
+        if (setup)
+        {
+            (*setup)();
+        }
+
+        g_ctx->bgfx_frame_number = bgfx::frame();
+    }
 
     u32 debug_state = BGFX_DEBUG_NONE;
     bgfx::setDebug(debug_state);
