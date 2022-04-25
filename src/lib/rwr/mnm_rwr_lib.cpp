@@ -601,7 +601,7 @@ void load_texture(int id, int flags, int width, int height, int stride, const vo
         width, height
     );
 
-    ASSERT(stride > 0, "Negative texture stride (%i).", stride);
+    ASSERT(stride >= 0, "Negative texture stride (%i).", stride);
 
     add_texture(
         g_ctx->texture_cache,
