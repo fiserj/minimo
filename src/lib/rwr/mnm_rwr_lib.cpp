@@ -309,7 +309,7 @@ void end_mesh(void)
     if (t_ctx->record_info.flags & (GENEREATE_FLAT_NORMALS | GENEREATE_SMOOTH_NORMALS))
     {
         ASSERT(
-            t_ctx->mesh_recorder.attrib_state.size / sizeof(PackedNormal) == 0,
+            t_ctx->mesh_recorder.attrib_state.size % sizeof(PackedNormal) == 0,
             "Vertex attribute state size (%" PRIu32 ") not divisible by the "
             "packed normal size (%zu).",
             t_ctx->mesh_recorder.attrib_state.size,
