@@ -1914,7 +1914,7 @@ void reset(VertexAttribState& state, u32 flags)
     {
         
         state.packed_texcoord = vertex_attrib<PackedTexcoord>(state, state.size);
-        state.store_texcoord  = store_full_texcoord;
+        state.store_texcoord  = store_packed_texcoord;
         state.size           += sizeof(PackedTexcoord);
     }
 }
