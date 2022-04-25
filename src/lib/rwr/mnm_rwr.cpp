@@ -1048,7 +1048,7 @@ struct DoubleFrameAllocator : Allocator
 
         void* memory = nullptr;
 
-        if (arena.owns(ptr))
+        if (!ptr || arena.owns(ptr))
         {
             memory = arena.realloc(ptr, size, align, file, line);
         }
@@ -1074,7 +1074,7 @@ struct DoubleFrameAllocator : Allocator
                 "`DoubleFrameAllocator`'s header info not aligned properly."
             );
 
-            if (memory != ptr)
+            if (ptr && memory != ptr)
             {
                 bx::memCopy(data, ptr_, *(reinterpret_cast<u32*>(ptr_) - 2));
             }
@@ -1091,7 +1091,7 @@ struct DoubleFrameAllocator : Allocator
 
 void init(DoubleFrameAllocator& allocator, Allocator* backing, void* buffer, u32 size)
 {
-    void* start = bx::alignPtr(buffer, MANAGED_MEMORY_ALIGNMENT);
+    void* start = bx::alignPtr(buffer, 0, MANAGED_MEMORY_ALIGNMENT);
     const u32 half_size = (size - u32(uintptr_t(start) - uintptr_t(buffer))) / 2;
 
     init(allocator.arenas[0], start, half_size);
@@ -4051,7 +4051,11 @@ void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size, u32 sta
     );
     ASSERT(arena_buffer, "Failed to allocate arena memory.");
 
-    void* stack_buffer = BX_ALLOC(allocator, stack_size);
+    void* stack_buffer = BX_ALIGNED_ALLOC(
+        allocator,
+        stack_size,
+        MANAGED_MEMORY_ALIGNMENT
+    );
     ASSERT(stack_buffer, "Failed to allocate stack memory.");
 
     init(ctx.stack_allocator, stack_buffer, stack_size);
