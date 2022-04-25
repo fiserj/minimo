@@ -746,7 +746,7 @@ void instance(const void* data)
         "Instance buffer recording not started. Call `begin_instancing` first."
     );
 
-    ASSERT(data, "Invalid data pointer.");
+    ASSERT(data || t_ctx->record_info.is_transform, "Invalid data pointer.");
 
     append(
         t_ctx->instance_recorder,
