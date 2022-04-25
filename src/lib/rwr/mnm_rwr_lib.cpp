@@ -325,7 +325,7 @@ void end_mesh(void)
             t_ctx->mesh_recorder.position_buffer.data
         );
         PackedNormal* normals = reinterpret_cast<PackedNormal*>(
-            t_ctx->mesh_recorder.position_buffer.data + offset
+            t_ctx->mesh_recorder.attrib_buffer.data + offset
         );
 
         if (t_ctx->record_info.flags & GENEREATE_FLAT_NORMALS)
