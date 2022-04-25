@@ -2484,8 +2484,10 @@ bool create_persistent_geometry
 
     for (u32 i = 0; i < count; i++)
     {
-        ASSERT(vertex_count == attribs[i].size / layouts[i]->getStride(),
-            "Mismatched number of vertices for attribute buffer %" PRIu32 ".", i
+        ASSERT(
+            vertex_count == attribs[i].size / layouts[i]->getStride(),
+            "Mismatched number of vertices for attribute buffer %" PRIu32 ".",
+            i
         );
 
         streams[i] = {
