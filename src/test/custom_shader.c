@@ -1,5 +1,7 @@
 #include <mnm/mnm.h>
 
+#include <math.h> // fabs, fmodf
+
 #define TRIANGLE_ID 1
 
 #define SHADER_ID   1
@@ -75,8 +77,6 @@ static const unsigned char FS[] =
     0x7d, 0x0a, 0x0a, 0x00, 0x00, 0x10, 0x00,
 };
 
-static float color_rgba[] = { 0.9f, 0.6f, 0.3f, 1.0f };
-
 static void setup(void)
 {
     title("Custom Shader Example");
@@ -86,8 +86,10 @@ static void setup(void)
 
     create_shader(SHADER_ID, VS, sizeof(VS), FS, sizeof(FS));
 
-    create_uniform(COLOR_ID, UNIFORM_VEC4, "u_color");
+    create_uniform(COLOR_ID, UNIFORM_VEC4, 1, "u_color");
 }
+
+static void hsv2rgba(float h, float s, float v, float* rgba);
 
 static void draw(void)
 {
@@ -111,10 +113,62 @@ static void draw(void)
     }
     end_mesh();
 
-    identity();
     shader(SHADER_ID);
-    uniform(COLOR_ID, color_rgba);
+
+    float rgba[4];
+    hsv2rgba((float)elapsed() * 120.0f, 1.0f, 1.0f, rgba);
+    uniform(COLOR_ID, rgba);
+
+    identity();
     mesh(TRIANGLE_ID);
+}
+
+void hsv2rgba(float h, float s, float v, float* rgba)
+{
+    // https://rosettacode.org/wiki/Color_wheel#C.2B.2B
+
+    const float q = fmodf(h, 360.0f) / 60.0f;
+    const float c = s * v;
+    const float x = c * (1.0f - fabs(fmodf(q, 2.0f) - 1.0f));
+    const float m = v - c;
+
+    switch ((int)q)
+    {
+    case 0:
+        rgba[0] = c;
+        rgba[1] = x;
+        rgba[2] = 0.0f;
+        break;
+    case 1:
+        rgba[0] = x;
+        rgba[1] = c;    
+        rgba[2] = 0.0f;
+        break;
+    case 2:
+        rgba[0] = 0.0f;
+        rgba[1] = c;
+        rgba[2] = x;
+        break;
+    case 3:
+        rgba[0] = 0.0f;
+        rgba[1] = x;
+        rgba[2] = c;
+        break;
+    case 4:
+        rgba[0] = x;
+        rgba[1] = 0.0f;
+        rgba[2] = c;
+        break;
+    default:
+        rgba[0] = c;
+        rgba[1] = 0.0f;
+        rgba[2] = x;
+    }
+
+    rgba[0] += m;
+    rgba[1] += m;
+    rgba[2] += m;
+    rgba[3]  = 1.0f;
 }
 
 MNM_MAIN(0, setup, draw, 0);
