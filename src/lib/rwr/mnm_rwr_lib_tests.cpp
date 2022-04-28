@@ -9,7 +9,7 @@
 // DEFERRED EXECUTION
 // -----------------------------------------------------------------------------
 
-TEST_CASE("Deferred Execution")
+TEST_CASE("Deferred Execution", "[basic]")
 {
     int value = 1;
 
@@ -38,7 +38,7 @@ TEST_CASE("Deferred Execution")
 // ARENA ALLOCATOR
 // -----------------------------------------------------------------------------
 
-TEST_CASE("Arena Allocator")
+TEST_CASE("Arena Allocator", "[basic]")
 {
     BX_ALIGN_DECL_16(struct) Buffer
     {
@@ -122,7 +122,7 @@ TEST_CASE("Arena Allocator")
 // STACK ALLOCATOR
 // -----------------------------------------------------------------------------
 
-TEST_CASE("Stack Allocator")
+TEST_CASE("Stack Allocator", "[basic]")
 {
     BX_ALIGN_DECL_16(struct) Buffer
     {
@@ -195,7 +195,7 @@ TEST_CASE("Stack Allocator")
 // DYNAMIC ARRAY
 // -----------------------------------------------------------------------------
 
-TEST_CASE("Dynamic Array")
+TEST_CASE("Dynamic Array", "[basic]")
 {
     CrtAllocator allocator;
 
