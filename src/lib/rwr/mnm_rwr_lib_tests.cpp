@@ -253,8 +253,7 @@ TEST_CASE("Dynamic Array", "[basic]")
 
 #undef MNM_MAIN_NAME
 
-// TODO : Replace this with own implementation.
-#define MNM_MAIN_NAME ::mnm::rwr::run_impl
+#define MNM_MAIN_NAME test_example
 
 
 // -----------------------------------------------------------------------------
@@ -264,13 +263,37 @@ TEST_CASE("Dynamic Array", "[basic]")
 namespace example_hello_triangle
 {
 
+namespace
+{
+
+const char* expected_result_file_path = "../path/to/expected/image.png";
+
+int test_example
+(
+    void (* init   )(void),
+    void (* setup  )(void),
+    void (* draw   )(void),
+    void (* cleanup)(void)
+)
+{
+    using namespace mnm::rwr;
+
+    Callbacks callbacks;
+    callbacks.init    = init;
+    callbacks.setup   = setup;
+    callbacks.draw    = draw;
+    callbacks.cleanup = cleanup;
+
+    return run(callbacks, expected_result_file_path);
+}
+
+} // unnamed namespace
+
 #include "../../test/hello_triangle.c"
 
 TEST_CASE("Hello Triangle", "[example][graphics]")
 {
-    // TODO : Run the example, take snapshot and compare the pixels.
-
-    // main(0, nullptr);
+    main(0, nullptr);
 }
 
 } // namespace example_hello_triangle

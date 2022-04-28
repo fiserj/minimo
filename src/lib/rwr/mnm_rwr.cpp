@@ -4137,16 +4137,24 @@ thread_local ThreadLocalContext* t_ctx = nullptr;
 
 
 // -----------------------------------------------------------------------------
-// PUBLIC API IMPLEMENTATION - MAIN ENTRY (C++)
+// MAIN ENTRY
 // -----------------------------------------------------------------------------
 
-int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void (*cleanup)(void))
+struct Callbacks
+{
+    void (*init   )(void) = nullptr;
+    void (*setup  )(void) = nullptr;
+    void (*draw   )(void) = nullptr;
+    void (*cleanup)(void) = nullptr;
+};
+
+int run(const Callbacks& callbacks, const char* expected_result_file_path = nullptr)
 {
     MutexScope lock(g_mutex);
 
-    if (init_)
+    if (callbacks.init)
     {
-        (*init_)();
+        (*callbacks.init)();
     }
 
     if (glfwInit() != GLFW_TRUE)
@@ -4307,9 +4315,9 @@ int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void
             init_frame(local_ctxs[i].frame_allocator);
         }
 
-        if (setup)
+        if (callbacks.setup)
         {
-            (*setup)();
+            (*callbacks.setup)();
         }
 
         g_ctx->bgfx_frame_number = bgfx::frame();
@@ -4453,9 +4461,9 @@ int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void
         // TODO : Add some sort of sync mechanism for the tasks that intend to
         //        submit primitives for rendering in a given frame.
 
-        if (draw)
+        if (callbacks.draw)
         {
-            (*draw)();
+            (*callbacks.draw)();
         }
 
         // TODO : Add some sort of sync mechanism for the tasks that intend to
@@ -4489,9 +4497,9 @@ int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void
         bx::atomicFetchAndAdd(&g_ctx->frame_number, 1u);
     }
 
-    if (cleanup)
+    if (callbacks.cleanup)
     {
-        (*cleanup)();
+        (*callbacks.cleanup)();
     }
 
     // ...
@@ -4513,7 +4521,15 @@ int run_impl(void (* init_)(void), void (*setup)(void), void (*draw)(void), void
 
 int run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
-    return rwr::run_impl(init, setup, draw, cleanup);
+    using namespace rwr;
+
+    Callbacks callbacks;
+    callbacks.init    = init;
+    callbacks.setup   = setup;
+    callbacks.draw    = draw;
+    callbacks.cleanup = cleanup;
+
+    return run(callbacks);
 }
 
 
@@ -4528,5 +4544,13 @@ int run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* 
 
 int mnm_run(void (* init)(void), void (* setup)(void), void (* draw)(void), void (* cleanup)(void))
 {
-    return mnm::rwr::run_impl(init, setup, draw, cleanup);
+    using namespace mnm::rwr;
+
+    Callbacks callbacks;
+    callbacks.init    = init;
+    callbacks.setup   = setup;
+    callbacks.draw    = draw;
+    callbacks.cleanup = cleanup;
+
+    return run(callbacks);
 }
