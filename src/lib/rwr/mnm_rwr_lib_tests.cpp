@@ -244,4 +244,33 @@ TEST_CASE("Dynamic Array", "[basic]")
 
 
 // -----------------------------------------------------------------------------
+// EXAMPLES - COMMON SETUP
+// -----------------------------------------------------------------------------
+// We're relying on the preprocess to not include the `<mnm/mnm.h>` header again
+// (that should work fine), and hijacking the main function for each example.
+// Any additional header that the examples might include should also be included
+// before (so far, there's only one inclusion of `<math.h>`).
 
+#undef MNM_MAIN_NAME
+
+// TODO : Replace this with own implementation.
+#define MNM_MAIN_NAME ::mnm::rwr::run_impl
+
+
+// -----------------------------------------------------------------------------
+// EXAMPLE - HELLO TRIANGLE
+// -----------------------------------------------------------------------------
+
+namespace example_hello_triangle
+{
+
+#include "../../test/hello_triangle.c"
+
+TEST_CASE("Hello Triangle", "[example][graphics]")
+{
+    // TODO : Run the example, take snapshot and compare the pixels.
+
+    // main(0, nullptr);
+}
+
+} // namespace example_hello_triangle
