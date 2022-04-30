@@ -79,6 +79,10 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5045);
 
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#include <stb_image.h>             // stbi_load, stbi_load_from_memory, stbi_image_free
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_STATIC
 

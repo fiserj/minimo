@@ -258,12 +258,13 @@ namespace
 
 struct ExampleTest
 {
-    int  (*run )(const ::mnm::rwr::Callbacks&) = nullptr;
-    void (*draw)(void)                         = nullptr;
-    int    screenshot                          = {};
-    int    width                               = {};
-    int    height                              = {};
-    u8     data[8_MB]                          = {};
+    int       (*run )(const ::mnm::rwr::Callbacks&) = nullptr;
+    void      (*draw)(void)                         = nullptr;
+    const char* name                                = nullptr;
+    int         screenshot                          = {};
+    int         width                               = {};
+    int         height                              = {};
+    u8          data[8_MB]                          = {}; // TODO : Allocate dynamically.
 };
 
 ExampleTest example_test = { ::mnm::rwr::run };
@@ -271,7 +272,7 @@ ExampleTest example_test = { ::mnm::rwr::run };
 void example_draw(void)
 {
     const f64 elapsed = g_ctx->total_time.elapsed;
-    g_ctx->total_time.elapsed = 1.0;
+    g_ctx->total_time.elapsed = 0.0;
 
     (*example_test.draw)();
 
@@ -286,15 +287,95 @@ void example_draw(void)
 
     if (readable(example_test.screenshot))
     {
-        // TODO : Just for testing; compare the pixels with expected output.
-        stbi_write_png(
-            "TEST.png",
-            example_test.width,
-            example_test.height,
-            4,
-            example_test.data,
-            example_test.width * 4
+        char name[128];
+        bx::snprintf(
+            name,
+            sizeof(name),
+            "test_%s_%s_%s_%.1f.png",
+            example_test.name,
+            BX_PLATFORM_NAME,
+            bgfx::getRendererName(bgfx::getRendererType()),
+            dpi()
         );
+
+        int expected_width;
+        int expected_height;
+        u8* expected_data = stbi_load(name, &expected_width, &expected_height, nullptr, 4);
+
+        if (expected_data)
+        {
+            defer(stbi_image_free(expected_data));
+
+            REQUIRE(example_test.width  == expected_width );
+            REQUIRE(example_test.height == expected_height);
+
+            bool images_equal = true;
+
+            for (int i = 0, n = expected_width * expected_height * 4; i < n; i++)
+            {
+                // TODO : Think whether pixel-perfect equality is necessary.
+                if (images_equal && example_test.data[i] != expected_data[i])
+                {
+                    TRACE(
+                        "First failed pixel at (%i, %i).",
+                        ((i / 4) % expected_width),
+                        ((i / 4) / expected_width)
+                    );
+
+                    images_equal = false;
+                }
+
+                const int diff = example_test.data[i] - expected_data[i];
+
+                expected_data[i] = (i % 4) != 3 ? u8(diff < 0 ? -diff : diff) : 255;
+            }
+
+            if (!images_equal)
+            {
+                bx::snprintf(
+                    name,
+                    sizeof(name),
+                    "test_%s_%s_%s_%.1f_diff.png",
+                    example_test.name,
+                    BX_PLATFORM_NAME,
+                    bgfx::getRendererName(bgfx::getRendererType()),
+                    dpi()
+                );
+
+                TRACE(
+                    "Mismatched diff for test '%s' saved to '%s'.",
+                    example_test.name,
+                    name
+                );
+
+                stbi_write_png(
+                    name,
+                    example_test.width,
+                    example_test.height,
+                    4,
+                    expected_data,
+                    example_test.width * 4
+                );
+            }
+
+            REQUIRE(images_equal);
+        }
+        else
+        {
+            TRACE(
+                "Result for test '%s' not found; saving default appearance.",
+                example_test.name
+            );
+
+            stbi_write_png(
+                name,
+                example_test.width,
+                example_test.height,
+                4,
+                example_test.data,
+                example_test.width * 4
+            );
+        }
 
         quit();
     }
@@ -329,6 +410,7 @@ namespace example_hello_triangle
 
 TEST_CASE("Hello Triangle", "[example][graphics]")
 {
+    example_test.name = "hello_triangle";
     main(0, nullptr);
 }
 
