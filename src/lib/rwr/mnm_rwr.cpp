@@ -73,6 +73,19 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4514);
 
 BX_PRAGMA_DIAGNOSTIC_POP();
 
+BX_PRAGMA_DIAGNOSTIC_PUSH();
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wmissing-field-initializers");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wunused-function");
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4365);
+BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5045);
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_STATIC
+
+#include <stb_image_write.h>       // stbi_write_*
+
+BX_PRAGMA_DIAGNOSTIC_POP();
+
 #include <TaskScheduler.h>         // ITaskSet, TaskScheduler, TaskSetPartition
 
 #include <mnm_shaders.h>           // *_fs, *_vs
@@ -191,7 +204,8 @@ static_assert(
 // -----------------------------------------------------------------------------
 
 #define ASSERT BX_ASSERT
-#define WARN BX_WARN
+#define TRACE  BX_TRACE
+#define WARN   BX_WARN
 
 
 // -----------------------------------------------------------------------------
@@ -4027,6 +4041,7 @@ struct GlobalContext
     u32               active_cursor     = 0;
     u32               frame_number      = 0;
     u32               bgfx_frame_number = 0;
+    u32               last_screenshot   = 0;
 
     u32               transient_memory  = 32_MB; // TODO : Make the name clearer.
     u32               frame_memory      = 8_MB;  // TODO : Make the name clearer.
@@ -4151,6 +4166,130 @@ thread_local ThreadLocalContext* t_ctx = nullptr;
 
 
 // -----------------------------------------------------------------------------
+// BGFX CALLBACKS
+// -----------------------------------------------------------------------------
+
+// Only needed to override the screenshot, but unfortunately all the members are
+// pure virtual. `fatal` and `traceVargs` are taken from BGFX's internal
+// `CallbackStub`.
+struct BgfxCallbacks : bgfx::CallbackI
+{
+    virtual ~BgfxCallbacks()
+    {
+    }
+
+    virtual void fatal(const char* path, u16 line, bgfx::Fatal::Enum code, const char* message) override
+    {
+        trace(path, line, "BGFX FATAL 0x%08x: %s\n", code, message);
+
+        if (code != bgfx::Fatal::DebugCheck)
+        {
+            abort();
+        }
+
+        bx::debugBreak();
+    }
+
+    void trace(const char* path, uint16_t line, const char* format, ...)
+    {
+        va_list args;
+        va_start(args, format);
+
+        traceVargs(path, line, format, args);
+
+        va_end(args);
+    }
+
+    virtual void traceVargs(const char* path, uint16_t line, const char* format, va_list args) override
+    {
+        char  buffer[2048];
+        char* message = buffer;
+
+        va_list tmp;
+        va_copy(tmp, args);
+
+        const i32 len   = bx::snprintf(message, sizeof(buffer), "%s (%d): ", path, line);
+        const i32 total = len + bx::vsnprintf(message + len, sizeof(buffer) - len, format, tmp);
+
+        va_end(tmp);
+
+        if (i32(sizeof(buffer)) < total)
+        {
+            // TODO : Replace with scratch allocator.
+            message = reinterpret_cast<char*>(alloca(total + 1));
+
+            bx::memCopy(message, buffer, len);
+            bx::vsnprintf(message + len, total - len, format, args);
+        }
+
+        message[total] = '\0';
+        bx::debugOutput(message);
+    }
+
+    virtual void screenShot(const char* path, u32 width, u32 height, u32 pitch, const void* data, u32 size, bool yflip) override
+    {
+        BX_UNUSED(width, height, pitch, yflip);
+
+        ASSERT(pitch % width == 0, "Screenshot data not tightly packed.");
+
+        // NOTE : `path` enocdes pointer to the destination memory (see `read_screen`).
+        void* dst = decode_pointer(path);
+
+        // TODO : Flip image if necessary.
+        bx::memCopy(dst, data, size);
+    }
+
+    virtual void profilerBegin(const char*, u32, const char*, u16) override
+    {
+        TRACE("`profilerBegin` not implemented.");
+    }
+
+    virtual void profilerBeginLiteral(const char*, u32, const char*, u16) override
+    {
+        TRACE("`profilerBeginLiteral` not implemented.");
+    }
+
+    virtual void profilerEnd() override
+    {
+        TRACE("`profilerEnd` not implemented.");
+    }
+
+    virtual uint32_t cacheReadSize(u64) override
+    {
+        TRACE("`cacheReadSize` not implemented.");
+        return 0;
+    }
+
+    virtual bool cacheRead(u64, void*, u32) override
+    {
+        TRACE("`cacheRead` not implemented.");
+        return false;
+    }
+
+    virtual void cacheWrite(u64, const void*, u32) override
+    {
+        TRACE("`cacheWrite` not implemented.");
+    }
+
+    virtual void captureBegin(u32, u32, u32, bgfx::TextureFormat::Enum, bool) override
+    {
+        TRACE("`captureBegin` not implemented.");
+    }
+
+    virtual void captureEnd() override
+    {
+        TRACE("`captureEnd` not implemented.");
+    }
+
+    virtual void captureFrame(const void*, u32) override
+    {
+        TRACE("`captureFrame` not implemented.");
+    }
+};
+
+
+
+// -----------------------------------------------------------------------------
 // MAIN ENTRY
 // -----------------------------------------------------------------------------
 
@@ -4162,7 +4301,7 @@ struct Callbacks
     void (*cleanup)(void) = nullptr;
 };
 
-int run(const Callbacks& callbacks, const char* expected_result_file_path = nullptr)
+int run(const Callbacks& callbacks)
 {
     MutexScope lock(g_mutex);
 
@@ -4271,6 +4410,8 @@ int run(const Callbacks& callbacks, const char* expected_result_file_path = null
     gleqInit();
     gleqTrackWindow(g_ctx->window_handle);
 
+    BgfxCallbacks bgfx_callbacks;
+
     {
         // TODO : Set Limits on number of encoders and transient memory.
         // TODO : Init resolution is needed for any backbuffer-size-related
@@ -4282,6 +4423,8 @@ int run(const Callbacks& callbacks, const char* expected_result_file_path = null
         init.resolution.width       = u32(g_ctx->window_info.framebuffer_size.X);
         init.resolution.height      = u32(g_ctx->window_info.framebuffer_size.Y);
         init.limits.transientVbSize = g_ctx->transient_memory;
+
+        init.callback = &bgfx_callbacks;
 
         if (!bgfx::init(init))
         {

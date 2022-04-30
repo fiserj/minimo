@@ -675,15 +675,45 @@ void read_texture(int id, void* data)
     );
 }
 
+int read_screen(void* data)
+{
+    ASSERT(data, "Invalid data pointer.");
+
+    const u32 id = MAX_TEXTURES + g_ctx->bgfx_frame_number;
+
+    if (id <= g_ctx->last_screenshot)
+    {
+        return 0;
+    }
+
+    g_ctx->last_screenshot = id;
+
+    char string[16];
+    encode_pointer(data, string, sizeof(string));
+
+    bgfx::requestScreenShot(BGFX_INVALID_HANDLE, string);
+
+    return -int(id);
+}
+
 int readable(int id)
 {
-    ASSERT(
-        id > 0 && id < int(MAX_TEXTURES),
-        "Texture ID %i out of available range 1 ... %i.",
-        id, int(MAX_TEXTURES - 1)
-    );
+    u32 read_frame;
 
-    const u32 read_frame = g_ctx->texture_cache.textures[u16(id)].read_frame;
+    if (id <= -int(MAX_TEXTURES))
+    {
+        read_frame = u32(-id) - MAX_TEXTURES + 2u;
+    }
+    else
+    {
+        ASSERT(
+            id > 0 && id < int(MAX_TEXTURES),
+            "Texture ID %i out of available range 1 ... %i.",
+            id, int(MAX_TEXTURES - 1)
+        );
+
+        read_frame = g_ctx->texture_cache.textures[u16(id)].read_frame;
+    }
 
     return g_ctx->bgfx_frame_number >= read_frame;
 }

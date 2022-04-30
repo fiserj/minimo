@@ -253,7 +253,64 @@ TEST_CASE("Dynamic Array", "[basic]")
 
 #undef MNM_MAIN_NAME
 
-#define MNM_MAIN_NAME test_example
+namespace
+{
+
+struct ExampleTest
+{
+    int  (*run )(const ::mnm::rwr::Callbacks&) = nullptr;
+    void (*draw)(void)                         = nullptr;
+    int    screenshot                          = {};
+    int    width                               = {};
+    int    height                              = {};
+    u8     data[8_MB]                          = {};
+};
+
+ExampleTest example_test = { ::mnm::rwr::run };
+
+void example_draw(void)
+{
+    (*example_test.draw)();
+
+    if (frame() == 0)
+    {
+        example_test.width      = pixel_width ();
+        example_test.height     = pixel_height();
+        example_test.screenshot = read_screen(example_test.data);
+    }
+
+    if (readable(example_test.screenshot))
+    {
+        // TODO : Just for testing; compare the pixels with expected output.
+        stbi_write_png(
+            "TEST.png",
+            example_test.width,
+            example_test.height,
+            4,
+            example_test.data,
+            example_test.width * 4
+        );
+
+        quit();
+    }
+}
+
+int MNM_MAIN_NAME
+(
+    void (* init   )(void),
+    void (* setup  )(void),
+    void (* draw   )(void),
+    void (* cleanup)(void)
+)
+{
+    example_test.draw = draw;
+
+    bx::memSet(example_test.data, 0, sizeof(example_test.data));
+
+    return (*example_test.run)({ init, setup, example_draw, cleanup });
+}
+
+} // unnamed namespace
 
 
 // -----------------------------------------------------------------------------
@@ -262,32 +319,6 @@ TEST_CASE("Dynamic Array", "[basic]")
 
 namespace example_hello_triangle
 {
-
-namespace
-{
-
-const char* expected_result_file_path = "../path/to/expected/image.png";
-
-int test_example
-(
-    void (* init   )(void),
-    void (* setup  )(void),
-    void (* draw   )(void),
-    void (* cleanup)(void)
-)
-{
-    using namespace mnm::rwr;
-
-    Callbacks callbacks;
-    callbacks.init    = init;
-    callbacks.setup   = setup;
-    callbacks.draw    = draw;
-    callbacks.cleanup = cleanup;
-
-    return run(callbacks, expected_result_file_path);
-}
-
-} // unnamed namespace
 
 #include "../../test/hello_triangle.c"
 

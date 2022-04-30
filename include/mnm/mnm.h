@@ -605,9 +605,19 @@ void texture(int id);
 ///
 void read_texture(int id, void* data);
 
-/// Checks whether a texture can be read back in current frame.
+/// Schedules the content of the backbuffer to be read and copied to a given
+/// data buffer.
 ///
-/// @param[in] id Texture identifier.
+/// @param[in] data Destination data buffer.
+///
+/// @returns Backbuffer identifier.
+///
+int read_screen(void* data);
+
+/// Checks whether a texture or backbuffer content can be read back in current
+/// frame.
+///
+/// @param[in] id Texture or backbuffer identifier.
 ///
 /// @returns Non-zero if the texture was copied to the destination data buffer.
 ///
