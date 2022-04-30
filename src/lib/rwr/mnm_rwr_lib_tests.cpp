@@ -270,7 +270,12 @@ ExampleTest example_test = { ::mnm::rwr::run };
 
 void example_draw(void)
 {
+    const f64 elapsed = g_ctx->total_time.elapsed;
+    g_ctx->total_time.elapsed = 1.0;
+
     (*example_test.draw)();
+
+    g_ctx->total_time.elapsed = elapsed;
 
     if (frame() == 0)
     {
