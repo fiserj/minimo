@@ -1235,15 +1235,18 @@ struct Timer
     f64 frequency = f64(bx::getHPFrequency());
 };
 
-void tic(Timer& timer)
+void tic(Timer& timer, i64 now)
 {
-    timer.counter = bx::getHPCounter();
+    timer.counter = now;
 }
 
-f64 toc(Timer& timer, bool restart = false)
+void tic(Timer& timer)
 {
-    const i64 now = bx::getHPCounter();
+    tic(timer, bx::getHPCounter());
+}
 
+f64 toc(Timer& timer, i64 now, bool restart = false)
+{
     timer.elapsed = (now - timer.counter) / timer.frequency;
 
     if (restart)
@@ -1252,6 +1255,11 @@ f64 toc(Timer& timer, bool restart = false)
     }
 
     return timer.elapsed;
+}
+
+f64 toc(Timer& timer, bool restart = false)
+{
+    return toc(timer, bx::getHPCounter(), restart);
 }
 
 
@@ -4502,16 +4510,22 @@ int run(const Callbacks& callbacks)
         )
     );
 
-    tic(g_ctx->total_time);
-    tic(g_ctx->frame_time);
+    {
+        const i64 now = bx::getHPCounter();
+        tic(g_ctx->total_time, now);
+        tic(g_ctx->frame_time, now);
+    }
 
     while (!glfwWindowShouldClose(g_ctx->window_handle))
     {
         g_ctx->keyboard.update_states();
         g_ctx->mouse   .update_states();
 
-        toc(g_ctx->total_time);
-        toc(g_ctx->frame_time, true);
+        {
+            const i64 now = bx::getHPCounter();
+            toc(g_ctx->total_time, now);
+            toc(g_ctx->frame_time, now, true);
+        }
 
         flush(g_ctx->codepoint_queue);
 
