@@ -1,9 +1,10 @@
 #include <mnm/mnm.h>
 
-#include <inttypes.h>             // PRI*
+#include <inttypes.h>             // PRI*, SCNuPTR
 #include <math.h>                 // acosf
 #include <stddef.h>               // offsetof, size_t
 #include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
+#include <stdio.h>                // sscanf
 
 #include <thread>                 // hardware_concurrency
 #include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
@@ -265,6 +266,19 @@ void destroy_if_valid(HandleT& handle)
         bgfx::destroy(handle);
         handle = BGFX_INVALID_HANDLE;
     }
+}
+
+void encode_pointer(const void* ptr, char* string, u32 size)
+{
+    bx::snprintf(string, i32(size), "%" PRIuPTR, uintptr_t(ptr));
+}
+
+void* decode_pointer(const char* string)
+{
+    uintptr_t address = 0;
+    sscanf(string, "%" SCNuPTR, &address);
+
+    return reinterpret_cast<void*>(address);
 }
 
 
