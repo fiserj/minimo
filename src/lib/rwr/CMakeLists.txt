@@ -24,6 +24,7 @@ function(add_project NAME IS_TEST_RUNNER)
 
         target_link_libraries(${NAME} PRIVATE
             Catch2::Catch2WithMain
+            minimo_assets_test_outputs
         )
 
         target_include_directories(${NAME} PRIVATE

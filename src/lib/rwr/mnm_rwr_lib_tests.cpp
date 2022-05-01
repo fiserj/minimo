@@ -292,17 +292,6 @@ void example_draw(void)
 
     if (readable(example_test.screenshot))
     {
-        char name[128];
-        bx::snprintf(
-            name,
-            sizeof(name),
-            "test_%s_%s_%s_%.1f.png",
-            example_test.name,
-            BX_PLATFORM_NAME,
-            bgfx::getRendererName(bgfx::getRendererType()),
-            dpi()
-        );
-
         if (bgfx::getRendererType() == bgfx::RendererType::Metal)
         {
             for (int i = 0, n = example_test.width * example_test.height * 4; i < n; i += 4)
@@ -310,6 +299,18 @@ void example_draw(void)
                 bx::swap(example_test.data[i], example_test.data[i + 2]);
             }
         }
+
+        char name[512];
+        bx::snprintf(
+            name,
+            sizeof(name),
+            "%s/%s_%s_%s_%.1f.png",
+            MNM_ASSETS_TEST_OUTPUTS_DIR,
+            example_test.name,
+            BX_PLATFORM_NAME,
+            bgfx::getRendererName(bgfx::getRendererType()),
+            dpi()
+        );
 
         int expected_width;
         int expected_height;
@@ -348,7 +349,7 @@ void example_draw(void)
                 bx::snprintf(
                     name,
                     sizeof(name),
-                    "test_%s_%s_%s_%.1f_diff.png",
+                    "%s_%s_%s_%.1f_diff.png",
                     example_test.name,
                     BX_PLATFORM_NAME,
                     bgfx::getRendererName(bgfx::getRendererType()),

@@ -143,10 +143,18 @@ if(MNM_TESTS)
     FetchContent_Declare(
         Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG        f526ff0fc37ae00ff2c0dc8f6550bf8209c30afc
+        GIT_TAG        f526
+        ff0fc37ae00ff2c0dc8f6550bf8209c30afc
+    )
+
+    FetchContent_Declare(
+        minimo_assets
+        GIT_REPOSITORY https://github.com/fiserj/minimo.git
+        GIT_TAG        4e66f2f4b8fa86737702db5ac80be9bbfe9b4793
     )
 
     FetchContent_MakeAvailable(
         Catch2
+        minimo_assets
     )
 endif()
