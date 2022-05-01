@@ -2,7 +2,8 @@
 
 #include <math.h>  // cosf, sinf
 
-#define CUBE_MESH 1
+#define TORUS_MESH_FLAT   1
+#define TORUS_MESH_SMOOTH 2
 
 static void torus(int, int);
 
@@ -15,7 +16,11 @@ static void setup(void)
     clear_color(0x333333ff);
     clear_depth(1.0f);
 
-    begin_mesh(CUBE_MESH, PRIMITIVE_QUADS | VERTEX_NORMAL | GENEREATE_FLAT_NORMALS);
+    begin_mesh(TORUS_MESH_FLAT, PRIMITIVE_QUADS | VERTEX_NORMAL | GENEREATE_FLAT_NORMALS);
+    torus(10, 25);
+    end_mesh();
+
+    begin_mesh(TORUS_MESH_SMOOTH, PRIMITIVE_QUADS | VERTEX_NORMAL | GENEREATE_SMOOTH_NORMALS);
     torus(10, 25);
     end_mesh();
 }
@@ -41,10 +46,21 @@ static void draw(void)
 
 void scene(void)
 {
+    push();
+
     rotate_x (((float)elapsed() + 0.21f) * 57.2958f);
     rotate_y (((float)elapsed() + 0.37f) * 57.2958f);
+    translate(1.0f, 0.0f, 0.0f);
 
-    mesh(CUBE_MESH);
+    mesh(TORUS_MESH_FLAT);
+
+    pop();
+
+    rotate_x (((float)elapsed() + 0.21f) * 57.2958f);
+    rotate_y (((float)elapsed() + 0.37f) * 57.2958f);
+    translate(-1.0f, 0.0f, 0.0f);
+
+    mesh(TORUS_MESH_SMOOTH);
 }
 
 static void torus_vertex(int radial_resolution, int tubular_resolution, int index)
