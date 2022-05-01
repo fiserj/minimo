@@ -303,6 +303,14 @@ void example_draw(void)
             dpi()
         );
 
+        if (bgfx::getRendererType() == bgfx::RendererType::Metal)
+        {
+            for (int i = 0, n = example_test.width * example_test.height * 4; i < n; i += 4)
+            {
+                bx::swap(example_test.data[i], example_test.data[i + 2]);
+            }
+        }
+
         int expected_width;
         int expected_height;
         u8* expected_data = stbi_load(name, &expected_width, &expected_height, nullptr, 4);
