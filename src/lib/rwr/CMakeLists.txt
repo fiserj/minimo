@@ -25,6 +25,10 @@ function(add_project NAME IS_TEST_RUNNER)
         target_link_libraries(${NAME} PRIVATE
             Catch2::Catch2WithMain
         )
+
+        target_include_directories(${NAME} PRIVATE
+            ../../test
+        )
     else()
         list(APPEND SOURCE_FILES
             mnm_rwr_lib.cpp

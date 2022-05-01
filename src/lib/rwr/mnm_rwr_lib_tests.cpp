@@ -400,22 +400,63 @@ int MNM_MAIN_NAME
     return (*example_test.run)({ init, setup, example_draw, cleanup });
 }
 
+const char* prettify_example_name(const char* in, char* out, u32 size)
+{
+    // NOTE : Only for examples. Assumes `in` consists solely of lowercase
+    //        letters and underscores.
+
+    bool upper = true;
+    u32  i     = 0;
+
+    for (i = 0; i < size && in[i]; i++)
+    {
+        if (in[i] == '_')
+        {
+            out[i] = ' ';
+            upper  = true;
+        }
+        else
+        {
+            ASSERT(
+                *in >= 97 && *in <= 122,
+                "Invalid example name character '%c'",
+                in[i]
+            );
+
+            out[i] = in[i] - char(upper ? 32 : 0);
+            upper  = false;
+        }
+    }
+
+    out[i] = '\0';
+
+    return out;
+}
+
+#define EXAMPLE_TEST_BEGIN(name) \
+    namespace name \
+    { \
+        char        test_name[32]; \
+        const char* image_name = #name; \
+
+#define EXAMPLE_TEST_END \
+        TEST_CASE( \
+            prettify_example_name(image_name, test_name, sizeof(test_name)), \
+            "[example][graphics]" \
+        ) \
+        { \
+            example_test.name = image_name; \
+            main(0, nullptr); \
+        } \
+    }
+
 } // unnamed namespace
 
 
 // -----------------------------------------------------------------------------
-// EXAMPLE - HELLO TRIANGLE
+// EXAMPLES
 // -----------------------------------------------------------------------------
 
-namespace example_hello_triangle
-{
-
-#include "../../test/hello_triangle.c"
-
-TEST_CASE("Hello Triangle", "[example][graphics]")
-{
-    example_test.name = "hello_triangle";
-    main(0, nullptr);
-}
-
-} // namespace example_hello_triangle
+EXAMPLE_TEST_BEGIN(hello_triangle)
+#include "hello_triangle.c"
+EXAMPLE_TEST_END
