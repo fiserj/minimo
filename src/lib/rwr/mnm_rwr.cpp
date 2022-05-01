@@ -4226,6 +4226,15 @@ struct BgfxCallbacks : bgfx::CallbackI
         char  buffer[2048];
         char* message = buffer;
 
+        for (u32 i = 1; path[i]; i++)
+        {
+            if (path[i - 1] == '/' || path[i - 1] == '\\')
+            {
+                path += i;
+                i = 0;
+            }
+        }
+
         va_list tmp;
         va_copy(tmp, args);
 
