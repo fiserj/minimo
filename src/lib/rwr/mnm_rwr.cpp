@@ -3891,6 +3891,15 @@ void init(PersistentMemoryCache& cache, Allocator* allocator)
 
 void deinit(PersistentMemoryCache& cache)
 {
+    for (u32 i = 0; i < cache.blocks.size; i++)
+    {
+        BX_ALIGNED_FREE(
+            cache.blocks.allocator,
+            cache.blocks[i],
+            MANAGED_MEMORY_ALIGNMENT
+        );
+    }
+
     deinit(cache.blocks);
 }
 
