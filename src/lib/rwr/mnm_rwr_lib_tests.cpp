@@ -456,7 +456,7 @@ const char* prettify_example_name(const char* in, char* out, u32 size)
             example_test.name = image_name; \
             main(0, nullptr); \
         } \
-    }
+    } // namespace name
 
 } // unnamed namespace
 
@@ -464,7 +464,42 @@ const char* prettify_example_name(const char* in, char* out, u32 size)
 // -----------------------------------------------------------------------------
 // EXAMPLES
 // -----------------------------------------------------------------------------
+// Unfortunately, there's no nice solution to include a header based on some
+// preprocessor variable, so it has to be split like this, but the example name
+// only has to be repeated once.
 
 EXAMPLE_TEST_BEGIN(hello_triangle)
 #include "hello_triangle.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(static_geometry)
+#include "static_geometry.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(transient_geometry)
+#include "transient_geometry.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(element_range)
+#include "element_range.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(vertex_alias)
+#include "vertex_alias.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(instancing)
+#include "instancing.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(normals)
+#include "normals.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(normals_autogen)
+#include "normals_autogen.c"
+EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(custom_shader)
+#include "custom_shader.c"
 EXAMPLE_TEST_END
