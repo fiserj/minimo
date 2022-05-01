@@ -330,10 +330,12 @@ void example_draw(void)
                 // TODO : Think whether pixel-perfect equality is necessary.
                 if (images_equal && example_test.data[i] != expected_data[i])
                 {
-                    TRACE(
-                        "First failed pixel at (%i, %i).",
-                        ((i / 4) % expected_width),
-                        ((i / 4) / expected_width)
+                    INFO(
+                        "First failed pixel at ("  <<
+                        ((i / 4) % expected_width) <<
+                        ", "                       <<
+                        ((i / 4) / expected_width) <<
+                        ")"
                     );
 
                     images_equal = false;
@@ -356,12 +358,6 @@ void example_draw(void)
                     dpi()
                 );
 
-                TRACE(
-                    "Mismatched diff for test '%s' saved to '%s'.",
-                    example_test.name,
-                    name
-                );
-
                 stbi_write_png(
                     name,
                     example_test.width,
@@ -370,15 +366,22 @@ void example_draw(void)
                     expected_data,
                     example_test.width * 4
                 );
+
+                INFO("Mismatched diff saved to '" << name << "'.");
             }
 
             REQUIRE(images_equal);
         }
         else
         {
-            TRACE(
-                "Result for test '%s' not found; saving default appearance.",
-                example_test.name
+            bx::snprintf(
+                name,
+                sizeof(name),
+                "%s_%s_%s_%.1f_result.png",
+                example_test.name,
+                BX_PLATFORM_NAME,
+                bgfx::getRendererName(bgfx::getRendererType()),
+                dpi()
             );
 
             stbi_write_png(
@@ -389,6 +392,9 @@ void example_draw(void)
                 example_test.data,
                 example_test.width * 4
             );
+
+            INFO("Result not found; saving appearance to '" << name << "'.");
+            REQUIRE(false);
         }
 
         quit();
