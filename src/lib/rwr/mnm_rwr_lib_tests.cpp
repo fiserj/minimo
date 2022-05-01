@@ -261,10 +261,10 @@ struct ExampleTest
     int       (*run )(const ::mnm::rwr::Callbacks&) = nullptr;
     void      (*draw)(void)                         = nullptr;
     const char* name                                = nullptr;
-    int         screenshot                          = {};
-    int         width                               = {};
-    int         height                              = {};
-    u8          data[8_MB]                          = {}; // TODO : Allocate dynamically.
+    u8*         data                                = nullptr;
+    int         width                               = 0;
+    int         height                              = 0;
+    int         screenshot                          = 0;
 };
 
 ExampleTest example_test = { ::mnm::rwr::run };
@@ -280,8 +280,13 @@ void example_draw(void)
 
     if (frame() == 0)
     {
-        example_test.width      = pixel_width ();
-        example_test.height     = pixel_height();
+        const int width  = pixel_width ();
+        const int height = pixel_height();
+
+        // NOTE : Memory is deallocated when MiNiMo terminates.
+        example_test.data       = reinterpret_cast<u8*>(alloc(MEMORY_PERSISTENT, width * height * 4));
+        example_test.width      = width;
+        example_test.height     = height;
         example_test.screenshot = read_screen(example_test.data);
     }
 
@@ -390,8 +395,7 @@ int MNM_MAIN_NAME
 )
 {
     example_test.draw = draw;
-
-    bx::memSet(example_test.data, 0, sizeof(example_test.data));
+    example_test.data = nullptr;
 
     return (*example_test.run)({ init, setup, example_draw, cleanup });
 }
