@@ -4058,14 +4058,153 @@ void add_glyphs_from_string(FontAtlas& atlas, const char* start, const char* end
     ASSERT(state == UTF8_ACCEPT, "Ill-formated UTF-8 string.");
 }
 
-bool pick_next_size(u32 min_area, u32 padding, u32* inout_pack_size)
+void check_stbrp_context_validity
+(
+    const stbrp_context&            ctx,
+    const DynamicArray<stbrp_node>& nodes
+)
+{
+#ifndef NDEBUG
+    const auto check_node =[&](const stbrp_node* node)
+    {
+        const bool is_in_range = node >= nodes.data && node < nodes.data + nodes.size;
+        const bool is_extra    = node == &ctx.extra[0] || node == &ctx.extra[1];
+        const bool is_null     = node == nullptr;
+
+        ASSERT(
+            is_in_range || is_extra || is_null,
+            "Invalid stbrp node state."
+        );
+    };
+
+    const auto count_nodes = [](const stbrp_node* node, bool check_zero)
+    {
+        int count = 0;
+
+        while (node)
+        {
+            ASSERT(
+                !check_zero || (node->x == 0 && node->y == 0),
+                "Non-zero stbrp node position."
+            );
+
+            node = node->next;
+            count++;
+        }
+
+        return count;
+    };
+
+    const int active_nodes_count = count_nodes(ctx.active_head, false);
+    const int free_nodes_count   = count_nodes(ctx.free_head  , true );
+
+    ASSERT(
+        2 + ctx.num_nodes == active_nodes_count + free_nodes_count,
+        "Unexpected stbrp node count."
+    );
+
+    check_node(ctx.active_head);
+    check_node(ctx.active_head->next);
+
+    check_node(ctx.free_head);
+    check_node(ctx.free_head->next);
+
+    check_node(ctx.extra[0].next);
+    check_node(ctx.extra[1].next);
+
+    for (u32 i = 0; i < nodes.size; i++)
+    {
+        check_node(nodes[i].next);
+    }
+#endif // NDEBUG
+}
+
+void patch_stbrp_context
+(
+    u32                       width,
+    u32                       height,
+    u32                       padding,
+    stbrp_context&            inout_ctx,
+    DynamicArray<stbrp_node>& inout_nodes
+)
+{
+    check_stbrp_context_validity(inout_ctx, inout_nodes);
+
+    // When changing only height, number of nodes or the sentinel node don't
+    // change.
+    if (width - padding == u32(inout_ctx.width))
+    {
+        inout_ctx.height = int(height - padding);
+
+        return;
+    }
+
+    DynamicArray<stbrp_node> nodes;
+    init(nodes, inout_nodes.allocator);
+    defer(deinit(nodes));
+
+    resize(nodes, width - padding);
+
+    const auto find_node = [&](stbrp_node* node)
+    {
+        // Node can either point to one of the given array members, the two
+        // `extra` nodes allocated within the `stbrp_context` structure, or
+        // be `NULL`.
+        const uintptr_t offset = node - inout_nodes.data; // Fine even if `nullptr`.
+
+        // We're intentionally not adjusting the nodes that point to one of
+        // the context's `extra` nodes, so that we don't have to repeatedly
+        // patch them when the context would be swapped.
+        return offset < inout_nodes.size ? &nodes[offset] : node;
+    };
+
+    stbrp_context ctx = {};
+
+    stbrp_init_target(
+        &ctx,
+        int(width  - padding),
+        int(height - padding),
+        nodes.data,
+        int(nodes.size)
+    );
+
+    ctx.active_head   = find_node(inout_ctx.active_head  );
+    ctx.free_head     = find_node(inout_ctx.free_head    );
+    ctx.extra[0].next = find_node(inout_ctx.extra[0].next);
+    ctx.extra[0].x    =           inout_ctx.extra[0].x    ;
+    ctx.extra[0].y    =           inout_ctx.extra[0].y    ;
+    // NOTE : Node `extra[1]` is a sentinel, so no need to patch it.
+
+    // TODO : It's possible that some special handling will be necessary if
+    //        the old context ran out of free nodes, but we're increasing
+    //        width. So do some special logic here (will need artifical test
+    //        as it's quite unlikely, I think).
+    ASSERT(
+        inout_ctx.free_head,
+        "stbrp context out of free nodes; handling not implemented."
+    );
+
+    for (size_t i = 0; i < inout_nodes.size - 1; i++)
+    {
+        nodes[i].x    =           inout_nodes[i].x;
+        nodes[i].y    =           inout_nodes[i].y;
+        nodes[i].next = find_node(inout_nodes[i].next);
+    }
+
+    inout_ctx = ctx; // We can do this safely as no nodes point to `ctx.extra`.
+    bx::swap(inout_nodes, nodes);
+
+    check_stbrp_context_validity(inout_ctx, inout_nodes);
+}
+
+bool pick_next_size(u32 min_area, u32 padding, u32* inout_size)
 {
     const u32 max_size = bgfx::getCaps()->limits.maxTextureSize;
     u32       size[2]  = { 64, 64 };
 
     for (bool i = false;; i = !i)
     {
-        if (size[0] > inout_pack_size[0] || size[1] > inout_pack_size[1])
+        if (size[0] > inout_size[0] || size[1] > inout_size[1])
         {
             const u32 area = (size[0] - padding) * (size[1] - padding);
 
@@ -4084,8 +4223,8 @@ bool pick_next_size(u32 min_area, u32 padding, u32* inout_pack_size)
         size[i] *= 2;
     }
 
-    inout_pack_size[0] = size[0];
-    inout_pack_size[1] = size[1];
+    inout_size[0] = size[0];
+    inout_size[1] = size[1];
 
     return true;
 }
@@ -4152,7 +4291,13 @@ void pack_rects(FontAtlas& atlas, u32 offset, u32 count, u32* inout_pack_size)
             else
             {
                 // Atlas size changed (and so did the packing rectangle).
-                // patch_stbrp_context(inout_pack_size[0], inout_pack_size[1]);
+                patch_stbrp_context(
+                    inout_pack_size[0],
+                    inout_pack_size[1],
+                    atlas.padding,
+                    atlas.pack_ctx,
+                    atlas.pack_nodes
+                );
             }
         }
         else
@@ -4275,7 +4420,9 @@ void update(FontAtlas& atlas, TextureCache& textures)
         atlas.bitmap_height != pack_size[1])
     {
         DynamicArray<u8> data;
-        init  (data, atlas.bitmap_data.allocator);
+        init(data, atlas.bitmap_data.allocator);
+        defer(deinit(data));
+        
         resize(data, pack_size[0] * pack_size[1], u8(0));
 
         for (u32 y = 0, src_offset = 0, dst_offset = 0; y < atlas.bitmap_height; y++)
@@ -4310,7 +4457,29 @@ void update(FontAtlas& atlas, TextureCache& textures)
         atlas.pack_rects.data + offset
     );
 
-    // ...
+    // TODO : We should only update the texture if the size didn't change.
+    add_texture(
+        textures,
+        atlas.texture,
+        TEXTURE_R8,
+        atlas.bitmap_width,
+        atlas.bitmap_height,
+        0,
+        atlas.bitmap_data.data,
+        nullptr // TODO : Proper allocator.
+    );
+
+    for (u32 i = 0; i < atlas.requests.size; i++)
+    {
+        insert(atlas.codepoints, atlas.requests[i], u16(offset + i));
+    }
+
+    clear(atlas.requests);
+
+    if (!is_updatable(atlas))
+    {
+        atlas.locked = true;
+    }
 }
 
 
