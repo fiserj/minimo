@@ -6,6 +6,7 @@
 #include <stdint.h>               // *int*_t, ptrdiff_t, UINT*_MAX, uintptr_t
 #include <stdio.h>                // sscanf
 
+#include <algorithm>              // sort, unique
 #include <thread>                 // hardware_concurrency
 #include <type_traits>            // alignment_of, is_standard_layout, is_trivial, is_trivially_copyable, is_unsigned
 
@@ -88,12 +89,21 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(5045);
 
 #include <stb_image_write.h>       // stbi_write_*
 
+#define STB_RECT_PACK_IMPLEMENTATION
+#define STBRP_STATIC
+
+#include <stb_rect_pack.h>         // stbrp_*
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#define STBTT_STATIC
+
+#include <stb_truetype.h>          // stbtt_*
+
 BX_PRAGMA_DIAGNOSTIC_POP();
 
 #include <TaskScheduler.h>         // ITaskSet, TaskScheduler, TaskSetPartition
 
 #include <mnm_shaders.h>           // *_fs, *_vs
-
 
 namespace mnm
 {
@@ -1038,6 +1048,17 @@ T& pop(DynamicArray<T>& array)
     return array.data[--array.size];
 }
 
+template <typename T>
+void copy(DynamicArray<T>& dst_array, const DynamicArray<T>& src_array)
+{
+    resize(dst_array, src_array.size);
+
+    if (src_array.size)
+    {
+        bx::memCopy(dst_array.data, src_array.data, dst_array.size * sizeof(T));
+    }
+}
+
 
 // -----------------------------------------------------------------------------
 // DOUBLE FRAME ALLOCATOR (II/II)
@@ -1226,6 +1247,13 @@ void multiply_top(MatrixStack<Size>& stack, const Mat4& matrix)
 {
     stack.top = matrix * stack.top;
 }
+
+
+// -----------------------------------------------------------------------------
+// UTF-8 HANDLING
+// -----------------------------------------------------------------------------
+
+#include "mnm_rwr_utf8.h" // utf8_*
 
 
 // -----------------------------------------------------------------------------
@@ -3787,6 +3815,506 @@ void submit_mesh
 
 
 // -----------------------------------------------------------------------------
+// CODEPOINT MAP
+// -----------------------------------------------------------------------------
+
+struct CodepointMap
+{
+    struct Map
+    {
+        u32 codepoint;
+        u16 offset;
+    };
+
+    u32                  low_offset; // TODO : Expose use of this to the user.
+    FixedArray<u16, 512> low;
+    DynamicArray<Map>    high;
+};
+
+void clear(CodepointMap& map)
+{
+    map.low_offset = 0;
+
+    for (u32 i = 0; i < map.low.size; i++)
+    {
+        map.low[i] = U16_MAX;
+    }
+
+    clear(map.high);
+}
+
+void init(CodepointMap& map, Allocator* allocator)
+{
+    init(map.high, allocator);
+
+    clear(map);
+}
+
+void deinit(CodepointMap& map)
+{
+    deinit(map.high);
+}
+
+u16 offset(const CodepointMap& map, u32 codepoint)
+{
+    if (codepoint >= map.low_offset &&
+        codepoint <  map.low_offset + map.low.size)
+    {
+        return map.low[codepoint - map.low_offset];
+    }
+
+    for (u32 i = 0; i < map.high.size; i++)
+    {
+        if (map.high[i].codepoint == codepoint)
+        {
+            return map.high[i].offset;
+        }
+    }
+
+    return U16_MAX;
+}
+
+bool contains(const CodepointMap& map, u32 codepoint)
+{
+    return offset(map, codepoint) != U16_MAX;
+}
+
+void insert(CodepointMap& map, u32 codepoint, u16 offset)
+{
+    ASSERT(
+        !contains(map, codepoint),
+        "Codepoint %" PRIu32 " already inserted.",
+        codepoint
+    );
+
+    if (codepoint >= map.low_offset &&
+        codepoint <  map.low_offset + map.low.size)
+    {
+        map.low[codepoint - map.low_offset] = offset;
+    }
+    else
+    {
+        append(map.high, { codepoint, offset });
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// FONT ATLAS
+// -----------------------------------------------------------------------------
+
+struct FontAtlas
+{
+    Mutex mutex;
+
+    stbtt_fontinfo                 font_info     = {};
+    f32                            font_size     = 0.0f; // Cap height, in pixels.
+
+    DynamicArray<u32>              requests;
+
+    // Packing.
+    stbrp_context                  pack_ctx      = {};
+    DynamicArray<stbrp_rect>       pack_rects;
+    DynamicArray<stbrp_node>       pack_nodes;
+
+    // Packed data.
+    DynamicArray<stbtt_packedchar> char_quads;
+    CodepointMap                   codepoints;
+
+    // Bitmap.
+    DynamicArray<u8>               bitmap_data;
+    u16                            bitmap_width  = 0;
+    u16                            bitmap_height = 0;
+
+    u16                            texture       = U16_MAX;
+    u16                            flags         = ATLAS_FREE;
+    u8                             padding       = 1;
+    bool                           locked        = false;
+};
+
+void init(FontAtlas& atlas, Allocator* allocator)
+{
+    init(atlas.requests   , allocator);
+    init(atlas.pack_rects , allocator);
+    init(atlas.pack_nodes , allocator);
+    init(atlas.codepoints , allocator);
+    init(atlas.bitmap_data, allocator);
+}
+
+void deinit(FontAtlas& atlas)
+{
+    deinit(atlas.requests   );
+    deinit(atlas.pack_rects );
+    deinit(atlas.pack_nodes );
+    deinit(atlas.codepoints );
+    deinit(atlas.bitmap_data);
+}
+
+void reset
+(
+    FontAtlas&    atlas,
+    TextureCache& textures,
+    u16           texture,
+    u16           flags,
+    const void*   font,
+    f32           size
+)
+{
+    MutexScope lock(atlas.mutex);
+
+    if (atlas.texture != U16_MAX)
+    {
+        remove_texture(textures, atlas.texture);
+    }
+
+    clear(atlas.requests   );
+    clear(atlas.pack_rects );
+    clear(atlas.pack_nodes );
+    clear(atlas.codepoints );
+    clear(atlas.bitmap_data);
+
+    atlas.font_info     = {};
+    atlas.pack_ctx      = {};
+    atlas.bitmap_width  = 0;
+    atlas.bitmap_height = 0;
+    atlas.padding       = 1; // TODO : Padding should probably reflect whether an SDF atlas is required.
+    atlas.locked        = false;
+    atlas.font_size     = size;
+    atlas.texture       = texture;
+    atlas.flags         = flags;
+
+    // TODO : Check return value.
+    (void)stbtt_InitFont(&atlas.font_info, static_cast<const u8*>(font), 0);
+
+    const int table = stbtt__find_table(
+        atlas.font_info.data,
+        atlas.font_info.fontstart,
+        "OS/2"
+    );
+
+    if (table)
+    {
+        if (ttUSHORT(atlas.font_info.data + table     ) >= 1 && // Version.
+            ttBYTE  (atlas.font_info.data + table + 32) == 2 && // PANOSE / Kind == `Latin Text`.
+            ttBYTE  (atlas.font_info.data + table + 35) == 9)   // PANOSE / bProportion == "Monospaced"
+        {
+            atlas.flags |= ATLAS_MONOSPACED;
+        }
+    }
+}
+
+bool is_updatable(const FontAtlas& atlas)
+{
+    return atlas.flags & ATLAS_ALLOW_UPDATE;
+}
+
+void add_glyph_range(FontAtlas& atlas, u32 first, u32 last)
+{
+    if (!is_updatable(atlas) && atlas.locked)
+    {
+        ASSERT(false, "Atlas is not updatable.");
+        return;
+    }
+
+    if (first > last)
+    {
+        bx::swap(first, last);
+    }
+
+    u32 i = atlas.requests.size;
+    resize(atlas.requests, i + last - first + 1u);
+
+    for (u32 codepoint = first; codepoint <= last; codepoint++, i++)
+    {
+        if (!contains(atlas.codepoints, codepoint))
+        {
+            atlas.requests[i] = codepoint;
+        }
+    }
+}
+
+void add_glyphs_from_string(FontAtlas& atlas, const char* start, const char* end)
+{
+    if (!is_updatable(atlas) && atlas.locked)
+    {
+        ASSERT(false, "Atlas is not updatable.");
+        return;
+    }
+
+    u32 codepoint;
+    u32 state = 0;
+
+    for (const char* string = start; end ? string < end : *string; string++)
+    {
+        if (UTF8_ACCEPT == utf8_decode(state, *reinterpret_cast<const u8*>(string), codepoint))
+        {
+            if (!contains(atlas.codepoints, codepoint))
+            {
+                append(atlas.requests, codepoint);
+            }
+        }
+    }
+
+    ASSERT(state == UTF8_ACCEPT, "Ill-formated UTF-8 string.");
+}
+
+bool pick_next_size(u32 min_area, u32 padding, u32* inout_pack_size)
+{
+    const u32 max_size = bgfx::getCaps()->limits.maxTextureSize;
+    u32       size[2]  = { 64, 64 };
+
+    for (bool i = false;; i = !i)
+    {
+        if (size[0] > inout_pack_size[0] || size[1] > inout_pack_size[1])
+        {
+            const u32 area = (size[0] - padding) * (size[1] - padding);
+
+            if (area >= min_area * 1.075f) // 7.5 % extra space, as the packing won't be perfect.
+            {
+                break;
+            }
+        }
+
+        if (size[0] == max_size && size[1] == max_size)
+        {
+            TRACE("Maximum atlas size (%" PRIu32"^2) reached.", max_size);
+            return false;
+        }
+
+        size[i] *= 2;
+    }
+
+    inout_pack_size[0] = size[0];
+    inout_pack_size[1] = size[1];
+
+    return true;
+}
+
+void pack_rects(FontAtlas& atlas, u32 offset, u32 count, u32* inout_pack_size)
+{
+    constexpr f32 extra_area = 1.05f;
+
+    u32 min_area = 0;
+
+    for (u32 i = 0; i < atlas.pack_rects.size; i++)
+    {
+        min_area += u32(atlas.pack_rects[i].w * atlas.pack_rects[i].h);
+    }
+
+    min_area = u32(f32(min_area) * extra_area);
+
+    for (;;)
+    {
+        if (inout_pack_size[0] > 0 && inout_pack_size[1] > 0)
+        {
+            // TODO : It's maybe possible to revert the packing context without
+            //        having to make its full copy beforehand.
+            stbrp_context ctx = atlas.pack_ctx;
+
+            DynamicArray<stbrp_node> nodes_backup;
+            init(nodes_backup, atlas.pack_nodes.allocator); // TODO : Use temp allocator.
+            copy(nodes_backup, atlas.pack_nodes);
+
+            // NOTE : This only packs the new rectangles.
+            if (1 == stbrp_pack_rects(
+                &atlas.pack_ctx,
+                atlas.pack_rects.data + offset,
+                int(count)
+            ))
+            {
+                break;
+            }
+            else
+            {
+                atlas.pack_ctx = ctx;
+                copy(atlas.pack_nodes, nodes_backup);
+            }
+
+            // TODO : We could adjust `offset` and `count` so that the rects
+            //        that were successfully packed would be skipped in next
+            //        resizing attempt, but we'd have to reorder them.
+        }
+
+        if (pick_next_size(min_area, atlas.padding, inout_pack_size))
+        {
+            if (atlas.pack_ctx.num_nodes == 0)
+            {
+                resize(atlas.pack_nodes, inout_pack_size[0] - atlas.padding);
+
+                stbrp_init_target(
+                    &atlas.pack_ctx,
+                    inout_pack_size[0] - atlas.padding,
+                    inout_pack_size[1] - atlas.padding,
+                    atlas.pack_nodes.data,
+                    int(atlas.pack_nodes.size)
+                );
+            }
+            else
+            {
+                // Atlas size changed (and so did the packing rectangle).
+                // patch_stbrp_context(inout_pack_size[0], inout_pack_size[1]);
+            }
+        }
+        else
+        {
+            TRACE("Maximum atlas size reached and all glyphs still can't be packed.");
+            break;
+        }
+    }
+}
+
+void update(FontAtlas& atlas, TextureCache& textures)
+{
+    ASSERT(
+        is_updatable(atlas) || !atlas.locked,
+        "Atlas not updatable or already locked."
+    );
+
+    if (!atlas.requests.size || atlas.locked)
+    {
+        return;
+    }
+
+    std::sort(
+        atlas.requests.data,
+        atlas.requests.data + atlas.requests.size
+    );
+
+    const u32* end = std::unique(
+        atlas.requests.data,
+        atlas.requests.data + atlas.requests.size
+    );
+
+    resize(atlas.requests, u32(end - atlas.requests.data));
+
+    ASSERT(
+        atlas.pack_rects.size == atlas.char_quads.size,
+        "Different packed rects and character quads sizes (%"
+        PRIu32 " != %" PRIu32 ").",
+        atlas.pack_rects.size,
+        atlas.char_quads.size
+    );
+
+    const u32 count  = atlas.requests  .size;
+    const u32 offset = atlas.pack_rects.size;
+
+    resize(atlas.pack_rects, offset + count, stbrp_rect       {});
+    resize(atlas.char_quads, offset + count, stbtt_packedchar {});
+
+    constexpr int H_OVERSAMPLE_MASK  = ATLAS_H_OVERSAMPLE_2X |
+                                       ATLAS_H_OVERSAMPLE_3X |
+                                       ATLAS_H_OVERSAMPLE_4X ;
+    constexpr int H_OVERSAMPLE_SHIFT = 3;
+    constexpr int V_OVERSAMPLE_MASK  = ATLAS_V_OVERSAMPLE_2X;
+    constexpr int V_OVERSAMPLE_SHIFT = 6;
+
+    const int h_oversample = 1 + ((atlas.flags & H_OVERSAMPLE_MASK) >> H_OVERSAMPLE_SHIFT);
+    const int v_oversample = 1 + ((atlas.flags & V_OVERSAMPLE_MASK) >> V_OVERSAMPLE_SHIFT);
+
+    ASSERT(
+        h_oversample >= 1 && h_oversample <= 4,
+        "Invalid horizontal oversampling %i.",
+        h_oversample
+    );
+
+    ASSERT(
+        v_oversample >= 1 && v_oversample <= 2,
+        "Invalid vertical oversampling %i.",
+        v_oversample
+    );
+
+    i16 cap_height = 0;
+    {
+        const int table = stbtt__find_table(
+            atlas.font_info.data,
+            atlas.font_info.fontstart,
+            "OS/2"
+        );
+
+        if (table && ttUSHORT(atlas.font_info.data + table) >= 2) // Version.
+        {
+            cap_height = ttSHORT(atlas.font_info.data + table + 88); // sCapHeight.
+        }
+
+        // TODO : Estimate cap height from capital `H` bounding box?
+        ASSERT(cap_height, "Can't determine cap height.");
+    };
+
+    int ascent, descent;
+    stbtt_GetFontVMetrics(&atlas.font_info, &ascent, &descent, nullptr);
+
+    // TODO : Fix possible division by zero.
+    const f32 font_scale = (ascent - descent) * atlas.font_size / cap_height;
+
+    stbtt_pack_context ctx            = {};
+    ctx.padding                       = atlas.padding;
+    ctx.h_oversample                  = h_oversample;
+    ctx.v_oversample                  = v_oversample;
+    ctx.skip_missing                  = 0;
+
+    stbtt_pack_range range            = {};
+    range.font_size                   = font_scale;
+    range.h_oversample                = h_oversample;
+    range.v_oversample                = v_oversample;
+    range.chardata_for_range          = atlas.char_quads.data + offset;
+    range.array_of_unicode_codepoints = reinterpret_cast<int*>(atlas.requests.data);
+    range.num_chars                   = int(atlas.requests.size);
+
+    (void)stbtt_PackFontRangesGatherRects(
+        &ctx,
+        &atlas.font_info,
+        &range,
+        1,
+        atlas.pack_rects.data + offset
+    );
+
+    u32 pack_size[] = { atlas.bitmap_width, atlas.bitmap_height };
+    pack_rects(atlas, offset, count, pack_size);
+
+    if (atlas.bitmap_width  != pack_size[0] ||
+        atlas.bitmap_height != pack_size[1])
+    {
+        DynamicArray<u8> data;
+        init  (data, atlas.bitmap_data.allocator);
+        resize(data, pack_size[0] * pack_size[1], u8(0));
+
+        for (u32 y = 0, src_offset = 0, dst_offset = 0; y < atlas.bitmap_height; y++)
+        {
+            bx::memCopy(
+                data.data + dst_offset,
+                atlas.bitmap_data.data + src_offset,
+                atlas.bitmap_width
+            );
+
+            src_offset += atlas.bitmap_width;
+            dst_offset += pack_size[0];
+        }
+
+        atlas.bitmap_width  = pack_size[0];
+        atlas.bitmap_height = pack_size[1];
+
+        bx::swap(data, atlas.bitmap_data);
+    }
+
+    ctx.width           = atlas.bitmap_width;
+    ctx.height          = atlas.bitmap_height;
+    ctx.stride_in_bytes = atlas.bitmap_width;
+    ctx.pixels          = atlas.bitmap_data.data;
+
+    // TODO : Utilize the return value.
+    (void)stbtt_PackFontRangesRenderIntoRects(
+        &ctx,
+        &atlas.font_info,
+        &range,
+        1,
+        atlas.pack_rects.data + offset
+    );
+
+    // ...
+}
+
+
+// -----------------------------------------------------------------------------
 // TASK MANAGEMENT
 // -----------------------------------------------------------------------------
 
@@ -3811,7 +4339,7 @@ struct TaskPool
     u8                          head = 0;
 
     static_assert(
-        MAX_TASKS <= UINT8_MAX,
+        MAX_TASKS <= U8_MAX,
         "`MAX_TASKS` too big, change the ID type to a bigger type."
     );
 };
@@ -4211,7 +4739,7 @@ struct BgfxCallbacks : bgfx::CallbackI
         bx::debugBreak();
     }
 
-    void trace(const char* path, uint16_t line, const char* format, ...)
+    void trace(const char* path, u16 line, const char* format, ...)
     {
         va_list args;
         va_start(args, format);
@@ -4221,7 +4749,7 @@ struct BgfxCallbacks : bgfx::CallbackI
         va_end(args);
     }
 
-    virtual void traceVargs(const char* path, uint16_t line, const char* format, va_list args) override
+    virtual void traceVargs(const char* path, u16 line, const char* format, va_list args) override
     {
         char  buffer[2048];
         char* message = buffer;
@@ -4284,7 +4812,7 @@ struct BgfxCallbacks : bgfx::CallbackI
         TRACE("`profilerEnd` not implemented.");
     }
 
-    virtual uint32_t cacheReadSize(u64) override
+    virtual u32 cacheReadSize(u64) override
     {
         TRACE("`cacheReadSize` not implemented.");
         return 0;
