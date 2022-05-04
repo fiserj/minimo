@@ -696,7 +696,7 @@ enum
     ATLAS_DEFAULT         = 0x0000,
 
     // Non-stored glyphs are attempted to be added when creating text mesh.
-    ATLAS_ALLOW_UPDATE    = 0x0001, // TODO : Add support.
+    ATLAS_ALLOW_UPDATE    = 0x0001,
 
     // Stores distance to glyph outline rather than direct rasterization.
     ATLAS_SDF             = 0x0004, // TODO : Add support.

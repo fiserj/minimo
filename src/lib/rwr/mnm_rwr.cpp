@@ -159,6 +159,7 @@ constexpr u32 TEXT_MESH              = 0x400000;
 constexpr u32 VERTEX_PIXCOORD        = 0x800000;
 
 constexpr u32 MAX_FONTS              = 128;
+constexpr u32 MAX_FONT_ATLASES       = 32;
 constexpr u32 MAX_FRAMEBUFFERS       = 128;
 constexpr u32 MAX_INSTANCE_BUFFERS   = 32;
 constexpr u32 MAX_MESHES             = 4096;
@@ -166,7 +167,6 @@ constexpr u32 MAX_PASSES             = 64;
 constexpr u32 MAX_PROGRAMS           = 128;
 constexpr u32 MAX_TASKS              = 64;
 constexpr u32 MAX_TEXTURES           = 1024;
-constexpr u32 MAX_TEXTURE_ATLASES    = 32;
 constexpr u32 MAX_TRANSIENT_BUFFERS  = 64;
 constexpr u32 MAX_UNIFORMS           = 256;
 
@@ -4479,6 +4479,199 @@ void update(FontAtlas& atlas, TextureCache& textures)
 
 
 // -----------------------------------------------------------------------------
+// TEXT MESH RECORDING
+// -----------------------------------------------------------------------------
+
+using QuadCharPackFunc = void (*)(const stbtt_packedchar&, f32, f32, f32&, stbtt_aligned_quad&);
+
+template <bool YAxisDown, bool UseTexCoord, bool AlignToInt>
+void pack_char_quad
+(
+    const stbtt_packedchar& char_info,
+    f32                     inv_width,
+    f32                     inv_height,
+    f32&                    inout_xpos,
+    stbtt_aligned_quad&     out_quad
+)
+{
+    if constexpr (AlignToInt)
+    {
+        const f32 x = floorf(inout_xpos + char_info.xoff + 0.5f);
+        const f32 y = floorf(             char_info.yoff + 0.5f);
+
+        out_quad.x0 = x;
+        out_quad.x1 = x + char_info.xoff2 - char_info.xoff;
+
+        if constexpr (YAxisDown)
+        {
+            out_quad.y0 = y;
+            out_quad.y1 = y + char_info.yoff2 - char_info.yoff;
+        }
+        else
+        {
+            out_quad.y0 = -y;
+            out_quad.y1 = -y - char_info.yoff2 + char_info.yoff;
+        }
+    }
+    else
+    {
+        out_quad.x0 = inout_xpos + char_info.xoff;
+        out_quad.x1 = inout_xpos + char_info.xoff2;
+
+        if constexpr (YAxisDown)
+        {
+            out_quad.y0 = char_info.yoff;
+            out_quad.y1 = char_info.yoff2;
+        }
+        else
+        {
+            out_quad.y0 = -char_info.yoff;
+            out_quad.y1 = -char_info.yoff2;
+        }
+    }
+
+    if constexpr (UseTexCoord)
+    {
+        out_quad.s0 = char_info.x0 * inv_width;
+        out_quad.t0 = char_info.y0 * inv_height;
+        out_quad.s1 = char_info.x1 * inv_width;
+        out_quad.t1 = char_info.y1 * inv_height;
+    }
+    else
+    {
+        out_quad.s0 = char_info.x0;
+        out_quad.t0 = char_info.y0;
+        out_quad.s1 = char_info.x1;
+        out_quad.t1 = char_info.y1;
+    }
+
+    inout_xpos += char_info.xadvance;
+}
+
+const FixedArray<QuadCharPackFunc, 8> quad_char_pack_funcs =
+{{
+    //        +------------------- YAxisDown
+    //        |  +---------------- UseTexCoord
+    //        |  |  +------------- AlignToInt
+    //        |  |  |
+    pack_char_quad<0, 0, 0>,
+    pack_char_quad<0, 0, 1>,
+    pack_char_quad<0, 1, 0>,
+    pack_char_quad<0, 1, 1>,
+    pack_char_quad<1, 0, 0>,
+    pack_char_quad<1, 0, 1>,
+    pack_char_quad<1, 1, 0>,
+    pack_char_quad<1, 1, 1>,
+}};
+
+constexpr u32 quad_char_pack_func_index
+(
+    bool y_axis_down,
+    bool use_tex_coord,
+    bool align_to_int
+)
+{
+    constexpr u8 axes  [] = { 0, 0b100 }; // Bit 2.
+    constexpr u8 coords[] = { 0, 0b010 }; // Bit 1.
+    constexpr u8 aligns[] = { 0, 0b001 }; // Bit 0.
+
+    return
+        axes  [y_axis_down  ] |
+        coords[use_tex_coord] |
+        aligns[align_to_int ] ;
+}
+
+const char* record_quads_without_lock
+(
+    const FontAtlas&        atlas,
+    const char*             start,
+    const char*             end,
+    const QuadCharPackFunc& pack_func,
+    const Mat4&             transform,
+    MeshRecorder&           inout_recorder
+)
+{
+    // NOTE : This routine assumes all needed glyphs are loaded in the atlas!
+
+    const f32 inv_width  = 1.0f / f32(atlas.bitmap_width );
+    const f32 inv_height = 1.0f / f32(atlas.bitmap_height);
+
+    u32 codepoint;
+    u32 state = 0;
+    f32 x     = 0.0f;
+
+    stbtt_aligned_quad quad = {};
+
+    for (; end ? start < end : *start; start++)
+    {
+        if (UTF8_ACCEPT == utf8_decode(state, *reinterpret_cast<const u8*>(start), codepoint))
+        {
+            if (codepoint == '\n') // TODO : Other line terminators?
+            {
+                start++;
+                break;
+            }
+
+            const u16 idx = offset(atlas.codepoints, codepoint);
+            ASSERT(
+                idx != U16_MAX,
+                "Codepoint %" PRIu32 " not in the atlas.",
+                codepoint
+            );
+
+            (*pack_func)(atlas.char_quads[idx], inv_width, inv_height, x, quad);
+
+            #define CORNER(i, j) \
+                (*inout_recorder.attrib_state.store_texcoord)( \
+                    inout_recorder.attrib_state, \
+                    quad.s##i, quad.t##j \
+                ); \
+                (*inout_recorder.store_vertex)( \
+                    (transform * HMM_Vec4(quad.x##i, quad.y##j, 0.0f, 1.0f)).XYZ, \
+                    inout_recorder.attrib_state, \
+                    inout_recorder \
+                )
+
+            CORNER(0, 0);
+            CORNER(0, 1);
+            CORNER(1, 1);
+            CORNER(1, 0);
+        }
+    }
+
+    ASSERT(state == UTF8_ACCEPT, "Ill-formated UTF-8 string.");
+
+    return start;
+}
+
+const char* record_quads
+(
+    FontAtlas&              atlas,
+    const char*             start,
+    const char*             end,
+    const QuadCharPackFunc& pack_func,
+    const Mat4&             transform,
+    MeshRecorder&           inout_recorder
+)
+{
+    if (!is_updatable(atlas) || (atlas.flags & ATLAS_NOT_THREAD_SAFE))
+    {
+        return record_quads_without_lock(
+            atlas, start, end, pack_func, transform, inout_recorder
+        );
+    }
+    else
+    {
+        MutexScope lock(atlas.mutex);
+
+        return record_quads_without_lock(
+            atlas, start, end, pack_func, transform, inout_recorder
+        );
+    }
+}
+
+
+// -----------------------------------------------------------------------------
 // TASK MANAGEMENT
 // -----------------------------------------------------------------------------
 
@@ -4561,6 +4754,70 @@ void Task::ExecuteRange(enki::TaskSetPartition, u32)
     (*func)(data);
 
     release_task(*pool, this);
+}
+
+
+// -----------------------------------------------------------------------------
+// FONT ATLAS CACHE
+// -----------------------------------------------------------------------------
+
+struct FontAtlasCache
+{
+    Mutex                                   mutex;
+    FixedArray<FontAtlas, MAX_FONT_ATLASES> atlases;
+    FixedArray<u8, MAX_TEXTURES>            indices;
+
+    static_assert(
+        MAX_FONT_ATLASES < U8_MAX,
+        "Insufficient texture-to-atlas mapping index. Change type size."
+    );
+};
+
+void init(FontAtlasCache& cache, Allocator* allocator)
+{
+    ASSERT(allocator, "Invalid allocator pointer.");
+
+    for (u32 i = 0; i < cache.atlases.size; i++)
+    {
+        init(cache.atlases[i], allocator);
+    }
+
+    for (u32 i = 0; i < cache.indices.size; i++)
+    {
+        cache.indices[i] = U8_MAX;
+    }
+}
+
+void deinit(FontAtlasCache& cache)
+{
+    for (u32 i = 0; i < cache.atlases.size; i++)
+    {
+        deinit(cache.atlases[i]);
+    }
+}
+
+FontAtlas* acquire_atlas(FontAtlasCache& cache, u16 id)
+{
+    MutexScope lock(cache.mutex);
+
+    if (cache.indices[id] != U8_MAX)
+    {
+        return &cache.atlases[cache.indices[id]];
+    }
+
+    for (u32 i = 0; i < cache.atlases.size; i++)
+    {
+        if (cache.atlases[i].flags & ATLAS_FREE)
+        {
+            cache.indices[id] = u8(i);
+
+            return &cache.atlases[i];
+        }
+    }
+
+    TRACE("No more free atlas slots.");
+
+    return nullptr;
 }
 
 
