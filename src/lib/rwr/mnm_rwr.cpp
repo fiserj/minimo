@@ -857,11 +857,6 @@ template <typename T, u32 Size>
 struct FixedArray
 {
     static_assert(
-        std::is_trivially_copyable<T>(),
-        "`FixedArray` only supports trivially copyable types."
-    );
-
-    static_assert(
         Size > 0,
         "`FixedArray` must have positive size."
     );
