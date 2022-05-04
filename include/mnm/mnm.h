@@ -722,6 +722,13 @@ void end_atlas(void);
 
 /// ...
 ///
+/// @attention Must be called before any glyphs are requested, i.e., typically
+///   right after the call to `begin_atlas`.
+///
+void glyph_offset_hint(int offset);
+
+/// ...
+///
 void glyph_range(int first, int last);
 
 /// ...
