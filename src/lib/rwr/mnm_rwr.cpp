@@ -4498,19 +4498,19 @@ struct Task : enki::ITaskSet
 struct TaskPool
 {
     Mutex                       mutex;
-    Task                        tasks[MAX_TASKS]; // TODO : `FixedArray` is limited to trivially copyable types now.
+    FixedArray<Task, MAX_TASKS> tasks;
     FixedArray<u8  , MAX_TASKS> nexts;
     u8                          head = 0;
 
     static_assert(
-        MAX_TASKS <= U8_MAX,
+        MAX_TASKS < U8_MAX,
         "`MAX_TASKS` too big, change the ID type to a bigger type."
     );
 };
 
 void init(TaskPool& pool)
 {
-    for (u8 i = 0; i < MAX_TASKS; i++)
+    for (u8 i = 0; i < pool.tasks.size; i++)
     {
         pool.tasks[i].pool = &pool;
         pool.nexts[i]      = i + 1;
@@ -4523,13 +4523,13 @@ Task* acquire_task(TaskPool& pool)
 
     Task* task = nullptr;
 
-    if (pool.head < MAX_TASKS)
+    if (pool.head < pool.tasks.size)
     {
         const u32 i = pool.head;
 
         task          = &pool.tasks[i];
         pool.head     =  pool.nexts[i];
-        pool.nexts[i] = MAX_TASKS;
+        pool.nexts[i] =  pool.tasks.size;
     }
 
     return task;
@@ -4539,7 +4539,7 @@ void release_task(TaskPool& pool, const Task* task)
 {
     ASSERT(task, "Invalid task pointer.");
     ASSERT(
-        task >= &pool.tasks[0] && task <= &pool.tasks[MAX_TASKS - 1],
+        task >= &pool.tasks[0] && task <= &pool.tasks[pool.tasks.size - 1],
         "Task not owned by the pool."
     );
 
