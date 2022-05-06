@@ -1991,6 +1991,7 @@ enum struct RecordType : u8
 {
     NONE,
 
+    ATLAS,
     FRAMEBUFFER,
     INSTANCES,
     MESH,
@@ -4796,7 +4797,7 @@ void deinit(FontAtlasCache& cache)
     }
 }
 
-FontAtlas* acquire_atlas(FontAtlasCache& cache, u16 id)
+FontAtlas* acquire_atlas(FontAtlasCache& cache, u32 id)
 {
     MutexScope lock(cache.mutex);
 
@@ -4811,6 +4812,8 @@ FontAtlas* acquire_atlas(FontAtlasCache& cache, u16 id)
         {
             cache.indices[id] = u8(i);
 
+            // TODO : Consider "locking" the atlas for others until it's released.
+
             return &cache.atlases[i];
         }
     }
@@ -4818,6 +4821,18 @@ FontAtlas* acquire_atlas(FontAtlasCache& cache, u16 id)
     TRACE("No more free atlas slots.");
 
     return nullptr;
+}
+
+
+// -----------------------------------------------------------------------------
+// FONT DATA CACHE
+// -----------------------------------------------------------------------------
+
+using FontDataCache = FixedArray<const void*, MAX_FONTS>;
+
+void add_font_data(FontDataCache& cache, u32 id, const void* data)
+{
+    cache[id] = data;
 }
 
 
@@ -4995,6 +5010,8 @@ struct GlobalContext
     DefaultPrograms   default_programs;
     PersistentMemoryCache persistent_memory_cache;
     CodepointQueue    codepoint_queue;
+    FontAtlasCache    font_atlas_cache;
+    FontDataCache     font_data_cache;
 
     Allocator*        default_allocator = nullptr;
 

@@ -798,6 +798,141 @@ void instances(int id)
 
 
 // -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - FONT ATLASING
+// -----------------------------------------------------------------------------
+
+void create_font(int id, const void* data)
+{
+    ASSERT(
+        id > 0 && id < int(MAX_FONTS),
+        "Font ID %i out of available range 1 ... %i.",
+        id, int(MAX_FONTS - 1)
+    );
+
+    ASSERT(data, "Invalid data pointer.");
+
+    // TODO : Should we invalidate all atlases using the font data previously
+    //        associated with given `id`?
+    bx::atomicExchangePtr(
+        const_cast<void**>(&g_ctx->font_data_cache[u32(id)]),
+        const_cast<void*>(data)
+    );
+}
+
+void begin_atlas(int id, int flags, int font, float size)
+{
+    // TODO : Check `flags`.
+
+    ASSERT(
+        t_ctx->record_info.type == RecordType::NONE,
+        "Another recording in progress. Call respective `end_*` first."
+    );
+
+    ASSERT(
+        id > 0 && id < int(MAX_TEXTURES),
+        "Atlas ID %i out of available range 1 ... %i.",
+        id, int(MAX_TEXTURES - 1)
+    );
+
+    ASSERT(
+        font > 0 && font < int(MAX_FONTS),
+        "Font ID %i out of available range 1 ... %i.",
+        font, int(MAX_FONTS - 1)
+    );
+
+    ASSERT(
+        size >= 5.0f && size <= 4096.0f,
+        "Invalid atlas font size. Must be between 5 and 4096."
+    );
+
+    FontAtlas* atlas = acquire_atlas(g_ctx->font_atlas_cache, u32(id));
+
+    if (atlas)
+    {
+        t_ctx->record_info.flags      = u32(flags);
+        t_ctx->record_info.id         = u16(id);
+        t_ctx->record_info.type       = RecordType::ATLAS;
+
+        reset(
+            *atlas,
+            g_ctx->texture_cache,
+            u16(id),
+            u16(flags),
+            g_ctx->font_data_cache[u32(font)],
+            size
+        );
+    }
+}
+
+void end_atlas(void)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::ATLAS,
+        "Atlas recording not started. Call `begin_atlas` first."
+    );
+
+    update(
+        g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id],
+        g_ctx->texture_cache
+    );
+
+    t_ctx->record_info = {};
+}
+
+void glyph_offset_hint(int offset)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::ATLAS,
+        "Atlas recording not started. Call `begin_atlas` first."
+    );
+
+    ASSERT(offset >= 0, "Negative offset hint X (%i).", offset);
+
+    WARN(
+        t_ctx->mesh_recorder.vertex_count,
+        "`glyph_offset_hint` can only be called right after the atlas creation."
+    );
+
+    if (!t_ctx->mesh_recorder.vertex_count)
+    {
+        FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+
+        atlas.codepoints.low_offset = u32(offset);
+    }
+}
+
+void glyph_range(int first, int last)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::ATLAS,
+        "Atlas recording not started. Call `begin_atlas` first."
+    );
+
+    ASSERT(first >= 0, "Negative first codepoint (%i).", first);
+
+    ASSERT(first <= last, "Glyph range not sorted (%i > %i).", first, last);
+
+    FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+
+    add_glyph_range(atlas, u32(first), u32(last));
+}
+
+void glyphs_from_string(const char* string)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::ATLAS,
+        "Atlas recording not started. Call `begin_atlas` first."
+    );
+
+    ASSERT(string, "Invalid glyphs' string pointer.");
+
+    FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+
+    add_glyphs_from_string(atlas, string, nullptr);
+}
+
+
+// -----------------------------------------------------------------------------
 // PUBLIC API IMPLEMENTATION - PASSES
 // -----------------------------------------------------------------------------
 
