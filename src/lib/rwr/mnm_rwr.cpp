@@ -1995,6 +1995,7 @@ enum struct RecordType : u8
     FRAMEBUFFER,
     INSTANCES,
     MESH,
+    TEXT,
 };
 
 struct RecordInfo
@@ -3829,7 +3830,7 @@ struct CodepointMap
 
 void clear(CodepointMap& map)
 {
-    map.low_offset = 0;
+    map.low_offset = 0; // TODO : Set to 32 (ASCII space)?
 
     for (u32 i = 0; i < map.low.size; i++)
     {
@@ -4673,6 +4674,195 @@ const char* record_quads
 
 
 // -----------------------------------------------------------------------------
+// TEXT RECORDING
+// -----------------------------------------------------------------------------
+
+struct TextRecorder
+{
+    // MeshRecorder mesh_recorder = nullptr;
+    FontAtlas* atlas;
+    f32        line_height;
+    u16        h_alignment;
+    u16        v_alignment;
+    bool       y_axis_down;
+    bool       align_to_int;
+};
+
+void start(TextRecorder& recorder, u32 flags, FontAtlas& atlas)
+{
+    constexpr u16 h_aligns[] =
+    {
+        TEXT_H_ALIGN_LEFT  ,
+        TEXT_H_ALIGN_CENTER,
+        TEXT_H_ALIGN_RIGHT ,
+    };
+
+    constexpr u16 v_aligns[] =
+    {
+        TEXT_V_ALIGN_BASELINE  ,
+        TEXT_V_ALIGN_MIDDLE    ,
+        TEXT_V_ALIGN_CAP_HEIGHT,
+    };
+
+    constexpr u16 y_axes[] =
+    {
+        TEXT_Y_AXIS_DOWN,
+        TEXT_Y_AXIS_UP  ,
+    };
+
+    recorder.atlas        = &atlas;
+    recorder.line_height  = 2.0f;
+    recorder.h_alignment  = h_aligns[(flags & TEXT_H_ALIGN_MASK) >> TEXT_H_ALIGN_SHIFT];
+    recorder.v_alignment  = v_aligns[(flags & TEXT_V_ALIGN_MASK) >> TEXT_V_ALIGN_SHIFT];
+    recorder.y_axis_down  = y_axes  [(flags & TEXT_Y_AXIS_MASK ) >> TEXT_Y_AXIS_SHIFT ];
+    recorder.align_to_int = flags & TEXT_ALIGN_TO_INTEGER;
+}
+
+// Two-pass:
+// 1) Gather info about text; possibly signal missing glyphs and return.
+// 2) Submit quads to the recorder.
+bool record_text
+(
+    const char*         start,
+    const char*         end,
+    const TextRecorder& recorder,
+    const Mat4&         transform,
+    Allocator*          temp_allocator,
+    MeshRecorder&       out_mesh_recorder
+)
+{
+    const f32 font_size   = recorder.atlas->font_size;
+    const f32 line_sign   = recorder.y_axis_down ? 1.0f : -1.0f;
+    const f32 line_height = roundf(font_size * recorder.line_height);
+    f32       line_width  = 0.0f;
+    f32       box_width   = 0.0f;
+    f32       box_height  = font_size;
+
+    const bool needs_line_widths = recorder.h_alignment != TEXT_H_ALIGN_LEFT;
+
+    DynamicArray<f32> line_widths;
+    init(line_widths, temp_allocator);
+    defer(deinit(line_widths));
+
+    if (needs_line_widths)
+    {
+        reserve(line_widths, 16);
+    }
+
+    u32 codepoint = 0;
+    u32 state     = 0;
+
+    // Pass 1: Gather info about text, signal missing glyphs.
+    for (const char* string = start; end ? string < end : *string; string++)
+    {
+        if (UTF8_ACCEPT == utf8_decode(state, *reinterpret_cast<const u8*>(string), codepoint))
+        {
+            if (codepoint == '\n') // TODO : Other line terminators?
+            {
+                if (needs_line_widths)
+                {
+                    append(line_widths, line_width);
+                }
+
+                box_height += line_height;
+                box_width   = bx::max(box_width, line_width);
+                line_width  = 0.0f;
+
+                continue;
+            }
+
+            const u16 idx = offset(recorder.atlas->codepoints, codepoint);
+
+            if (idx == U16_MAX)
+            {
+                if (is_updatable(*recorder.atlas))
+                {
+                    return false;
+                }
+                else
+                {
+                    // TODO : Probably just print some warning and skip the
+                    //        glyph (try using the atlas' "missing" glyph).
+                    ASSERT(false, "Immutable atlas cannot be updated.");
+                }
+            }
+
+            // TODO : Needs to reflect `align_to_integer`.
+            line_width += recorder.atlas->char_quads[idx].xadvance;
+        }
+    }
+
+    ASSERT(state == UTF8_ACCEPT, "Ill-formated UTF-8 string.");
+
+    if (needs_line_widths)
+    {
+        append(line_widths, line_width);
+    }
+
+    box_width = bx::max(box_width, line_width);
+
+    if (box_width == 0.0f)
+    {
+        return true;
+    }
+
+    // Pass 2: Submit quads to the recorder.
+    Vec3 offset   = HMM_Vec3(0.0f, 0.0f, 0.0f);
+    u16  line_idx = 0;
+
+    switch (recorder.v_alignment)
+    {
+    case TEXT_V_ALIGN_BASELINE:
+        offset.Y = line_sign * (font_size - box_height);
+        break;
+    case TEXT_V_ALIGN_MIDDLE:
+        offset.Y = roundf(line_sign * (box_height * -0.5f + font_size));
+        break;
+    case TEXT_V_ALIGN_CAP_HEIGHT:
+        offset.Y = line_sign * font_size;
+        break;
+    default:;
+    }
+
+    const u32 idx = quad_char_pack_func_index(
+        recorder.y_axis_down,
+        !is_updatable(*recorder.atlas),
+        recorder.align_to_int
+    );
+
+    const QuadCharPackFunc pack_func = quad_char_pack_funcs[idx];
+
+    for (const char* string = start; end ? string < end : *string; line_idx++)
+    {
+        switch (recorder.h_alignment)
+        {
+        case TEXT_H_ALIGN_CENTER:
+            offset.X = line_widths[line_idx] * -0.5f;
+            break;
+        case TEXT_H_ALIGN_RIGHT:
+            offset.X = -line_widths[line_idx];
+            break;
+        default:;
+        }
+
+        string = record_quads
+        (
+            *recorder.atlas,
+            string,
+            end,
+            pack_func,
+            transform * HMM_Translate(offset),
+            out_mesh_recorder
+        );
+
+        offset.Y += line_sign * line_height;
+    }
+
+    return true;
+}
+
+
+// -----------------------------------------------------------------------------
 // TASK MANAGEMENT
 // -----------------------------------------------------------------------------
 
@@ -4819,6 +5009,16 @@ FontAtlas* acquire_atlas(FontAtlasCache& cache, u32 id)
     }
 
     TRACE("No more free atlas slots.");
+
+    return nullptr;
+}
+
+FontAtlas* fetch_atlas(FontAtlasCache& cache, u32 id)
+{
+    if (cache.indices[id] != U8_MAX)
+    {
+        return &cache.atlases[cache.indices[id]];
+    }
 
     return nullptr;
 }
@@ -5047,6 +5247,7 @@ struct ThreadLocalContext
     MeshRecorder         mesh_recorder;
     InstanceRecorder     instance_recorder;
     FramebufferRecorder  framebuffer_recorder;
+    TextRecorder         text_recorder;
 
     Timer                stop_watch;
 

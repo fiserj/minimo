@@ -821,8 +821,6 @@ void create_font(int id, const void* data)
 
 void begin_atlas(int id, int flags, int font, float size)
 {
-    // TODO : Check `flags`.
-
     ASSERT(
         t_ctx->record_info.type == RecordType::NONE,
         "Another recording in progress. Call respective `end_*` first."
@@ -833,6 +831,8 @@ void begin_atlas(int id, int flags, int font, float size)
         "Atlas ID %i out of available range 1 ... %i.",
         id, int(MAX_TEXTURES - 1)
     );
+
+    // TODO : Check `flags`.
 
     ASSERT(
         font > 0 && font < int(MAX_FONTS),
@@ -893,6 +893,7 @@ void glyph_offset_hint(int offset)
         "`glyph_offset_hint` can only be called right after the atlas creation."
     );
 
+    // TODO : Should be mutexed.
     if (!t_ctx->mesh_recorder.vertex_count)
     {
         FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
@@ -910,7 +911,7 @@ void glyph_range(int first, int last)
 
     ASSERT(first >= 0, "Negative first codepoint (%i).", first);
 
-    ASSERT(first <= last, "Glyph range not sorted (%i > %i).", first, last);
+    ASSERT(last >= 0, "Negative last codepoint (%i).", last);
 
     FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
 
@@ -929,6 +930,137 @@ void glyphs_from_string(const char* string)
     FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
 
     add_glyphs_from_string(atlas, string, nullptr);
+}
+
+
+// -----------------------------------------------------------------------------
+// PUBLIC API IMPLEMENTATION - TEXT MESHES
+// -----------------------------------------------------------------------------
+
+void begin_text(int mesh_id, int atlas_id, int flags)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::NONE,
+        "Another recording in progress. Call respective `end_*` first."
+    );
+
+    ASSERT(
+        atlas_id > 0 && atlas_id < int(MAX_TEXTURES),
+        "Atlas ID %i out of available range 1 ... %i.",
+        atlas_id, int(MAX_TEXTURES - 1)
+    );
+
+    // TODO : Check `flags`.
+
+    FontAtlas* atlas = fetch_atlas(g_ctx->font_atlas_cache, u32(atlas_id));
+    ASSERT(atlas, "Invalid atlas ID %i.", atlas_id);
+
+    const int mesh_flags =
+          PRIMITIVE_QUADS         |
+          VERTEX_POSITION         |
+          VERTEX_TEXCOORD         |
+          VERTEX_COLOR            |
+          TEXT_MESH               |
+         (TEXT_TYPE_MASK & flags) |
+        ((TEXCOORD_F32 | VERTEX_PIXCOORD) * is_updatable(*atlas));
+
+    start(t_ctx->text_recorder, u32(flags), *atlas);
+
+    begin_mesh(mesh_id, mesh_flags);
+
+    t_ctx->record_info.type = RecordType::TEXT;
+}
+
+void end_text(void)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::TEXT,
+        "Text recording not started. Call `begin_text` first."
+    );
+
+    t_ctx->record_info.type = RecordType::MESH;
+
+    end_mesh();
+}
+
+void alignment(int flags)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::TEXT,
+        "Text recording not started. Call `begin_text` first."
+    );
+
+    if (flags & TEXT_H_ALIGN_MASK)
+    {
+        t_ctx->text_recorder.h_alignment = u16(flags & TEXT_H_ALIGN_MASK);
+    }
+
+    if (flags & TEXT_V_ALIGN_MASK)
+    {
+        t_ctx->text_recorder.v_alignment = u16(flags & TEXT_V_ALIGN_MASK);
+    }
+}
+
+void line_height(float factor)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::TEXT,
+        "Text recording not started. Call `begin_text` first."
+    );
+
+    ASSERT(
+        factor > 0.0f,
+        "Non-positive line height factor count (%.1f).",
+        factor
+    );
+
+    t_ctx->text_recorder.line_height = factor;
+}
+
+void text(const char* start, const char* end)
+{
+    ASSERT(
+        t_ctx->record_info.type == RecordType::TEXT,
+        "Text recording not started. Call `begin_text` first."
+    );
+
+    ASSERT(start, "Invalid text start pointer.");
+
+    ASSERT(
+        end > start || !end,
+        "Invalid end pointer (address not bigger than the start one)."
+    );
+
+    bool success = record_text(
+        start,
+        end,
+        t_ctx->text_recorder,
+        t_ctx->matrix_stack.top,
+        nullptr, // temp_allocator // TODO 
+        t_ctx->mesh_recorder
+    );
+
+    FontAtlas& atlas = *t_ctx->text_recorder.atlas;
+
+    if (!success && is_updatable(atlas))
+    {
+        add_glyphs_from_string(atlas, start, end);
+        update(atlas, g_ctx->texture_cache);
+
+        success = record_text(
+            start,
+            end,
+            t_ctx->text_recorder,
+            t_ctx->matrix_stack.top,
+            nullptr, // temp_allocator // TODO 
+            t_ctx->mesh_recorder
+        );
+    }
+
+    WARN(
+        success,
+        "Failed to lay text '...' due to missing glyphs." // TODO : Add text excerpt.
+    );
 }
 
 
