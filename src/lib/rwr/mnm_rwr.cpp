@@ -3937,6 +3937,7 @@ void init(FontAtlas& atlas, Allocator* allocator)
     init(atlas.requests   , allocator);
     init(atlas.pack_rects , allocator);
     init(atlas.pack_nodes , allocator);
+    init(atlas.char_quads , allocator);
     init(atlas.codepoints , allocator);
     init(atlas.bitmap_data, allocator);
 }
@@ -3946,6 +3947,7 @@ void deinit(FontAtlas& atlas)
     deinit(atlas.requests   );
     deinit(atlas.pack_rects );
     deinit(atlas.pack_nodes );
+    deinit(atlas.char_quads );
     deinit(atlas.codepoints );
     deinit(atlas.bitmap_data);
 }
@@ -4021,14 +4023,13 @@ void add_glyph_range(FontAtlas& atlas, u32 first, u32 last)
         bx::swap(first, last);
     }
 
-    u32 i = atlas.requests.size;
-    resize(atlas.requests, i + last - first + 1u);
+    reserve(atlas.requests, atlas.requests.size + last - first + 1u);
 
-    for (u32 codepoint = first; codepoint <= last; codepoint++, i++)
+    for (u32 codepoint = first; codepoint <= last; codepoint++)
     {
         if (!contains(atlas.codepoints, codepoint))
         {
-            atlas.requests[i] = codepoint;
+            append(atlas.requests, codepoint);
         }
     }
 }
@@ -4308,7 +4309,7 @@ void pack_rects(FontAtlas& atlas, u32 offset, u32 count, u32* inout_pack_size)
     }
 }
 
-void update(FontAtlas& atlas, TextureCache& textures)
+void update(FontAtlas& atlas, TextureCache& textures, Allocator* temp_allocator)
 {
     ASSERT(
         is_updatable(atlas) || !atlas.locked,
@@ -4466,7 +4467,7 @@ void update(FontAtlas& atlas, TextureCache& textures)
         atlas.bitmap_height,
         0,
         atlas.bitmap_data.data,
-        nullptr // TODO : Proper allocator.
+        temp_allocator
     );
 
     for (u32 i = 0; i < atlas.requests.size; i++)
@@ -5663,6 +5664,9 @@ int run(const Callbacks& callbacks)
 
     init(g_ctx->program_cache);
     defer(deinit(g_ctx->program_cache));
+
+    init(g_ctx->font_atlas_cache, g_ctx->default_allocator);
+    defer(deinit(g_ctx->font_atlas_cache));
 
     {
         init_frame(g_ctx->mesh_cache);

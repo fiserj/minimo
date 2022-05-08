@@ -393,7 +393,8 @@ void vertex(float x, float y, float z)
 void color(unsigned int rgba)
 {
     ASSERT(
-        t_ctx->record_info.type == RecordType::MESH,
+        t_ctx->record_info.type == RecordType::MESH ||
+        t_ctx->record_info.type == RecordType::TEXT,
         "Mesh recording not started. Call `begin_mesh` first."
     );
 
@@ -849,9 +850,8 @@ void begin_atlas(int id, int flags, int font, float size)
 
     if (atlas)
     {
-        t_ctx->record_info.flags      = u32(flags);
-        t_ctx->record_info.id         = u16(id);
-        t_ctx->record_info.type       = RecordType::ATLAS;
+        t_ctx->record_info.id   = u16(id);
+        t_ctx->record_info.type = RecordType::ATLAS;
 
         reset(
             *atlas,
@@ -871,10 +871,10 @@ void end_atlas(void)
         "Atlas recording not started. Call `begin_atlas` first."
     );
 
-    update(
-        g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id],
-        g_ctx->texture_cache
-    );
+    FontAtlas* atlas = fetch_atlas(g_ctx->font_atlas_cache, t_ctx->record_info.id);
+    ASSERT(atlas, "Invalid atlas ID %i.", t_ctx->record_info.id);
+
+    update(*atlas, g_ctx->texture_cache, &t_ctx->frame_allocator);
 
     t_ctx->record_info = {};
 }
@@ -896,9 +896,10 @@ void glyph_offset_hint(int offset)
     // TODO : Should be mutexed.
     if (!t_ctx->mesh_recorder.vertex_count)
     {
-        FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+        FontAtlas* atlas = fetch_atlas(g_ctx->font_atlas_cache, t_ctx->record_info.id);
+        ASSERT(atlas, "Invalid atlas ID %i.", t_ctx->record_info.id);
 
-        atlas.codepoints.low_offset = u32(offset);
+        atlas->codepoints.low_offset = u32(offset);
     }
 }
 
@@ -913,9 +914,10 @@ void glyph_range(int first, int last)
 
     ASSERT(last >= 0, "Negative last codepoint (%i).", last);
 
-    FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+    FontAtlas* atlas = fetch_atlas(g_ctx->font_atlas_cache, t_ctx->record_info.id);
+    ASSERT(atlas, "Invalid atlas ID %i.", t_ctx->record_info.id);
 
-    add_glyph_range(atlas, u32(first), u32(last));
+    add_glyph_range(*atlas, u32(first), u32(last));
 }
 
 void glyphs_from_string(const char* string)
@@ -927,9 +929,10 @@ void glyphs_from_string(const char* string)
 
     ASSERT(string, "Invalid glyphs' string pointer.");
 
-    FontAtlas& atlas = g_ctx->font_atlas_cache.atlases[t_ctx->record_info.id];
+    FontAtlas* atlas = fetch_atlas(g_ctx->font_atlas_cache, t_ctx->record_info.id);
+    ASSERT(atlas, "Invalid atlas ID %i.", t_ctx->record_info.id);
 
-    add_glyphs_from_string(atlas, string, nullptr);
+    add_glyphs_from_string(*atlas, string, nullptr);
 }
 
 
@@ -1031,30 +1034,28 @@ void text(const char* start, const char* end)
         "Invalid end pointer (address not bigger than the start one)."
     );
 
-    bool success = record_text(
-        start,
-        end,
-        t_ctx->text_recorder,
-        t_ctx->matrix_stack.top,
-        nullptr, // temp_allocator // TODO 
-        t_ctx->mesh_recorder
-    );
-
-    FontAtlas& atlas = *t_ctx->text_recorder.atlas;
-
-    if (!success && is_updatable(atlas))
+    const auto try_record_text = [&]()
     {
-        add_glyphs_from_string(atlas, start, end);
-        update(atlas, g_ctx->texture_cache);
-
-        success = record_text(
+        return record_text(
             start,
             end,
             t_ctx->text_recorder,
             t_ctx->matrix_stack.top,
-            nullptr, // temp_allocator // TODO 
+            &t_ctx->stack_allocator,
             t_ctx->mesh_recorder
         );
+    };
+
+    FontAtlas& atlas = *t_ctx->text_recorder.atlas;
+
+    bool success = try_record_text();
+
+    if (!success && is_updatable(atlas))
+    {
+        add_glyphs_from_string(atlas, start, end);
+        update(atlas, g_ctx->texture_cache, &t_ctx->frame_allocator);
+
+        success = try_record_text();
     }
 
     WARN(
