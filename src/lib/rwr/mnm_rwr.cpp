@@ -3257,7 +3257,7 @@ struct DefaultProgramInfo
 const DefaultProgramInfo s_default_program_info[] =
 {
     {
-        VERTEX_POSITION, // Position only. It's assumed everywhere else.
+        0, // NOTE : Position only. It's assumed everywhere else.
         "position"
     },
     {
@@ -3752,16 +3752,6 @@ void submit_mesh
     bgfx::Encoder&                           encoder
 )
 {
-    constexpr u64 primitive_flags[] =
-    {
-        0, // Triangles.
-        0, // Quads (for users, triangles internally).
-        BGFX_STATE_PT_TRISTRIP,
-        BGFX_STATE_PT_LINES,
-        BGFX_STATE_PT_LINESTRIP,
-        BGFX_STATE_PT_POINTS,
-    };
-
     const u16  type        = mesh_type(mesh.flags);
     const bool has_attribs = mesh.flags & VERTEX_ATTRIB_MASK;
 
@@ -3804,6 +3794,16 @@ void submit_mesh
     encoder.setTransform(&transform);
 
     u64 flags = translate_draw_state_flags(state.flags);
+
+    constexpr u64 primitive_flags[] =
+    {
+        0, // Triangles.
+        0, // Quads (for users, triangles internally).
+        BGFX_STATE_PT_TRISTRIP,
+        BGFX_STATE_PT_LINES,
+        BGFX_STATE_PT_LINESTRIP,
+        BGFX_STATE_PT_POINTS,
+    };
 
     flags |= primitive_flags[(mesh.flags & PRIMITIVE_TYPE_MASK) >> PRIMITIVE_TYPE_SHIFT];
 

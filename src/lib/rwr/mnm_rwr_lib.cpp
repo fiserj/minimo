@@ -960,7 +960,6 @@ void begin_text(int mesh_id, int atlas_id, int flags)
 
     const int mesh_flags =
           PRIMITIVE_QUADS         |
-          VERTEX_POSITION         |
           VERTEX_TEXCOORD         |
           VERTEX_COLOR            |
           TEXT_MESH               |
