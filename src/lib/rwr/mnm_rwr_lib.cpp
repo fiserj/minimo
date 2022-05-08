@@ -482,7 +482,7 @@ void mesh(int id)
     {
         if (!bgfx::isValid(state.texture))
         {
-            // texture(mesh.extra_data);
+            texture(mesh.extra_data);
         }
 
         if (state.flags == STATE_DEFAULT)
@@ -971,7 +971,8 @@ void begin_text(int mesh_id, int atlas_id, int flags)
 
     begin_mesh(mesh_id, mesh_flags);
 
-    t_ctx->record_info.type = RecordType::TEXT;
+    t_ctx->record_info.extra_data = u32(atlas_id);
+    t_ctx->record_info.type       = RecordType::TEXT;
 }
 
 void end_text(void)
