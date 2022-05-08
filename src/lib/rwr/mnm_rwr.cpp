@@ -1707,15 +1707,16 @@ struct VertexLayoutAttribInfo
     u8             byte_size;
     bool           normalized;
     bool           packed;
-};
+    u16            exclude_flag; // NOTE : Needed because `VERTEX_TEXCOORD_F32`
+};                               //        is not a single-bit value.
 
 const VertexLayoutAttribInfo s_vertex_layout_attribs[] =
 {
-    { VERTEX_POSITION    , {bgfx::Attrib::Position }, {bgfx::AttribType::Float}, 3, 0, false, false },
-    { VERTEX_COLOR       , {bgfx::Attrib::Color0   }, {bgfx::AttribType::Uint8}, 4, 4, true , false },
-    { VERTEX_NORMAL      , {bgfx::Attrib::Normal   }, {bgfx::AttribType::Uint8}, 4, 4, true , true  },
-    { VERTEX_TEXCOORD    , {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Int16}, 2, 4, true , true  },
-    { VERTEX_TEXCOORD_F32, {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Float}, 2, 8, false, false },
+    { VERTEX_POSITION    , {bgfx::Attrib::Position }, {bgfx::AttribType::Float}, 3, 0, false, false, 0            },
+    { VERTEX_COLOR       , {bgfx::Attrib::Color0   }, {bgfx::AttribType::Uint8}, 4, 4, true , false, 0            },
+    { VERTEX_NORMAL      , {bgfx::Attrib::Normal   }, {bgfx::AttribType::Uint8}, 4, 4, true , true , 0            },
+    { VERTEX_TEXCOORD    , {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Int16}, 2, 4, true , true , TEXCOORD_F32 },
+    { VERTEX_TEXCOORD_F32, {bgfx::Attrib::TexCoord0}, {bgfx::AttribType::Float}, 2, 8, false, false, 0            },
 };
 
 constexpr u32 vertex_layout_index(u32 attribs, u32 skips = 0)
@@ -1752,7 +1753,8 @@ void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
     {
         const VertexLayoutAttribInfo& attrib = s_vertex_layout_attribs[i];
 
-        if ((attribs & attrib.flag) == attrib.flag)
+        if ( (attribs & attrib.flag        ) == attrib.flag &&
+            !(attribs & attrib.exclude_flag))
         {
             layout.add(
                 attrib.type,
@@ -1762,7 +1764,8 @@ void add_vertex_layout(VertexLayoutCache& cache, u32 attribs, u32 skips)
                 attrib.packed
             );
         }
-        else if ((skips & attrib.flag) == attrib.flag)
+        else if ( (skips & attrib.flag        ) == attrib.flag &&
+                 !(skips & attrib.exclude_flag))
         {
             layout.skip(attrib.byte_size);
         }
