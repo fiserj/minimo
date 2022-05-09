@@ -149,7 +149,7 @@ if(MNM_TESTS)
     FetchContent_Declare(
         minimo_assets
         GIT_REPOSITORY https://github.com/fiserj/minimo.git
-        GIT_TAG        4e66f2f4b8fa86737702db5ac80be9bbfe9b4793
+        GIT_TAG        1da992c73288f720974ddab3a18dedc940c62493
     )
 
     FetchContent_MakeAvailable(

@@ -510,3 +510,7 @@ EXAMPLE_TEST_END
 EXAMPLE_TEST_BEGIN(custom_shader)
 #include "custom_shader.c"
 EXAMPLE_TEST_END
+
+EXAMPLE_TEST_BEGIN(font_atlas)
+#include "font_atlas.c"
+EXAMPLE_TEST_END
