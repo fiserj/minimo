@@ -3,6 +3,7 @@
 #undef WARN
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
 
 
 // -----------------------------------------------------------------------------
@@ -240,6 +241,105 @@ TEST_CASE("Dynamic Array", "[basic]")
     REQUIRE(array.size == 0);
     REQUIRE(array.capacity == 0);
     REQUIRE(array.allocator == nullptr);
+}
+
+
+// -----------------------------------------------------------------------------
+// MESH RECORDING
+// -----------------------------------------------------------------------------
+
+TEST_CASE("Mesh Recording", "[benchmark]")
+{
+    CrtAllocator allocator;
+
+    SECTION("Torus")
+    {
+        DynamicArray<Vec3> vertices;
+        init(vertices, &allocator);
+        defer(deinit(vertices));
+
+        constexpr int radial_resolution  = 100;
+        constexpr int tubular_resolution = 250;
+
+        const auto torus_vertex = [&](int index)
+        {
+            const float radius    = 0.50f;
+            const float thickness = 0.15f;
+
+            const int i = index / tubular_resolution;
+            const int j = index % tubular_resolution;
+
+            const float u =  6.28318530718f * j / tubular_resolution;
+            const float v =  6.28318530718f * i / radial_resolution;
+
+            const float x = (radius + thickness * cosf(v)) * cosf(u);
+            const float y = (radius + thickness * cosf(v)) * sinf(u);
+            const float z = thickness * sinf(v);
+
+            append(vertices, HMM_Vec3(x, y, z));
+        };
+
+        for (int r0 = 0; r0 < radial_resolution; r0++)
+        {
+            const int r1 = (r0 + 1) % radial_resolution;
+
+            for (int t0 = 0; t0 < tubular_resolution; t0++)
+            {
+                const int t1 = (t0 + 1) % tubular_resolution;
+
+                const int i0 = r0 * tubular_resolution + t0;
+                const int i1 = r0 * tubular_resolution + t1;
+                const int i2 = r1 * tubular_resolution + t1;
+                const int i3 = r1 * tubular_resolution + t0;
+
+                torus_vertex(i0);
+                torus_vertex(i1);
+                torus_vertex(i2);
+                torus_vertex(i3);
+            }
+        }
+
+        constexpr u32 stack_size = 8_MB;
+
+        void* stack_buffer = BX_ALIGNED_ALLOC(&allocator, stack_size, 16);
+        defer(BX_ALIGNED_FREE(&allocator, stack_buffer, 16));
+
+        StackAllocator stack_allocator;
+        init(stack_allocator, stack_buffer, stack_size);
+
+        MeshRecorder recorder;
+        init(recorder, &stack_allocator);
+
+        const auto submit = [&](int flags)
+        {
+            REQUIRE(recorder.vertex_count == 0);
+
+            start(recorder, u32(flags));
+            defer(end(recorder));
+
+            const Mat4 transform = HMM_Mat4d(1.0f);
+
+            for (u32 i = 0; i < vertices.size; i++)
+            {
+                const Vec3& v = vertices[i];
+
+                (*recorder.store_vertex)(
+                    (transform * HMM_Vec4(v.X, v.Y, v.Z, 1.0f)).XYZ,
+                    recorder.attrib_state,
+                    recorder
+                );
+            }
+
+            REQUIRE(recorder.vertex_count == u32(radial_resolution * tubular_resolution * 6));
+
+            return recorder.vertex_count;
+        };
+
+        BENCHMARK("Vertices Only")
+        {
+            return submit(PRIMITIVE_QUADS);
+        };
+    }
 }
 
 
