@@ -2044,6 +2044,12 @@ void init(MeshRecorder& recorder, Allocator* allocator)
     init(recorder.position_buffer, allocator);
 }
 
+void deinit(MeshRecorder& recorder)
+{
+    deinit(recorder.attrib_buffer  );
+    deinit(recorder.position_buffer);
+}
+
 void start(MeshRecorder& recorder, u32 flags)
 {
     reset(recorder.attrib_state, flags);
@@ -3003,6 +3009,11 @@ void init(InstanceRecorder& recorder, Allocator* allocator)
     recorder = {};
 
     init(recorder.buffer, allocator);
+}
+
+void deinit(InstanceRecorder& recorder)
+{
+    deinit(recorder.buffer, allocator);
 }
 
 void start(InstanceRecorder& recorder, u32 type)
@@ -5285,7 +5296,7 @@ void init(ThreadLocalContext& ctx, Allocator* allocator, u32 arena_size, u32 sta
 
     init(ctx.frame_allocator, allocator, arena_buffer, arena_size);
 
-    // NOTE : No `deinit` needed.
+    // NOTE : No `deinit` needed since we're using the stack allocator.
     init(ctx.mesh_recorder    , &ctx.stack_allocator);
     init(ctx.instance_recorder, &ctx.stack_allocator);
 
