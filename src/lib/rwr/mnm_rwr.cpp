@@ -3013,7 +3013,7 @@ void init(InstanceRecorder& recorder, Allocator* allocator)
 
 void deinit(InstanceRecorder& recorder)
 {
-    deinit(recorder.buffer, allocator);
+    deinit(recorder.buffer);
 }
 
 void start(InstanceRecorder& recorder, u32 type)
