@@ -1,6 +1,19 @@
 cmake_policy(SET CMP0065 NEW)
 
-function(add_project NAME IS_TEST_RUNNER)
+function(add_project NAME PROJECT_TYPE)
+    set(VALID_PROJECT_TYPES
+        "editor"
+        "library"
+        "tests"
+    )
+
+    if(NOT PROJECT_TYPE IN_LIST VALID_PROJECT_TYPES)
+        message(
+            FATAL_ERROR
+            "Invalid project type '${PROJECT_TYPE}'. Must be one of: '${VALID_PROJECT_TYPES}'."
+        )
+    endif()
+
     set(SOURCE_FILES "")
 
     if(APPLE)
@@ -13,7 +26,23 @@ function(add_project NAME IS_TEST_RUNNER)
         )
     endif()
 
-    if(IS_TEST_RUNNER)
+    if(PROJECT_TYPE STREQUAL "library")
+        list(APPEND SOURCE_FILES
+            mnm_rwr_lib.cpp
+        )
+
+        add_library(${NAME} STATIC
+            ${SOURCE_FILES}
+        )
+    elseif(PROJECT_TYPE STREQUAL "editor")
+        list(APPEND SOURCE_FILES
+            mnm_rwr_editor.cpp
+        )
+
+        add_executable(${NAME}
+            ${SOURCE_FILES}
+        )
+    elseif(PROJECT_TYPE STREQUAL "tests")
         list(APPEND SOURCE_FILES
             mnm_rwr_lib_tests.cpp
         )
@@ -29,14 +58,6 @@ function(add_project NAME IS_TEST_RUNNER)
 
         target_include_directories(${NAME} PRIVATE
             ../../test
-        )
-    else()
-        list(APPEND SOURCE_FILES
-            mnm_rwr_lib.cpp
-        )
-
-        add_library(${NAME} STATIC
-            ${SOURCE_FILES}
         )
     endif()
 
@@ -94,8 +115,12 @@ function(add_project NAME IS_TEST_RUNNER)
     )                                                                         # *_OUTPUT_DIRECTORY_* properties.
 endfunction()
 
-add_project(${PROJECT_NAME}_rwr OFF)
+add_project(${PROJECT_NAME}_rwr "library")
+
+if(MNM_EDITOR)
+    add_project(${PROJECT_NAME}_rwr_editor "editor")
+endif()
 
 if(MNM_TESTS)
-    add_project(${PROJECT_NAME}_rwr_tests ON)
+    add_project(${PROJECT_NAME}_rwr_tests "tests")
 endif()
