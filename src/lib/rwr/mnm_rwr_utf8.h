@@ -1,5 +1,7 @@
 #pragma once
 
+// NOTE : This file is assumed to be included within the `mnm::rwr` namespace.
+
 enum : u32
 {
     UTF8_ACCEPT = 0,
