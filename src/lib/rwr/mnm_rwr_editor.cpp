@@ -212,29 +212,58 @@ u8 top(const ClipStack& stack)
 
 struct Resources
 {
-    int font_atlas              = 0;
+    int font_atlas;
 
-    int framebuffer_glyph_cache = 0;
+    int framebuffer_glyph_cache;
 
-    int mesh_tmp_text           = 0;
-    int mesh_gui_rects          = 0;
-    int mesh_gui_text           = 0;
+    int mesh_tmp_text;
+    int mesh_gui_rects;
+    int mesh_gui_text;
 
-    int pass_glyph_cache        = 0;
-    int pass_gui                = 0;
+    int pass_glyph_cache;
+    int pass_gui;
 
-    int program_gui_text        = 0;
+    int program_gui_text;
 
-    int texture_glyph_cache     = 0;
-    int texture_tmp_atlas       = 0;
+    int texture_glyph_cache;
+    int texture_tmp_atlas;
 
-    int uniform_text_info       = 0;
+    int uniform_text_info;
 };
+
+struct AtlasInfo
+{
+    float texel_size;
+    float glyph_cols;
+    float glyph_texel_width;
+    float glyph_texel_height;
+    float glyph_texel_to_screen_width_ratio;
+    float glyph_texel_to_screen_hegiht_ratio;
+
+    float _unused[2];
+};
+
+struct Uniforms
+{
+    AtlasInfo    atlas_info;
+    ColorPalette color_palette;
+    ClipStack    clip_stack; // NOTE : Must be last, since we only copy `rects`.
+};
+
+// NOTE : This is to ensure that we can safely copy instance of `Uniforms`
+//        object into shader without shuffling with the layout in any way.
+static_assert(
+    (offsetof(Uniforms , color_palette) % sizeof(Vec4) == 0) &&
+    (offsetof(Uniforms , clip_stack   ) % sizeof(Vec4) == 0) &&
+    (offsetof(ClipStack, rects        )                == 0) &&
+    "Invalid assumption about `Uniforms` memory layout."
+);
 
 void init(Resources& resources)
 {
     // ...
 }
+
 
 
 // -----------------------------------------------------------------------------
@@ -286,6 +315,19 @@ void rebuild(GlyphCache& cache, const Resources& resources, float cap_height)
 // Simple draw list, supports only rectangles.
 struct DrawList
 {
+    // struct Item
+    // {
+    //     u16     glyph_count;
+    //     u8      color_index;
+    //     u8      clip_index;
+
+    //     union
+    //     {
+    //         u32 data_u32;
+    //         f32 data_f32;
+    //     };
+    // };
+
     struct Header
     {
         u16 glyph_count;
@@ -295,11 +337,11 @@ struct DrawList
 
     union Data
     {
-        u32 _u32;
-        f32 _f32;
+        u32 as_u32;
+        f32 as_f32;
     };
 
-    struct Item
+    union Item
     {
         Header header;
         Data   data;
@@ -310,6 +352,142 @@ struct DrawList
     u32  offset;
     u32  empty_glyph_index; // TODO : Set this when space not first in the atlas.
 };
+
+void add_rect(DrawList& list, const Rect& rect, u8 color_index, u8 clip_index)
+{
+    ASSERT(list.size + 5 < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
+
+    list.data[list.size++].header      = { 0, color_index, clip_index };
+    list.data[list.size++].data.as_f32 = rect.x0;
+    list.data[list.size++].data.as_f32 = rect.y0;
+    list.data[list.size++].data.as_f32 = rect.x1;
+    list.data[list.size++].data.as_f32 = rect.y1;
+}
+
+void add_glyph(DrawList& list, u32 index)
+{
+    ASSERT(list.size < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
+
+    list.data[list.size++].data.as_u32 = index;
+}
+
+void start_string(DrawList& list, float x, float y, u8 color_index, u8 clip_index)
+{
+    ASSERT(list.size + 3 < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
+
+    list.offset = list.size;
+
+    list.data[list.size++].header      = { 0, color_index, clip_index };
+    list.data[list.size++].data.as_f32 = x;
+    list.data[list.size++].data.as_f32 = y;
+}
+
+void end_string(DrawList& list)
+{
+    const u32 glyph_count = list.size - list.offset - 3;
+    ASSERT(glyph_count <= U16_MAX, "Text editor GUI string too long.");
+
+    if (glyph_count)
+    {
+        list.data[list.offset].header.glyph_count = u16(glyph_count);
+    }
+    else
+    {
+        // NOTE : Empty strings (glyphs not in the cache).
+        list.size -= 3;
+    }
+}
+
+float encode_base_vertex(u32 glyph_index, u8 color_index, u8 clip_index)
+{
+    return (
+        ((glyph_index  * MAX_COLOR_PALETTE_SIZE) +
+          color_index) * MAX_CLIP_STACK_SIZE +
+          clip_index ) * 4;
+}
+
+void submit
+(
+    const DrawList&  list,
+    const Resources& resources,
+    const Vec2&      glyph_size,
+    const void*      uniforms
+)
+{
+    if (list.size == 0)
+    {
+        return;
+    }
+
+    ASSERT(list.size >= 4, "Invalid list size %" PRIu32 ".", list.size);
+
+    begin_mesh(
+        resources.mesh_gui_text,
+        MESH_TRANSIENT | PRIMITIVE_QUADS | NO_VERTEX_TRANSFORM
+    );
+
+    const float width  = glyph_size.X;
+    const float height = glyph_size.Y;
+
+    for (u32 i = 0; i < list.size;)
+    {
+        const DrawList::Header header = list.data[i++].header;
+
+        if (header.glyph_count)
+        {
+            float        x0 = list.data[i++].data.as_f32;
+            const float  y0 = list.data[i++].data.as_f32;
+            float        x1 = x0 + width;
+            const float  y1 = y0 + height;
+
+            for (u32 j = 0; j < header.glyph_count; j++, i++)
+            {
+                const float vtx = encode_base_vertex(
+                    list.data[i].data.as_u32,
+                    header.color_index,
+                    header.clip_index
+                );
+
+                vertex(x0, y0, vtx + 0.0f);
+                vertex(x0, y1, vtx + 1.0f);
+                vertex(x1, y1, vtx + 2.0f);
+                vertex(x1, y0, vtx + 3.0f);
+
+                x0  = x1;
+                x1 += width;
+            }
+        }
+        else
+        {
+            const float x0  = list.data[i++].data.as_f32;
+            const float y0  = list.data[i++].data.as_f32;
+            const float x1  = list.data[i++].data.as_f32;
+            const float y1  = list.data[i++].data.as_f32;
+
+            const float vtx = encode_base_vertex(
+                list.empty_glyph_index,
+                header.color_index, 
+                header.clip_index
+            );
+
+            vertex(x0, y0, vtx + 0.0f);
+            vertex(x0, y1, vtx + 1.0f);
+            vertex(x1, y1, vtx + 2.0f);
+            vertex(x1, y0, vtx + 3.0f);
+        }
+    }
+
+    end_mesh();
+
+    identity();
+    state   (STATE_BLEND_ALPHA | STATE_WRITE_RGB);
+    uniform (resources.uniform_text_info, uniforms);
+    texture (resources.texture_glyph_cache);
+    shader  (resources.program_gui_text);
+    mesh    (resources.mesh_gui_text);
+
+    // list.offset = 0;
+}
 
 
 // -----------------------------------------------------------------------------
