@@ -272,10 +272,10 @@ void init(Resources& resources)
 
 struct GlyphCache
 {
-    int   texture_size = 0;
-    int   glyph_cols   = 0;
-    float glyph_width  = 0.0f; // In pixels, including one-pixel padding.
-    float glyph_height = 0.0f; // In pixels, no padding.
+    int   texture_size; // = 0;
+    int   glyph_cols; //   = 0;
+    float glyph_width; //  = 0.0f; // In pixels, including one-pixel padding.
+    float glyph_height; // = 0.0f; // In pixels, no padding.
 };
 
 float screen_width(GlyphCache& cache)
@@ -290,6 +290,8 @@ float screen_height(GlyphCache& cache)
 
 u32 codepoint_index(GlyphCache& cache, int codepoint)
 {
+    BX_UNUSED(cache);
+
     if (codepoint >= 32 && codepoint <= 126)
     {
         return u32(codepoint - 32);
@@ -302,9 +304,103 @@ u32 codepoint_index(GlyphCache& cache, int codepoint)
     return 95;
 }
 
+int submit_glyph_range(u32 start, u32 end, int position_index, const GlyphCache& cache)
+{
+    char buffer[5] = { 0 };
+
+    for (u32 codepoint = start; codepoint <= end; codepoint++)
+    {
+        const int x = position_index % cache.glyph_cols;
+        const int y = position_index / cache.glyph_cols;
+
+        position_index++;
+
+        identity();
+        translate(x * cache.glyph_width, (y + 0.25f) * cache.glyph_height, 0.0f);
+
+        const u32 size = utf8_encode(codepoint, buffer);
+        text(buffer, buffer + size);
+    }
+
+    return position_index;
+}
+
 void rebuild(GlyphCache& cache, const Resources& resources, float cap_height)
 {
-    // ...
+    ASSERT(cap_height > 0.0f, "Non-positive cap height %f.", cap_height);
+
+    begin_atlas(
+        resources.texture_tmp_atlas,
+        ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE | ATLAS_ALLOW_UPDATE,
+        resources.font_atlas,
+        cap_height * dpi()
+    );
+    glyph_range(0x0020, 0x007e); // Printable ASCII.
+    glyph_range(0xfffd, 0xfffd); // Replacement character.
+    end_atlas();
+
+    text_size(
+        resources.texture_tmp_atlas, "X", 0, 1.0f,
+        &cache.glyph_width, &cache.glyph_height
+    );
+
+    cache.glyph_width  += 1.0f;
+    cache.glyph_height *= 2.0f;
+
+    for (cache.texture_size = 128; ; cache.texture_size *= 2)
+    {
+        // TODO : Rounding and padding.
+        cache.glyph_cols = int(cache.texture_size / cache.glyph_width );
+        const int   rows = int(cache.texture_size / cache.glyph_height);
+
+        // TODO : Check against the dynamic glyph count.
+        if (cache.glyph_cols * rows >= 96)
+        {
+            break;
+        }
+    }
+
+    begin_text(
+        resources.mesh_tmp_text,
+        resources.texture_tmp_atlas,
+        TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT
+    );
+    {
+        color(0xffffffff);
+
+        int index = 0;
+
+        index = submit_glyph_range(0x0020, 0x007e, index, cache);
+        ASSERT(index == 95, "Invalid glyph cache index %i.", index);
+
+        index = submit_glyph_range(0xfffd, 0xfffd, index, cache);
+        ASSERT(index == 96, "Invalid glyph cache index %i.", index);
+    }
+    end_text();
+
+    create_texture(
+        resources.texture_glyph_cache,
+        TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET,
+        cache.texture_size,
+        cache.texture_size
+    );
+
+    begin_framebuffer(resources.framebuffer_glyph_cache);
+    texture(resources.texture_glyph_cache);
+    end_framebuffer();
+
+    pass(resources.pass_glyph_cache);
+
+    framebuffer(resources.framebuffer_glyph_cache);
+    clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
+    viewport(0, 0, cache.texture_size, cache.texture_size);
+
+    identity();
+    ortho(0.0f, float(cache.texture_size), float(cache.texture_size), 0.0f, 1.0f, -1.0f);
+    projection();
+
+    identity();
+    mesh(resources.mesh_tmp_text);
 }
 
 
@@ -315,19 +411,6 @@ void rebuild(GlyphCache& cache, const Resources& resources, float cap_height)
 // Simple draw list, supports only rectangles.
 struct DrawList
 {
-    // struct Item
-    // {
-    //     u16     glyph_count;
-    //     u8      color_index;
-    //     u8      clip_index;
-
-    //     union
-    //     {
-    //         u32 data_u32;
-    //         f32 data_f32;
-    //     };
-    // };
-
     struct Header
     {
         u16 glyph_count;
