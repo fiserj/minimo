@@ -157,3 +157,15 @@ if(MNM_TESTS)
         minimo_assets
     )
 endif()
+
+if(MNM_EDITOR)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        250333d895b1067533533dcfab137512745b9689
+    )
+
+    FetchContent_Populate(imgui)
+
+    include(cmake/imgui.cmake)
+endif()
