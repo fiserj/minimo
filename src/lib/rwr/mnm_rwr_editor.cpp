@@ -32,6 +32,35 @@ void ImGui_Impl_Init()
     io.BackendRendererName     = "MiNiMo";
 }
 
+float get_font_scale(const void* ttf_data, float cap_pixel_size)
+{
+    stbtt_fontinfo font_info = {};
+    stbtt_InitFont(&font_info, reinterpret_cast<const unsigned char*>(ttf_data), 0);
+
+    i16 cap_height = 0;
+    {
+        const int table = stbtt__find_table(
+            font_info.data,
+            font_info.fontstart,
+            "OS/2"
+        );
+
+        if (table && ttUSHORT(font_info.data + table) >= 2) // Version.
+        {
+            cap_height = ttSHORT(font_info.data + table + 88); // sCapHeight.
+        }
+
+        // TODO : Estimate cap height from capital `H` bounding box?
+        ASSERT(cap_height, "Can't determine cap height.");
+    };
+
+    int ascent, descent;
+    stbtt_GetFontVMetrics(&font_info, &ascent, &descent, nullptr);
+
+    // TODO : Fix possible division by zero.
+    return (ascent - descent) * cap_pixel_size / cap_height;
+}
+
 void ImGui_Impl_BeginFrame()
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -41,13 +70,23 @@ void ImGui_Impl_BeginFrame()
         unsigned char* data;
         int            width, height;
 
-        io.FontGlobalScale         = 1.0f / dpi();
+        io.FontGlobalScale         = 0.5f / dpi(); // TODO : Investigate behavior with DPI other than 2.0.
         io.DisplayFramebufferScale = { 1.0f, 1.0f };
 
-        ImGui::GetStyle().ScaleAllSizes(1.0f / dpi());
+        const float cap_size   = bx::round(18.0f * dpi()); // TODO : Allow user to specify size.
+        const float font_scale = get_font_scale(font_segoe_ui_data, cap_size);
+
+        ImFontConfig font_cfg;
+        font_cfg.FontDataOwnedByAtlas = false;
+        font_cfg.OversampleH          = 2.0f;
 
         io.Fonts->Clear();
-        io.Fonts->AddFontFromFileTTF("/Users/fiser/Downloads/segoe-ui-4-cufonfonts/Segoe UI.ttf", 18.0f * dpi());
+        io.Fonts->AddFontFromMemoryTTF(
+            const_cast<unsigned int*>(font_segoe_ui_data),
+            font_segoe_ui_size,
+            font_scale,
+            &font_cfg
+        );
         io.Fonts->GetTexDataAsAlpha8(&data, &width, &height);
 
         load_texture(IMGUI_FONT_TEXTURE_ID, TEXTURE_R8, width, height, width, data);
