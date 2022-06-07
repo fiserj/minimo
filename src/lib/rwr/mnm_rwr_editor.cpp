@@ -96,6 +96,29 @@ void ImGui_Impl_BeginFrame()
 
     io.DeltaTime   = float(dt());
     io.DisplaySize = { ::width(), ::height() };
+
+    io.AddMousePosEvent  ( ::mouse_x(),  ::mouse_y());
+    io.AddMouseWheelEvent(::scroll_x(), ::scroll_y());
+
+    constexpr int mouse_buttons[3][2] =
+    {
+        { MOUSE_LEFT  , ImGuiMouseButton_Left   },
+        { MOUSE_MIDDLE, ImGuiMouseButton_Middle },
+        { MOUSE_RIGHT , ImGuiMouseButton_Right  },
+    };
+
+    for (u32 i = 0; i < BX_COUNTOF(mouse_buttons); i++)
+    {
+        if (::mouse_down(mouse_buttons[i][0]))
+        {
+            io.AddMouseButtonEvent(mouse_buttons[i][1], true);
+        }
+
+        if (::mouse_up(mouse_buttons[i][0]))
+        {
+            io.AddMouseButtonEvent(mouse_buttons[i][1], false);
+        }
+    }
 }
 
 void ImGui_Impl_EndFrame()
@@ -193,8 +216,8 @@ void draw(void)
     ImGui_Impl_BeginFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize({ 300.0f, 100.0f }, ImGuiCond_Always);
-    ImGui::SetNextWindowPos ({  50.0f, 100.0f }, ImGuiCond_Always);
+    ImGui::SetNextWindowSize({ 300.0f, 100.0f }, ImGuiCond_Once);
+    ImGui::SetNextWindowPos ({  50.0f, 100.0f }, ImGuiCond_Once);
 
     if (ImGui::Begin("Hello, World!"))
     {
