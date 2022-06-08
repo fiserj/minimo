@@ -49,7 +49,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.3.7
+    GIT_TAG        62e175ef9fae75335575964c845a302447c012c7
 )
 
 FetchContent_Declare(
