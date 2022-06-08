@@ -130,16 +130,16 @@ void ImGui_Impl_BeginFrame()
 
         constexpr int cursor_icons[] =
         {
-            CURSOR_HIDDEN,    // ImGuiMouseCursor_None
-            CURSOR_ARROW,     // ImGuiMouseCursor_Arrow
-            CURSOR_I_BEAM,    // ImGuiMouseCursor_TextInput
-            CURSOR_ARROW,     // ImGuiMouseCursor_ResizeAll
-            CURSOR_V_RESIZE,  // ImGuiMouseCursor_ResizeNS
-            CURSOR_H_RESIZE,  // ImGuiMouseCursor_ResizeEW
-            CURSOR_ARROW,     // ImGuiMouseCursor_ResizeNESW
-            CURSOR_ARROW,     // ImGuiMouseCursor_ResizeNWSE
-            GLFW_HAND_CURSOR, // ImGuiMouseCursor_Hand
-            CURSOR_ARROW,     // ImGuiMouseCursor_NotAllowed
+            CURSOR_HIDDEN,      // ImGuiMouseCursor_None
+            CURSOR_ARROW,       // ImGuiMouseCursor_Arrow
+            CURSOR_I_BEAM,      // ImGuiMouseCursor_TextInput
+            CURSOR_ARROW,       // ImGuiMouseCursor_ResizeAll
+            CURSOR_RESIZE_NS,   // ImGuiMouseCursor_ResizeNS
+            CURSOR_RESIZE_EW,   // ImGuiMouseCursor_ResizeEW
+            CURSOR_RESIZE_NESW, // ImGuiMouseCursor_ResizeNESW
+            CURSOR_RESIZE_NWSE, // ImGuiMouseCursor_ResizeNWSE
+            GLFW_HAND_CURSOR,   // ImGuiMouseCursor_Hand
+            CURSOR_NOT_ALLOWED, // ImGuiMouseCursor_NotAllowed
         };
 
         ::cursor(cursor_icons[cursor + 1]);
@@ -254,6 +254,10 @@ void draw(void)
     if (ImGui::Begin("Hello, World!"))
     {
         // ...
+
+        const char* items[] = { "Apple", "Banana", "Cherry", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon" };
+            static int item_current = 1;
+            ImGui::ListBox("listbox", &item_current, items, IM_ARRAYSIZE(items), 4);
     }
     ImGui::End();
 
