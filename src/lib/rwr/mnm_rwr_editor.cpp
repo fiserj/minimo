@@ -248,18 +248,9 @@ void draw(void)
     ImGui_Impl_BeginFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize({ 300.0f, 100.0f }, ImGuiCond_Once);
-    ImGui::SetNextWindowPos ({  50.0f, 100.0f }, ImGuiCond_Once);
+    // ...
 
-    if (ImGui::Begin("Hello, World!"))
-    {
-        // ...
-
-        const char* items[] = { "Apple", "Banana", "Cherry", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon" };
-            static int item_current = 1;
-            ImGui::ListBox("listbox", &item_current, items, IM_ARRAYSIZE(items), 4);
-    }
-    ImGui::End();
+    ImGui::ShowDemoWindow();
 
     // ...
 
