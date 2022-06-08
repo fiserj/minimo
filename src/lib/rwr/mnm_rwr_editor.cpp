@@ -170,7 +170,14 @@ void ImGui_Impl_EndFrame()
 
             end_mesh();
 
-            // TODO : Scissors, clipping.
+            // TODO : Check the DPI handling in this is OK.
+            scissor(
+                int(bx::round(dpi() *  cmd->ClipRect.x)),
+                int(bx::round(dpi() *  cmd->ClipRect.y)),
+                int(bx::round(dpi() * (cmd->ClipRect.z - cmd->ClipRect.x))),
+                int(bx::round(dpi() * (cmd->ClipRect.w - cmd->ClipRect.y)))
+            );
+
             identity();
             texture(IMGUI_FONT_TEXTURE_ID); // cmd->GetTexID()
             state(STATE_WRITE_RGB | STATE_WRITE_A | STATE_BLEND_ALPHA);
