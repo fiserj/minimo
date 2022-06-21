@@ -1,6 +1,7 @@
 #include "mnm_rwr_lib.cpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "font_segoe_ui.h"
 
@@ -215,6 +216,109 @@ void ImGui_Impl_EndFrame()
 
 
 // -----------------------------------------------------------------------------
+// EDITOR GUI
+// -----------------------------------------------------------------------------
+
+void editor_gui()
+{
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("Menu"))
+        {
+            if (ImGui::MenuItem("Placeholder")) {}
+
+            ImGui::EndMenu();
+        }
+
+        ImGui::EndMainMenuBar();
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0,0,0,0));
+
+    const ImGuiID dockspace_id   = ImGui::GetID("EditorDockSpace");
+    const bool    dockspace_init = ImGui::DockBuilderGetNode(dockspace_id);
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    // Like `ImGui::DockSpaceOverViewport`, but we need to know the ID upfront.
+    {
+        ImGui::SetNextWindowPos     (viewport->WorkPos );
+        ImGui::SetNextWindowSize    (viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        constexpr ImGuiWindowFlags window_flags =
+            ImGuiWindowFlags_NoBackground          |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | 
+            ImGuiWindowFlags_NoCollapse            |
+            ImGuiWindowFlags_NoDocking             |
+            ImGuiWindowFlags_NoMove                |
+            ImGuiWindowFlags_NoNavFocus            |
+            ImGuiWindowFlags_NoResize              |
+            ImGuiWindowFlags_NoTitleBar            ;
+
+        constexpr ImGuiDockNodeFlags dockspace_flags =
+            ImGuiDockNodeFlags_NoTabBar            |
+            ImGuiDockNodeFlags_PassthruCentralNode ;
+
+        char label[32];
+        bx::snprintf(label, sizeof(label), "Viewport_%016x", viewport->ID);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding  , 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding   , ImVec2(0.0f, 0.0f));
+
+        ImGui::Begin(label, nullptr, window_flags);
+
+        ImGui::PopStyleVar(3);
+
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+
+        ImGui::End();
+    }
+
+    ImGui::PopStyleColor();
+
+    if (!dockspace_init)
+    {
+        ImGui::DockBuilderRemoveNode (dockspace_id);
+        ImGui::DockBuilderAddNode    (dockspace_id, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+        ImGuiID dock_main_id = dockspace_id;
+
+        const ImGuiID dock_status_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down , 0.25f, nullptr, &dock_main_id);
+        const ImGuiID dock_editor_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.50f, nullptr, &dock_main_id);
+
+        ImGui::DockBuilderDockWindow("Status", dock_status_id);
+        ImGui::DockBuilderDockWindow("Editor", dock_editor_id);
+
+        ImGui::DockBuilderSetNodeSize(dock_status_id, { viewport->Size.x, 50.0f });
+
+        ImGui::DockBuilderGetNode(dock_status_id)->SetLocalFlags(ImGuiDockNodeFlags_NoResize);
+
+        ImGui::DockBuilderFinish(dockspace_id);
+    }
+
+    if (ImGui::Begin("Editor"))
+    {
+        // ...
+    }
+    ImGui::End();
+
+    if (ImGui::Begin("Status"))
+    {
+        ImGui::TextUnformatted("Status Bar Placeholder...");
+
+        // ...
+    }
+    ImGui::End();
+
+    const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id);
+    // ...
+}
+
+
+// -----------------------------------------------------------------------------
 // EDITOR CALLBACKS
 // -----------------------------------------------------------------------------
 
@@ -225,11 +329,17 @@ void init(void)
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // io.IniFilename  = nullptr;
+
     // ...
 }
 
 void setup(void)
 {
+    vsync(1); // TODO : Leave this on the edited source code?
+
     title("MiNiMo Source Code Editor");
 
     clear_color(0x333333ff);
@@ -240,7 +350,9 @@ void setup(void)
 
 void draw(void)
 {
-    if (!ImGui::GetIO().WantCaptureKeyboard && key_down(KEY_ESCAPE))
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (!io.WantCaptureKeyboard && !io.WantCaptureMouse && key_down(KEY_ESCAPE))
     {
         quit();
     }
@@ -248,11 +360,7 @@ void draw(void)
     ImGui_Impl_BeginFrame();
     ImGui::NewFrame();
 
-    // ...
-
-    ImGui::ShowDemoWindow();
-
-    // ...
+    editor_gui();
 
     ImGui::Render();
     ImGui_Impl_EndFrame();
