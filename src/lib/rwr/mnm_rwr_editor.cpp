@@ -221,24 +221,31 @@ void ImGui_Impl_EndFrame()
 
 void editor_gui()
 {
-    if (ImGui::BeginMainMenuBar())
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
     {
-        if (ImGui::BeginMenu("Menu"))
+        const float bar_height = bx::round(ImGui::GetFontSize() * 2.0f);
+
+        constexpr ImGuiWindowFlags bar_flags =
+            ImGuiWindowFlags_NoScrollbar       |
+            ImGuiWindowFlags_NoScrollWithMouse ;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
+
+        if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, ImGuiWindowFlags_None))
         {
-            if (ImGui::MenuItem("Placeholder")) {}
-
-            ImGui::EndMenu();
+            ImGui::TextUnformatted("Status Bar Placeholder...");
         }
+        ImGui::End();
 
-        ImGui::EndMainMenuBar();
+        ImGui::PopStyleVar(2);
     }
 
     ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0,0,0,0));
 
     const ImGuiID dockspace_id   = ImGui::GetID("EditorDockSpace");
     const bool    dockspace_init = ImGui::DockBuilderGetNode(dockspace_id);
-
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     // Like `ImGui::DockSpaceOverViewport`, but we need to know the ID upfront.
     {
@@ -265,13 +272,13 @@ void editor_gui()
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding  , 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding   , ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding   , { 0.0f, 0.0f });
 
         ImGui::Begin(label, nullptr, window_flags);
 
         ImGui::PopStyleVar(3);
 
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+        ImGui::DockSpace(dockspace_id, {}, dockspace_flags);
 
         ImGui::End();
     }
@@ -284,31 +291,17 @@ void editor_gui()
         ImGui::DockBuilderAddNode    (dockspace_id, ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
 
-        ImGuiID dock_main_id = dockspace_id;
+        const ImGuiID dock_editor_id = ImGui::DockBuilderSplitNode(
+            dockspace_id, ImGuiDir_Right, 0.50f, nullptr, nullptr
+        );
 
-        const ImGuiID dock_status_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down , 0.25f, nullptr, &dock_main_id);
-        const ImGuiID dock_editor_id = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.50f, nullptr, &dock_main_id);
-
-        ImGui::DockBuilderDockWindow("Status", dock_status_id);
         ImGui::DockBuilderDockWindow("Editor", dock_editor_id);
-
-        ImGui::DockBuilderSetNodeSize(dock_status_id, { viewport->Size.x, 50.0f });
-
-        ImGui::DockBuilderGetNode(dock_status_id)->SetLocalFlags(ImGuiDockNodeFlags_NoResize);
 
         ImGui::DockBuilderFinish(dockspace_id);
     }
 
     if (ImGui::Begin("Editor"))
     {
-        // ...
-    }
-    ImGui::End();
-
-    if (ImGui::Begin("Status"))
-    {
-        ImGui::TextUnformatted("Status Bar Placeholder...");
-
         // ...
     }
     ImGui::End();
@@ -331,7 +324,7 @@ void init(void)
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    // io.IniFilename  = nullptr;
+    io.IniFilename  = nullptr;
 
     // ...
 }
