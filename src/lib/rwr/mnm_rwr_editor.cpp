@@ -271,6 +271,20 @@ void editor_gui()
 
     const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id);
     // ...
+
+    {
+        static bool show_metrics_window = false;
+
+        if (ImGui::IsKeyPressed(ImGuiKey_F11))
+        {
+            show_metrics_window = !show_metrics_window;
+        }
+
+        if (show_metrics_window)
+        {
+            ImGui::ShowMetricsWindow();
+        }
+    }
 }
 
 
