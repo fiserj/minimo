@@ -8,9 +8,9 @@ add_library(imgui STATIC
     ${IMGUI_DIR}/imgui_widgets.cpp
 )
 
-target_include_directories(imgui
-    PUBLIC
-        ${IMGUI_DIR}
+target_include_directories(imgui PUBLIC
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
 )
 
 set_target_properties(imgui PROPERTIES

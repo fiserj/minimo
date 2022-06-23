@@ -3,6 +3,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <imgui_impl_glfw.cpp>
+
 #include "font_segoe_ui.h"
 
 namespace mnm
@@ -98,53 +100,14 @@ void ImGui_Impl_BeginFrame()
     io.DeltaTime   = float(dt());
     io.DisplaySize = { ::width(), ::height() };
 
-    io.AddMousePosEvent  ( ::mouse_x(),  ::mouse_y());
-    io.AddMouseWheelEvent(::scroll_x(), ::scroll_y());
-
+    if (ImGui_ImplGlfw_GetBackendData()->WantUpdateMonitors)
     {
-        constexpr int mouse_buttons[3][2] =
-        {
-            { MOUSE_LEFT  , ImGuiMouseButton_Left   },
-            { MOUSE_MIDDLE, ImGuiMouseButton_Middle },
-            { MOUSE_RIGHT , ImGuiMouseButton_Right  },
-        };
-
-        for (u32 i = 0; i < BX_COUNTOF(mouse_buttons); i++)
-        {
-            if (::mouse_down(mouse_buttons[i][0]))
-            {
-                io.AddMouseButtonEvent(mouse_buttons[i][1], true);
-            }
-
-            if (::mouse_up(mouse_buttons[i][0]))
-            {
-                io.AddMouseButtonEvent(mouse_buttons[i][1], false);
-            }
-        }
+        ImGui_ImplGlfw_UpdateMonitors();
     }
 
-    {
-        // TODO : Figure out cursor handling that doesn't disrupt user's cursor logic.
-        const ImGuiMouseCursor cursor = io.MouseDrawCursor
-            ? ImGuiMouseCursor_None
-            : ImGui::GetMouseCursor();
-
-        constexpr int cursor_icons[] =
-        {
-            CURSOR_HIDDEN,      // ImGuiMouseCursor_None
-            CURSOR_ARROW,       // ImGuiMouseCursor_Arrow
-            CURSOR_I_BEAM,      // ImGuiMouseCursor_TextInput
-            CURSOR_ARROW,       // ImGuiMouseCursor_ResizeAll
-            CURSOR_RESIZE_NS,   // ImGuiMouseCursor_ResizeNS
-            CURSOR_RESIZE_EW,   // ImGuiMouseCursor_ResizeEW
-            CURSOR_RESIZE_NESW, // ImGuiMouseCursor_ResizeNESW
-            CURSOR_RESIZE_NWSE, // ImGuiMouseCursor_ResizeNWSE
-            GLFW_HAND_CURSOR,   // ImGuiMouseCursor_Hand
-            CURSOR_NOT_ALLOWED, // ImGuiMouseCursor_NotAllowed
-        };
-
-        ::cursor(cursor_icons[cursor + 1]);
-    }
+    ImGui_ImplGlfw_UpdateMouseData  ();
+    ImGui_ImplGlfw_UpdateMouseCursor();
+    ImGui_ImplGlfw_UpdateGamepads   ();
 }
 
 void ImGui_Impl_EndFrame()
