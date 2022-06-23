@@ -294,6 +294,8 @@ void init(void)
 
 void setup(void)
 {
+    ImGui_ImplGlfw_InitForOther(g_ctx->window_handle, true);
+
     vsync(1); // TODO : Leave this on the edited source code?
 
     title("MiNiMo Source Code Editor");
@@ -324,6 +326,8 @@ void draw(void)
 
 void cleanup(void)
 {
+    ImGui_ImplGlfw_Shutdown();
+
     ImGui::DestroyContext();
 
     // ...
