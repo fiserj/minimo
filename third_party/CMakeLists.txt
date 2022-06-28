@@ -59,12 +59,6 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    librope
-    GIT_REPOSITORY https://github.com/fiserj/librope.git
-    GIT_TAG        2bb786327f4abf95c38f32aa87378d2cb4dd85cf
-)
-
-FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
     GIT_TAG        v0.17
@@ -111,7 +105,6 @@ FetchContent_Populate(bimg)
 FetchContent_Populate(bx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
-FetchContent_Populate(librope)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
 FetchContent_Populate(tinycc)
@@ -123,7 +116,6 @@ include(cmake/bimg.cmake)
 include(cmake/bx.cmake)
 include(cmake/gleq.cmake)
 include(cmake/HandmadeMath.cmake)
-include(cmake/librope.cmake)
 include(cmake/meshoptimizer.cmake)
 include(cmake/stb.cmake)
 include(cmake/tinycc.cmake)
