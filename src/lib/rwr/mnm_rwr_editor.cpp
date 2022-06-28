@@ -1,11 +1,16 @@
 #include "mnm_rwr_lib.cpp"
 
+#include <bx/file.h>
+
 #include <imgui.h>
 #include <imgui_internal.h>
 
 #include <imgui_impl_glfw.cpp>
 
+#include <TextEditor.h>
+
 #include "font_segoe_ui.h"
+#include "font_input_mono.h"
 
 namespace mnm
 {
@@ -77,7 +82,6 @@ void ImGui_Impl_BeginFrame()
         io.DisplayFramebufferScale = { 1.0f, 1.0f };
 
         const float cap_size   = bx::round(18.0f * dpi()); // TODO : Allow user to specify size.
-        const float font_scale = get_font_scale(font_segoe_ui_data, cap_size);
 
         ImFontConfig font_cfg;
         font_cfg.FontDataOwnedByAtlas = false;
@@ -87,7 +91,13 @@ void ImGui_Impl_BeginFrame()
         io.Fonts->AddFontFromMemoryTTF(
             const_cast<unsigned int*>(font_segoe_ui_data),
             font_segoe_ui_size,
-            font_scale,
+            get_font_scale(font_segoe_ui_data, cap_size),
+            &font_cfg
+        );
+        io.Fonts->AddFontFromMemoryTTF(
+            const_cast<unsigned int*>(font_input_mono_data),
+            font_input_mono_size,
+            get_font_scale(font_input_mono_data, cap_size),
             &font_cfg
         );
         io.Fonts->GetTexDataAsAlpha8(&data, &width, &height);
@@ -196,7 +206,7 @@ void editor_gui()
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
 
-        if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, ImGuiWindowFlags_None))
+        if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
         {
             ImGui::TextUnformatted("Status Bar Placeholder...");
         }
@@ -263,11 +273,43 @@ void editor_gui()
         ImGui::DockBuilderFinish(dockspace_id);
     }
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
+
     if (ImGui::Begin("Editor"))
     {
-        // ...
+        static TextEditor editor = []()
+        {
+            TextEditor editor;
+            editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+            editor.SetPalette(TextEditor::GetDarkPalette());
+
+            bx::FileReader reader;
+            if (bx::open(&reader, "/Users/fiser/Projects/minimo/src/test/hello_triangle.c"))
+            {
+                defer(bx::close(&reader));
+
+                const i64 size = bx::getSize(&reader);
+
+                char* data = new char[size + 1];
+                defer(delete[] data);
+
+                bx::read(&reader, data, i32(size), {});
+                data[size] = 0;
+
+                // TODO : Remove the need for an extra copy.
+                editor.SetText(data);
+            }
+
+            return editor;
+        }();
+
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        editor.Render("##Editor", ImGui::GetContentRegionAvail(), false);
+        ImGui::PopFont();
     }
     ImGui::End();
+
+    ImGui::PopStyleVar();
 
     const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id);
     // ...
