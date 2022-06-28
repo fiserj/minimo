@@ -165,7 +165,15 @@ if(MNM_EDITOR)
         GIT_TAG        250333d895b1067533533dcfab137512745b9689
     )
 
+    FetchContent_Declare(
+        ImGuiColorTextEdit
+        GIT_REPOSITORY https://github.com/BalazsJako/ImGuiColorTextEdit.git
+        GIT_TAG        0a88824f7de8d0bd11d8419066caa7d3469395c4
+    )
+
     FetchContent_Populate(imgui)
+    FetchContent_Populate(ImGuiColorTextEdit)
 
     include(cmake/imgui.cmake)
+    include(cmake/ImGuiColorTextEdit.cmake)
 endif()
