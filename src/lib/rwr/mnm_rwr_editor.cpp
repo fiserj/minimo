@@ -194,6 +194,32 @@ void ImGui_Impl_EndFrame()
 
 void editor_gui()
 {
+    static TextEditor editor = []()
+    {
+        TextEditor editor;
+        editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+        editor.SetPalette(TextEditor::GetDarkPalette());
+
+        bx::FileReader reader;
+        if (bx::open(&reader, "../src/test/hello_triangle.c"))
+        {
+            defer(bx::close(&reader));
+
+            const i64 size = bx::getSize(&reader);
+
+            char* data = new char[size + 1];
+            defer(delete[] data);
+
+            bx::read(&reader, data, i32(size), {});
+            data[size] = 0;
+
+            // TODO : Remove the need for an extra copy.
+            editor.SetText(data);
+        }
+
+        return editor;
+    }();
+
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     {
@@ -208,7 +234,26 @@ void editor_gui()
 
         if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
         {
-            ImGui::TextUnformatted("Status Bar Placeholder...");
+            static float changed_time = 0.0f;
+            const  float current_time = elapsed();
+
+            static char status[256] = {};
+            static bool changed     = true;
+
+            if (editor.IsTextChanged())
+            {
+                changed      = true;
+                changed_time = current_time;
+            }
+
+            // TODO : Should trigger immediately the first time.
+            if (changed && current_time - changed_time > 0.75f)
+            {
+                snprintf(status, sizeof(status), "Rebuilt at %.1f.\n", current_time);
+                changed = false;
+            }
+
+            ImGui::TextUnformatted(status);
         }
         ImGui::End();
 
@@ -274,42 +319,16 @@ void editor_gui()
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
+    const bool editor_open = ImGui::Begin("Editor");
+    ImGui::PopStyleVar();
 
-    if (ImGui::Begin("Editor"))
+    if (editor_open)
     {
-        static TextEditor editor = []()
-        {
-            TextEditor editor;
-            editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
-            editor.SetPalette(TextEditor::GetDarkPalette());
-
-            bx::FileReader reader;
-            if (bx::open(&reader, "/Users/fiser/Projects/minimo/src/test/hello_triangle.c"))
-            {
-                defer(bx::close(&reader));
-
-                const i64 size = bx::getSize(&reader);
-
-                char* data = new char[size + 1];
-                defer(delete[] data);
-
-                bx::read(&reader, data, i32(size), {});
-                data[size] = 0;
-
-                // TODO : Remove the need for an extra copy.
-                editor.SetText(data);
-            }
-
-            return editor;
-        }();
-
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
         editor.Render("##Editor", ImGui::GetContentRegionAvail(), false);
         ImGui::PopFont();
     }
     ImGui::End();
-
-    ImGui::PopStyleVar();
 
     const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id);
     // ...
