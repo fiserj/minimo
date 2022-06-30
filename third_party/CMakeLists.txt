@@ -71,13 +71,6 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    tinycc
-    GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
-    GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
-    SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
-)
-
-FetchContent_Declare(
     tree-sitter
     GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
     GIT_TAG        v0.20.6
@@ -107,7 +100,6 @@ FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
-FetchContent_Populate(tinycc)
 FetchContent_Populate(tree-sitter)
 FetchContent_Populate(tree-sitter-c)
 
@@ -118,7 +110,6 @@ include(cmake/gleq.cmake)
 include(cmake/HandmadeMath.cmake)
 include(cmake/meshoptimizer.cmake)
 include(cmake/stb.cmake)
-include(cmake/tinycc.cmake)
 include(cmake/tree-sitter.cmake)
 include(cmake/tree-sitter-c.cmake)
 include(cmake/utf8.cmake)
@@ -163,9 +154,18 @@ if(MNM_EDITOR)
         GIT_TAG        dbacac2919d568745d3926a796c6fd5b3d308bff
     )
 
+    FetchContent_Declare(
+        tinycc
+        GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
+        GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
+        SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
+    )
+
     FetchContent_Populate(imgui)
     FetchContent_Populate(ImGuiColorTextEdit)
+    FetchContent_Populate(tinycc)
 
     include(cmake/imgui.cmake)
     include(cmake/ImGuiColorTextEdit.cmake)
+    include(cmake/tinycc.cmake)
 endif()

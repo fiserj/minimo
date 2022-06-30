@@ -46,6 +46,7 @@ function(add_project NAME PROJECT_TYPE)
         target_link_libraries(${NAME} PRIVATE
             imgui
             ImGuiColorTextEdit
+            tinycc
         )
     elseif(PROJECT_TYPE STREQUAL "tests")
         list(APPEND SOURCE_FILES
