@@ -43,6 +43,10 @@ function(add_project NAME PROJECT_TYPE)
             ${SOURCE_FILES}
         )
 
+        target_compile_definitions(${NAME} PRIVATE
+            MNM_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/include"
+        )
+
         target_link_libraries(${NAME} PRIVATE
             imgui
             ImGuiColorTextEdit

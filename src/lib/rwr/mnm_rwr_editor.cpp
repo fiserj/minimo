@@ -144,6 +144,8 @@ void ImGui_Impl_EndFrame()
     );
     projection();
 
+    identity();
+
     for (int i = 0, mesh_id = IMGUI_BASE_MESH_ID; i < draw_data->CmdListsCount; i++)
     {
         const ImDrawList* cmd_list = draw_data->CmdLists[i];
@@ -155,8 +157,6 @@ void ImGui_Impl_EndFrame()
 
             const ImDrawVert* vertices = cmd_list->VtxBuffer.Data + cmd->VtxOffset;
             const ImDrawIdx*  indices  = cmd_list->IdxBuffer.Data + cmd->IdxOffset;
-
-            identity();
 
             begin_mesh(mesh_id, MESH_TRANSIENT | VERTEX_COLOR | VERTEX_TEXCOORD | NO_VERTEX_TRANSFORM);
 
@@ -179,7 +179,7 @@ void ImGui_Impl_EndFrame()
                 int(bx::round(dpi() * (cmd->ClipRect.w - cmd->ClipRect.y)))
             );
 
-            identity();
+            // identity();
             texture(IMGUI_FONT_TEXTURE_ID); // cmd->GetTexID()
             state(STATE_WRITE_RGB | STATE_WRITE_A | STATE_BLEND_ALPHA);
             mesh(mesh_id);
@@ -191,10 +191,293 @@ void ImGui_Impl_EndFrame()
 
 
 // -----------------------------------------------------------------------------
-// TCC STUFF
+// TCC SCRIPT CONTEXT
 // -----------------------------------------------------------------------------
 
-// ...
+struct ScriptCallbacks
+{
+    void (* init   )(void);
+    void (* setup  )(void);
+    void (* update )(void);
+    void (* cleanup)(void);
+};
+
+struct ScriptContext
+{
+    TCCState*       tcc_state;
+    ScriptCallbacks callbacks;
+    float           viewport[4]; // x, y, w, h
+    bool            can_have_input;
+    bool            quit_requested;
+    char            last_error[512];
+    char            status_msg[512];
+};
+
+void destroy(ScriptContext& ctx)
+{
+    if (ctx.tcc_state)
+    {
+        tcc_delete(ctx.tcc_state);
+        ctx.tcc_state = nullptr;
+    }
+}
+
+ScriptCallbacks g_tmp_callbacks = {};
+
+ScriptContext g_script_ctx = {};
+
+
+// -----------------------------------------------------------------------------
+// INTERCEPTED MiNiMo API CALLS
+// -----------------------------------------------------------------------------
+
+// NOTE : This should only be run in an exclusive section.
+int mnm_run_intercepted(void (* init)(void), void (* setup)(void), void (* update)(void), void (* cleanup)(void))
+{
+    g_tmp_callbacks.init    = init;
+    g_tmp_callbacks.setup   = setup;
+    g_tmp_callbacks.update  = update;
+    g_tmp_callbacks.cleanup = cleanup;
+
+    return 0;
+}
+
+void title_intercepted(const char* title)
+{
+    char buf[128] = { 0 };
+
+    strcat(buf, title);
+    strcat(buf, " | MiNiMo Editor");
+
+    ::title(buf);
+}
+
+int pixel_width_intercepted(void)
+{
+    return int(g_script_ctx.viewport[2]);
+}
+
+int pixel_height_intercepted(void)
+{
+    return int(g_script_ctx.viewport[3]);
+}
+
+float aspect_intercepted(void)
+{
+    return float(pixel_width_intercepted()) / float(pixel_height_intercepted());
+}
+
+void quit_intercepted(void)
+{
+    g_script_ctx.quit_requested = true;
+}
+
+int key_down_intercepted(int key)
+{
+    return g_script_ctx.can_have_input ? key_down(key) : 0;
+}
+
+void viewport_intercepted(int x, int y, int width, int height)
+{
+    // TODO : We'll have to cache and handle the symbolic constants ourselves (also for textures).
+    viewport(x, y, width, height);
+}
+
+
+// -----------------------------------------------------------------------------
+// EXPOSED FUNCTIONS' TABLE
+// -----------------------------------------------------------------------------
+
+#define SCRIPT_FUNC(name) { #name, reinterpret_cast<const void*>(::name) }
+
+#define SCRIPT_FUNC_INTERCEPTED(name) { #name, reinterpret_cast<const void*>(name##_intercepted) }
+
+struct ScriptFunc
+{
+    const char* name;
+    const void* func;
+};
+
+const ScriptFunc s_script_funcs[] =
+{
+    SCRIPT_FUNC_INTERCEPTED(mnm_run),
+
+    SCRIPT_FUNC_INTERCEPTED(aspect),
+    SCRIPT_FUNC_INTERCEPTED(key_down),
+    SCRIPT_FUNC_INTERCEPTED(pixel_height),
+    SCRIPT_FUNC_INTERCEPTED(pixel_width),
+    SCRIPT_FUNC_INTERCEPTED(quit),
+    SCRIPT_FUNC_INTERCEPTED(title),
+    SCRIPT_FUNC_INTERCEPTED(viewport),
+
+    SCRIPT_FUNC(begin_mesh),
+    SCRIPT_FUNC(clear_color),
+    SCRIPT_FUNC(clear_depth),
+    SCRIPT_FUNC(color),
+    SCRIPT_FUNC(elapsed),
+    SCRIPT_FUNC(end_mesh),
+    SCRIPT_FUNC(identity),
+    SCRIPT_FUNC(look_at),
+    SCRIPT_FUNC(mesh),
+    SCRIPT_FUNC(ortho),
+    SCRIPT_FUNC(perspective),
+    SCRIPT_FUNC(pop),
+    SCRIPT_FUNC(projection),
+    SCRIPT_FUNC(push),
+    SCRIPT_FUNC(rotate),
+    SCRIPT_FUNC(rotate_x),
+    SCRIPT_FUNC(rotate_y),
+    SCRIPT_FUNC(rotate_z),
+    SCRIPT_FUNC(scale),
+    SCRIPT_FUNC(translate),
+    SCRIPT_FUNC(vertex),
+    SCRIPT_FUNC(view),
+};
+
+
+// -----------------------------------------------------------------------------
+// SCRIPT SOURCE UPDATE
+// -----------------------------------------------------------------------------
+
+const float  s_tcc__mzerosf = -0.0f;
+
+const double s_tcc__mzerodf = -0.0;
+
+TCCState* create_tcc_state(const char* source)
+{
+    ASSERT(source, "Invalid script source pointer.");
+
+    TCCState* state = tcc_new();
+
+    if (!state)
+    {
+        strcpy(g_script_ctx.last_error, "Could not create new 'TCCState'.");
+        return nullptr;
+    }
+
+    tcc_set_error_func(state, nullptr, [](void*, const char* message)
+    {
+        strncpy(g_script_ctx.last_error, message, sizeof(g_script_ctx.last_error));
+    });
+
+    tcc_set_options(state, "-nostdinc -nostdlib");
+
+    (void)tcc_add_include_path(state, MNM_INCLUDE_PATH);
+    (void)tcc_add_include_path(state, TCC_INCLUDE_PATH);
+
+    (void)tcc_add_symbol(state, "__mzerosf", &s_tcc__mzerosf);
+    (void)tcc_add_symbol(state, "__mzerodf", &s_tcc__mzerodf);
+
+    for (u32 i = 0; i < BX_COUNTOF(s_script_funcs); i++)
+    {
+        if (0 > tcc_add_symbol(state, s_script_funcs[i].name, s_script_funcs[i].func))
+        {
+            tcc_delete(state);
+            return nullptr;
+        }
+    }
+
+    if (0 > tcc_set_output_type(state, TCC_OUTPUT_MEMORY) ||
+        0 > tcc_compile_string (state, source) ||
+        0 > tcc_relocate       (state, TCC_RELOCATE_AUTO))
+    {
+        tcc_delete(state);
+        return nullptr;
+    }
+
+    return state;
+}
+
+ScriptCallbacks get_script_callbacks(TCCState* tcc_state)
+{
+    if (auto main_func = reinterpret_cast<int (*)(int, char**)>(tcc_get_symbol(tcc_state, "main")))
+    {
+        static bx::Mutex mutex;
+        bx::MutexScope   lock(mutex);
+
+        // TODO ? Maybe pass the arguments given to the editor?
+        const char* argv[] = { "MiNiMoEd" };
+        main_func(1, const_cast<char**>(argv));
+
+        return g_tmp_callbacks;
+    }
+
+    strcpy(g_script_ctx.last_error, "Could not find 'main' symbol.");
+
+    return {};
+}
+
+bool update_script_context(const char* source)
+{
+    bool success = false;
+
+    if (TCCState* tcc_state = create_tcc_state(source))
+    {
+        ScriptCallbacks callbacks = get_script_callbacks(tcc_state);
+
+        if (callbacks.update)
+        {
+            bx::swap(g_script_ctx.tcc_state, tcc_state);
+
+            g_script_ctx.callbacks      = callbacks;
+            g_script_ctx.quit_requested = false;
+            g_script_ctx.last_error[0]  = 0;
+
+            success = true;
+        }
+        else
+        {
+            strcpy(g_script_ctx.last_error, "Could not determine script's 'update' function.");
+        }
+
+        if (tcc_state)
+        {
+            tcc_delete(tcc_state);
+        }
+    }
+
+    return success;
+}
+
+
+// -----------------------------------------------------------------------------
+// EDITOR CONTEXT
+// -----------------------------------------------------------------------------
+
+struct EditorContext
+{
+    // ScriptContext runtime;
+    TextEditor    editor;
+};
+
+void init(EditorContext& ctx, const char* file_path)
+{
+    ctx = {};
+
+    bx::FileReader reader;
+    if (!bx::open(&reader, file_path))
+    {
+        // TODO : Signal error.
+        return;
+    }
+
+    defer(bx::close(&reader));
+
+    const i64 size = bx::getSize(&reader);
+
+    // TODO : Use own allocator.
+    char* content = reinterpret_cast<char*>(malloc(size + 1));
+    defer(free(content));
+
+    bx::read(&reader, content, i32(size), {});
+    content[size] = 0;
+
+    ctx.editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+    ctx.editor.SetPalette(TextEditor::GetDarkPalette());
+    ctx.editor.SetText(content);
+}
+
+EditorContext g_ed_ctx;
 
 
 // -----------------------------------------------------------------------------
@@ -203,32 +486,6 @@ void ImGui_Impl_EndFrame()
 
 void editor_gui()
 {
-    static TextEditor editor = []()
-    {
-        TextEditor editor;
-        editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
-        editor.SetPalette(TextEditor::GetDarkPalette());
-
-        bx::FileReader reader;
-        if (bx::open(&reader, "../src/test/hello_triangle.c"))
-        {
-            defer(bx::close(&reader));
-
-            const i64 size = bx::getSize(&reader);
-
-            char* data = new char[size + 1];
-            defer(delete[] data);
-
-            bx::read(&reader, data, i32(size), {});
-            data[size] = 0;
-
-            // TODO : Remove the need for an extra copy.
-            editor.SetText(data);
-        }
-
-        return editor;
-    }();
-
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     {
@@ -243,26 +500,28 @@ void editor_gui()
 
         if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
         {
-            static float changed_time = 0.0f;
-            const  float current_time = elapsed();
+            // static float changed_time = 0.0f;
+            // const  float current_time = elapsed();
 
-            static char status[256] = {};
-            static bool changed     = true;
+            // static char status[256] = {};
+            // static bool changed     = true;
 
-            if (editor.IsTextChanged())
-            {
-                changed      = true;
-                changed_time = current_time;
-            }
+            // if (g_ed_ctx.editor.IsTextChanged())
+            // {
+            //     changed      = true;
+            //     changed_time = current_time;
+            // }
 
-            // TODO : Should trigger immediately the first time.
-            if (changed && current_time - changed_time > 0.75f)
-            {
-                snprintf(status, sizeof(status), "Rebuilt at %.1f.\n", current_time);
-                changed = false;
-            }
+            // // TODO : Should trigger immediately the first time.
+            // if (changed && current_time - changed_time > 0.75f)
+            // {
+            //     snprintf(status, sizeof(status), "Rebuilt at %.1f.\n", current_time);
+            //     changed = false;
+            // }
 
-            ImGui::TextUnformatted(status);
+            // ImGui::TextUnformatted(status);
+
+            ImGui::TextUnformatted(g_script_ctx.status_msg);
         }
         ImGui::End();
 
@@ -334,13 +593,26 @@ void editor_gui()
     if (editor_open)
     {
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-        editor.Render("##Editor", ImGui::GetContentRegionAvail(), false);
+        g_ed_ctx.editor.Render("##Editor", ImGui::GetContentRegionAvail(), false);
         ImGui::PopFont();
     }
     ImGui::End();
 
-    const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id);
-    // ...
+    if (const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id))
+    {
+        // TODO : Setup script viewport based on node's rectangle.
+        g_script_ctx.viewport[0] = bx::round(dpi() *  node->Pos .x);
+        g_script_ctx.viewport[1] = bx::round(dpi() *  node->Pos .y);
+        g_script_ctx.viewport[2] = bx::round(dpi() *  node->Size.x);
+        g_script_ctx.viewport[3] = bx::round(dpi() *  node->Size.y);
+
+        printf("VIEWPORT = (%f, %f, %f, %f)\n",
+            g_script_ctx.viewport[0],
+            g_script_ctx.viewport[1],
+            g_script_ctx.viewport[2],
+            g_script_ctx.viewport[3]
+        );
+    }
 
     {
         static bool show_metrics_window = false;
@@ -373,6 +645,25 @@ void init(void)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.IniFilename  = nullptr;
 
+    // TODO : Avoid extra copy.
+    const std::string& content = g_ed_ctx.editor.GetText();
+    if (!content.empty())
+    {
+        if (update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
+        {
+            snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", 0.0f);
+        }
+        else
+        {
+            snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", 0.0f, g_script_ctx.last_error);
+        }
+    }
+
+    if (g_script_ctx.callbacks.init)
+    {
+        g_script_ctx.callbacks.init();
+    }
+
     // ...
 }
 
@@ -384,28 +675,94 @@ void setup(void)
 
     title("MiNiMo Source Code Editor");
 
-    clear_color(0x333333ff);
-    clear_depth(1.0f);
+    // pass(IMGUI_PASS_ID);
 
-    // ...
+    // clear_color(0x333333ff);
+    // clear_depth(1.0f);
+
+    pass(0);
+
+    if (g_script_ctx.callbacks.setup)
+    {
+        // TODO : Size should already be injected by now.
+
+        g_script_ctx.callbacks.setup();
+    }
 }
 
-void draw(void)
+void update(void)
 {
-    ImGuiIO& io = ImGui::GetIO();
-
-    if (!io.WantCaptureKeyboard && !io.WantCaptureMouse && key_down(KEY_ESCAPE))
+    // GUI logic "pass".
     {
-        quit();
+        pass(IMGUI_PASS_ID);
+
+        ImGuiIO& io = ImGui::GetIO();
+
+        if (!io.WantCaptureKeyboard && !io.WantCaptureMouse && key_down(KEY_ESCAPE))
+        {
+            quit();
+        }
+
+        ImGui_Impl_BeginFrame();
+        ImGui::NewFrame();
+
+        editor_gui();
+
+        ImGui::Render();
+        ImGui_Impl_EndFrame();
     }
 
-    ImGui_Impl_BeginFrame();
-    ImGui::NewFrame();
+    // Content pass.
+    if (g_script_ctx.callbacks.update)
+    {
+        ScriptContext*ctx = &g_script_ctx;
 
-    editor_gui();
+        pass(0);
 
-    ImGui::Render();
-    ImGui_Impl_EndFrame();
+        viewport(
+            int(ctx->viewport[0]),
+            int(ctx->viewport[1]),
+            int(ctx->viewport[2]),
+            int(ctx->viewport[3])
+        );
+
+        static float changed_time = 0.0f;
+        const  float current_time = elapsed();
+
+        // static char status[256] = {};
+        static bool changed = false;
+
+        if (g_ed_ctx.editor.IsTextChanged())
+        {
+            changed      = true;
+            changed_time = current_time;
+        }
+
+        if (changed && current_time - changed_time > 0.75f)
+        {
+            changed = false;
+
+            const std::string& content = g_ed_ctx.editor.GetText();
+
+            if (!content.empty() && update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
+            {
+                ctx->callbacks.setup();
+                snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", current_time);
+            }
+            else
+            {
+                snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", current_time, g_script_ctx.last_error);
+            }
+        }
+
+        ctx->callbacks.update();
+    }
+
+    // GUI render pass.
+    {
+        // ImGui::Render();
+        // ImGui_Impl_EndFrame();
+    }
 }
 
 void cleanup(void)
@@ -434,10 +791,14 @@ int main(int, char**)
 {
     // TODO : Argument processing (file to open, etc.).
 
+    const char* file_path = "../src/test/hello_triangle.c";
+
+    init(mnm::rwr::ed::g_ed_ctx, file_path);
+
     return mnm_run(
         ed::init,
         ed::setup,
-        ed::draw,
+        ed::update,
         ed::cleanup
     );
 }
