@@ -147,9 +147,11 @@ enum
 {
     KEY_ANY,
 
+    // KEY_ALT,
     KEY_ALT_LEFT,
     KEY_ALT_RIGHT,
     KEY_BACKSPACE,
+    // KEY_CONTROL,
     KEY_CONTROL_LEFT,
     KEY_CONTROL_RIGHT,
     KEY_DELETE,
@@ -158,9 +160,11 @@ enum
     KEY_ESCAPE,
     KEY_LEFT,
     KEY_RIGHT,
+    // KEY_SHIFT,
     KEY_SHIFT_LEFT,
     KEY_SHIFT_RIGHT,
     KEY_SPACE,
+    // KEY_SUPER,
     KEY_SUPER_LEFT,
     KEY_SUPER_RIGHT,
     KEY_TAB,
@@ -1238,6 +1242,22 @@ void transient_memory(int megabytes);
 /// @returns Frame number.
 ///
 int frame(void);
+
+enum
+{
+    MAX_FONTS,
+    // MAX_FRAMEBUFFERS,
+    // MAX_INSTANCE_BUFFERS,
+    // MAX_MESHES,
+    // MAX_PASSES,
+    // MAX_SHADERS,
+    // MAX_TEXTURES,
+    // MAX_UNIFORMS,
+};
+
+/// Returns the limit / maximum count of a particular resource type.
+///
+int limit(int resource);
 
 
 // -----------------------------------------------------------------------------

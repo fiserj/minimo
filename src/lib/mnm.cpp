@@ -2589,7 +2589,7 @@ void begin_atlas(int id, int flags, int font, float size)
 
     // TODO : Check `flags`.
     ASSERT(id > 0 && u16(id) < MAX_TEXTURES);
-    ASSERT(font > 0 && u16(font) < MAX_FONTS);
+    ASSERT(font > 0 && u16(font) < mnm::MAX_FONTS);
     ASSERT(size >= 5.0f && size <= 4096.0f);
 
     // TODO : Signal error if can't get an atlas.

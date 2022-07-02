@@ -805,9 +805,9 @@ void instances(int id)
 void create_font(int id, const void* data)
 {
     ASSERT(
-        id > 0 && id < int(MAX_FONTS),
+        id > 0 && id < int(mnm::rwr::MAX_FONTS),
         "Font ID %i out of available range 1 ... %i.",
-        id, int(MAX_FONTS - 1)
+        id, int(mnm::rwr::MAX_FONTS - 1)
     );
 
     ASSERT(data, "Invalid data pointer.");
@@ -836,9 +836,9 @@ void begin_atlas(int id, int flags, int font, float size)
     // TODO : Check `flags`.
 
     ASSERT(
-        font > 0 && font < int(MAX_FONTS),
+        font > 0 && font < int(mnm::rwr::MAX_FONTS),
         "Font ID %i out of available range 1 ... %i.",
-        font, int(MAX_FONTS - 1)
+        font, int(mnm::rwr::MAX_FONTS - 1)
     );
 
     ASSERT(
@@ -1072,7 +1072,7 @@ void text(const char* start, const char* end)
 void pass(int id)
 {
     ASSERT(
-        id >= 0 && id < int(MAX_PASSES),
+        id > 0 && id < int(MAX_PASSES),
         "Pass ID %i out of available range 1 ... %i.",
         id, int(MAX_PASSES - 1)
     );
@@ -1530,6 +1530,20 @@ void transient_memory(int megabytes)
 int frame(void)
 {
     return int(g_ctx->frame_number);
+}
+
+int limit(int resource)
+{
+    switch (resource)
+    {
+    case ::MAX_FONTS:
+        return int(mnm::rwr::MAX_FONTS);
+
+    // TODO : Remaining limits.
+
+    default:
+        return 0;
+    }
 }
 
 
