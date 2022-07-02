@@ -32,6 +32,10 @@ target_include_directories(tinycc
         ${PROJECT_BINARY_DIR}/tinycc-config
 )
 
+target_compile_definitions(tinycc PUBLIC
+    TCC_INCLUDE_PATH="${tinycc_SOURCE_DIR}/include"
+)
+
 set_target_properties(tinycc PROPERTIES
     C_STANDARD 99
     C_EXTENSIONS OFF

@@ -840,7 +840,7 @@ struct Context
 
         if (state != STATE_COLD)
         {
-            cursor = CURSOR_H_RESIZE;
+            cursor = CURSOR_RESIZE_EW;
         }
 
         constexpr Color colors[] =

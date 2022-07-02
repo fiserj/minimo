@@ -49,19 +49,13 @@ FetchContent_Declare(
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.3.7
+    GIT_TAG        62e175ef9fae75335575964c845a302447c012c7
 )
 
 FetchContent_Declare(
     HandmadeMath
     GIT_REPOSITORY https://github.com/HandmadeMath/Handmade-Math.git
     GIT_TAG        v1.13.0
-)
-
-FetchContent_Declare(
-    librope
-    GIT_REPOSITORY https://github.com/fiserj/librope.git
-    GIT_TAG        2bb786327f4abf95c38f32aa87378d2cb4dd85cf
 )
 
 FetchContent_Declare(
@@ -74,13 +68,6 @@ FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG        af1a5bc352164740c1cc1354942b1c6b72eacb8a
-)
-
-FetchContent_Declare(
-    tinycc
-    GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
-    GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
-    SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
 )
 
 FetchContent_Declare(
@@ -111,10 +98,8 @@ FetchContent_Populate(bimg)
 FetchContent_Populate(bx)
 FetchContent_Populate(gleq)
 FetchContent_Populate(HandmadeMath)
-FetchContent_Populate(librope)
 FetchContent_Populate(meshoptimizer)
 FetchContent_Populate(stb)
-FetchContent_Populate(tinycc)
 FetchContent_Populate(tree-sitter)
 FetchContent_Populate(tree-sitter-c)
 
@@ -123,10 +108,8 @@ include(cmake/bimg.cmake)
 include(cmake/bx.cmake)
 include(cmake/gleq.cmake)
 include(cmake/HandmadeMath.cmake)
-include(cmake/librope.cmake)
 include(cmake/meshoptimizer.cmake)
 include(cmake/stb.cmake)
-include(cmake/tinycc.cmake)
 include(cmake/tree-sitter.cmake)
 include(cmake/tree-sitter-c.cmake)
 include(cmake/utf8.cmake)
@@ -156,4 +139,33 @@ if(MNM_TESTS)
         Catch2
         minimo_assets
     )
+endif()
+
+if(MNM_EDITOR)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        250333d895b1067533533dcfab137512745b9689
+    )
+
+    FetchContent_Declare(
+        ImGuiColorTextEdit
+        GIT_REPOSITORY https://github.com/fiserj/ImGuiColorTextEdit.git
+        GIT_TAG        d8602054d279a2fbb324c72aa42b297a03edaabd
+    )
+
+    FetchContent_Declare(
+        tinycc
+        GIT_REPOSITORY https://github.com/TinyCC/tinycc.git
+        GIT_TAG        027b8fb9b88fe137447fb8bb1b61079be9702472
+        SOURCE_DIR     "${FETCHCONTENT_BASE_DIR}/tinycc" # Needed for a fix, see `cmake/tinycc.cmake`.
+    )
+
+    FetchContent_Populate(imgui)
+    FetchContent_Populate(ImGuiColorTextEdit)
+    FetchContent_Populate(tinycc)
+
+    include(cmake/imgui.cmake)
+    include(cmake/ImGuiColorTextEdit.cmake)
+    include(cmake/tinycc.cmake)
 endif()

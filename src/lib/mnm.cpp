@@ -1631,10 +1631,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     g_ctx.cursors[CURSOR_ARROW    ] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR    );
     g_ctx.cursors[CURSOR_CROSSHAIR] = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-    g_ctx.cursors[CURSOR_H_RESIZE ] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR  );
+    // g_ctx.cursors[CURSOR_H_RESIZE ] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR  );
     g_ctx.cursors[CURSOR_HAND     ] = glfwCreateStandardCursor(GLFW_HAND_CURSOR     );
     g_ctx.cursors[CURSOR_I_BEAM   ] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR    );
-    g_ctx.cursors[CURSOR_V_RESIZE ] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR  );
+    // g_ctx.cursors[CURSOR_V_RESIZE ] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR  );
 
     g_ctx.task_scheduler.Initialize(std::max(3u, std::thread::hardware_concurrency()) - 1);
 
@@ -1956,10 +1956,10 @@ int run(void (* init)(void), void (*setup)(void), void (*draw)(void), void (*cle
 
     glfwDestroyCursor(g_ctx.cursors[CURSOR_ARROW    ]);
     glfwDestroyCursor(g_ctx.cursors[CURSOR_CROSSHAIR]);
-    glfwDestroyCursor(g_ctx.cursors[CURSOR_H_RESIZE ]);
+    // glfwDestroyCursor(g_ctx.cursors[CURSOR_H_RESIZE ]);
     glfwDestroyCursor(g_ctx.cursors[CURSOR_HAND     ]);
     glfwDestroyCursor(g_ctx.cursors[CURSOR_I_BEAM   ]);
-    glfwDestroyCursor(g_ctx.cursors[CURSOR_V_RESIZE ]);
+    // glfwDestroyCursor(g_ctx.cursors[CURSOR_V_RESIZE ]);
 
     glfwDestroyWindow(g_ctx.window.handle);
     glfwTerminate();

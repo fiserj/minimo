@@ -113,10 +113,14 @@ enum
     // Standard cursor shapes.
     CURSOR_ARROW,
     CURSOR_CROSSHAIR,
-    CURSOR_H_RESIZE,
     CURSOR_HAND,
     CURSOR_I_BEAM,
-    CURSOR_V_RESIZE,
+    CURSOR_NOT_ALLOWED,
+    CURSOR_RESIZE_ALL,
+    CURSOR_RESIZE_EW,
+    CURSOR_RESIZE_NESW,
+    CURSOR_RESIZE_NS,
+    CURSOR_RESIZE_NWSE,
 
     // Cursor not visible, but otherwise behaving normally.
     CURSOR_HIDDEN,

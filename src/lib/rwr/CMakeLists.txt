@@ -42,6 +42,16 @@ function(add_project NAME PROJECT_TYPE)
         add_executable(${NAME}
             ${SOURCE_FILES}
         )
+
+        target_compile_definitions(${NAME} PRIVATE
+            MNM_INCLUDE_PATH="${CMAKE_SOURCE_DIR}/include"
+        )
+
+        target_link_libraries(${NAME} PRIVATE
+            imgui
+            ImGuiColorTextEdit
+            tinycc
+        )
     elseif(PROJECT_TYPE STREQUAL "tests")
         list(APPEND SOURCE_FILES
             mnm_rwr_lib_tests.cpp

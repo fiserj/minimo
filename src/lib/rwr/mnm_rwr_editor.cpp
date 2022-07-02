@@ -1,5 +1,19 @@
 #include "mnm_rwr_lib.cpp"
 
+#include <bx/file.h>
+
+#include <imgui.h>
+#include <imgui_internal.h>
+
+#include <imgui_impl_glfw.cpp>
+
+#include <TextEditor.h>
+
+#include <tinycc/libtcc.h>
+
+#include "font_input_mono.h"
+#include "font_segoe_ui.h"
+
 namespace mnm
 {
 
@@ -13,563 +27,578 @@ namespace
 {
 
 // -----------------------------------------------------------------------------
-// LIMITS
+// IMGUI ADAPTERS
 // -----------------------------------------------------------------------------
 
-constexpr u32 MAX_DRAW_LIST_SIZE     = 4096;
+constexpr int IMGUI_PASS_ID         = MAX_PASSES   - 1;
+constexpr int IMGUI_FONT_TEXTURE_ID = MAX_TEXTURES - 1;
+constexpr int IMGUI_BASE_MESH_ID    = MAX_MESHES   - 1;
 
-constexpr u32 MAX_COLOR_PALETTE_SIZE = 32;
-
-constexpr u32 MAX_CLIP_STACK_SIZE    = 4;
-
-
-// -----------------------------------------------------------------------------
-// EDITOR WIDGET STATE
-// -----------------------------------------------------------------------------
-
-enum State : u8
+void ImGui_Impl_Init()
 {
-    STATE_COLD,
-    STATE_HOT,
-    STATE_ACTIVE,
-};
+    ImGuiIO& io = ImGui::GetIO();
 
-
-// -----------------------------------------------------------------------------
-// EDITOR "COLOR MANAGEMENT"
-// -----------------------------------------------------------------------------
-
-enum Color : u8
-{
-    COLOR_BACKGROUND,
-    COLOR_DIVIDER_COLD,
-    COLOR_DIVIDER_HOT,
-    COLOR_DIVIDER_ACTIVE,
-    COLOR_LINE_NUMBER,
-    COLOR_LINE_NUMBER_SELECTED,
-    COLOR_STATUS_BAR,
-    COLOR_TEXT,
-    COLOR_TEXT_SELECTED,
-};
-
-using ColorPalette = FixedArray<Vec4, MAX_COLOR_PALETTE_SIZE>;
-
-void set_color(ColorPalette& palette, Color key, u32 rgba)
-{
-    Vec4& color = palette[key];
-
-    constexpr float mul = 1.0f / 255.0f;
-
-    color.R = ((rgba & 0xff000000) >> 24) * mul;
-    color.G = ((rgba & 0x00ff0000) >> 16) * mul;
-    color.B = ((rgba & 0x0000ff00) >>  8) * mul;
-    color.A = ((rgba & 0x000000ff)      ) * mul;
+    io.BackendRendererUserData = nullptr;
+    io.BackendRendererName     = "MiNiMo";
 }
 
-
-// -----------------------------------------------------------------------------
-// RECTANGLE REGION
-// -----------------------------------------------------------------------------
-
-struct Rect
+float get_font_scale(const void* ttf_data, float cap_pixel_size)
 {
-    float x0;
-    float y0;
-    float x1;
-    float y1;
-};
+    stbtt_fontinfo font_info = {};
+    stbtt_InitFont(&font_info, reinterpret_cast<const unsigned char*>(ttf_data), 0);
 
-bool operator==(const Rect& first, const Rect& second)
-{
-    return
-        first.x0 == second.x0 &&
-        first.y0 == second.y0 &&
-        first.x1 == second.x1 &&
-        first.y1 == second.y1 ;
-}
-
-
-// -----------------------------------------------------------------------------
-// EDITOR GUI ID STACK
-// -----------------------------------------------------------------------------
-
-union IdStack
-{
-    struct
+    i16 cap_height = 0;
     {
-        u8  size;
-        u8  data[7];
-    };
+        const int table = stbtt__find_table(
+            font_info.data,
+            font_info.fontstart,
+            "OS/2"
+        );
 
-    u64     hash = 0;
-};
-
-u8 top(const IdStack& stack)
-{
-    ASSERT(stack.size > 0, "ID stack empty.");
-
-    return stack.data[stack.size - 1];
-}
-
-u8 pop(IdStack& stack)
-{
-    const u8 value = top(stack);
-
-    // NOTE : We must explicitly clear the popped value, so that the hash is
-    //        consistent.
-    stack.data[stack.size-- - 1] = 0;
-
-    return value;
-}
-
-void push(IdStack& stack, u8 id)
-{
-    ASSERT(stack.size < BX_COUNTOF(stack.data), "ID stack full.");
-
-    stack.data[stack.size++] = id;
-}
-
-IdStack copy_and_push(const IdStack& stack, u8 id)
-{
-    IdStack copy = stack;
-    push(copy, id);
-
-    return copy;
-}
-
-
-// -----------------------------------------------------------------------------
-// EDITOR GUI CLIP STACK
-// -----------------------------------------------------------------------------
-
-// Very limited clip stack. Can only host `MAX_CLIP_STACK_SIZE` unique values
-// after being reset.
-struct ClipStack
-{
-    FixedArray<Rect, MAX_CLIP_STACK_SIZE> rects; // Unique values, not in LIFO order!
-    FixedArray<u8  , MAX_CLIP_STACK_SIZE> data;
-    u8                                    size;
-    u8                                    used;
-};
-
-void reset(ClipStack& stack, const Rect& viewport)
-{
-    stack.rects[0] = viewport;
-    stack.data [0] = 0;
-    stack.size     = 1;
-    stack.used     = 1;
-}
-
-u8 push(ClipStack& stack, const Rect& rect)
-{
-    // ASSERT(size < MAX_CLIP_STACK_SIZE);
-
-    u8 idx = U8_MAX;
-
-    for (u8 i = 0; i < stack.used; i++)
-    {
-        if (stack.rects[i] == rect)
+        if (table && ttUSHORT(font_info.data + table) >= 2) // Version.
         {
-            idx = i;
-            break;
+            cap_height = ttSHORT(font_info.data + table + 88); // sCapHeight.
         }
-    }
 
-    ASSERT(
-        idx != U8_MAX || stack.used < MAX_CLIP_STACK_SIZE,
-        "Could not push new value."
-    );
-
-    if (idx == U8_MAX && stack.used < MAX_CLIP_STACK_SIZE)
-    {
-        idx = stack.used++;
-        stack.rects[idx] = rect;
-    }
-
-    stack.data[stack.size++] = idx;
-
-    return idx;
-}
-
-void pop(ClipStack& stack)
-{
-    ASSERT(stack.size > 0, "Clip stack empty.");
-
-    stack.size--;
-}
-
-u8 top(const ClipStack& stack)
-{
-    ASSERT(stack.size > 0, "Clip stack empty.");
-
-    return stack.data[stack.size - 1];
-}
-
-
-// -----------------------------------------------------------------------------
-// EDITOR GRAPHIC RESOURCES
-// -----------------------------------------------------------------------------
-
-struct Resources
-{
-    int font_atlas;
-
-    int framebuffer_glyph_cache;
-
-    int mesh_tmp_text;
-    int mesh_gui_rects;
-    int mesh_gui_text;
-
-    int pass_glyph_cache;
-    int pass_gui;
-
-    int program_gui_text;
-
-    int texture_glyph_cache;
-    int texture_tmp_atlas;
-
-    int uniform_text_info;
-};
-
-struct AtlasInfo
-{
-    float texel_size;
-    float glyph_cols;
-    float glyph_texel_width;
-    float glyph_texel_height;
-    float glyph_texel_to_screen_width_ratio;
-    float glyph_texel_to_screen_hegiht_ratio;
-
-    float _unused[2];
-};
-
-struct Uniforms
-{
-    AtlasInfo    atlas_info;
-    ColorPalette color_palette;
-    ClipStack    clip_stack; // NOTE : Must be last, since we only copy `rects`.
-};
-
-// NOTE : This is to ensure that we can safely copy instance of `Uniforms`
-//        object into shader without shuffling with the layout in any way.
-static_assert(
-    (offsetof(Uniforms , color_palette) % sizeof(Vec4) == 0) &&
-    (offsetof(Uniforms , clip_stack   ) % sizeof(Vec4) == 0) &&
-    (offsetof(ClipStack, rects        )                == 0) &&
-    "Invalid assumption about `Uniforms` memory layout."
-);
-
-void init(Resources& resources)
-{
-    // ...
-}
-
-
-
-// -----------------------------------------------------------------------------
-// EDITOR FONT GLYPH CACHE
-// -----------------------------------------------------------------------------
-
-struct GlyphCache
-{
-    int   texture_size; // = 0;
-    int   glyph_cols; //   = 0;
-    float glyph_width; //  = 0.0f; // In pixels, including one-pixel padding.
-    float glyph_height; // = 0.0f; // In pixels, no padding.
-};
-
-float screen_width(GlyphCache& cache)
-{
-    return (cache.glyph_width  - 1.0f) / dpi();
-}
-
-float screen_height(GlyphCache& cache)
-{
-    return cache.glyph_height / dpi();
-}
-
-u32 codepoint_index(GlyphCache& cache, int codepoint)
-{
-    BX_UNUSED(cache);
-
-    if (codepoint >= 32 && codepoint <= 126)
-    {
-        return u32(codepoint - 32);
-    }
-
-    // TODO : Utilize hashmap for the rest of the stored characters.
-    // ...
-
-    // Replacement character.
-    return 95;
-}
-
-int submit_glyph_range(u32 start, u32 end, int position_index, const GlyphCache& cache)
-{
-    char buffer[5] = { 0 };
-
-    for (u32 codepoint = start; codepoint <= end; codepoint++)
-    {
-        const int x = position_index % cache.glyph_cols;
-        const int y = position_index / cache.glyph_cols;
-
-        position_index++;
-
-        identity();
-        translate(x * cache.glyph_width, (y + 0.25f) * cache.glyph_height, 0.0f);
-
-        const u32 size = utf8_encode(codepoint, buffer);
-        text(buffer, buffer + size);
-    }
-
-    return position_index;
-}
-
-void rebuild(GlyphCache& cache, const Resources& resources, float cap_height)
-{
-    ASSERT(cap_height > 0.0f, "Non-positive cap height %f.", cap_height);
-
-    begin_atlas(
-        resources.texture_tmp_atlas,
-        ATLAS_H_OVERSAMPLE_2X | ATLAS_NOT_THREAD_SAFE | ATLAS_ALLOW_UPDATE,
-        resources.font_atlas,
-        cap_height * dpi()
-    );
-    glyph_range(0x0020, 0x007e); // Printable ASCII.
-    glyph_range(0xfffd, 0xfffd); // Replacement character.
-    end_atlas();
-
-    text_size(
-        resources.texture_tmp_atlas, "X", 0, 1.0f,
-        &cache.glyph_width, &cache.glyph_height
-    );
-
-    cache.glyph_width  += 1.0f;
-    cache.glyph_height *= 2.0f;
-
-    for (cache.texture_size = 128; ; cache.texture_size *= 2)
-    {
-        // TODO : Rounding and padding.
-        cache.glyph_cols = int(cache.texture_size / cache.glyph_width );
-        const int   rows = int(cache.texture_size / cache.glyph_height);
-
-        // TODO : Check against the dynamic glyph count.
-        if (cache.glyph_cols * rows >= 96)
-        {
-            break;
-        }
-    }
-
-    begin_text(
-        resources.mesh_tmp_text,
-        resources.texture_tmp_atlas,
-        TEXT_TRANSIENT | TEXT_V_ALIGN_CAP_HEIGHT
-    );
-    {
-        color(0xffffffff);
-
-        int index = 0;
-
-        index = submit_glyph_range(0x0020, 0x007e, index, cache);
-        ASSERT(index == 95, "Invalid glyph cache index %i.", index);
-
-        index = submit_glyph_range(0xfffd, 0xfffd, index, cache);
-        ASSERT(index == 96, "Invalid glyph cache index %i.", index);
-    }
-    end_text();
-
-    create_texture(
-        resources.texture_glyph_cache,
-        TEXTURE_R8 | TEXTURE_CLAMP | TEXTURE_TARGET,
-        cache.texture_size,
-        cache.texture_size
-    );
-
-    begin_framebuffer(resources.framebuffer_glyph_cache);
-    texture(resources.texture_glyph_cache);
-    end_framebuffer();
-
-    pass(resources.pass_glyph_cache);
-
-    framebuffer(resources.framebuffer_glyph_cache);
-    clear_color(0x000000ff); // TODO : If we dynamically update the cache, we only have to clear before the first draw.
-    viewport(0, 0, cache.texture_size, cache.texture_size);
-
-    identity();
-    ortho(0.0f, float(cache.texture_size), float(cache.texture_size), 0.0f, 1.0f, -1.0f);
-    projection();
-
-    identity();
-    mesh(resources.mesh_tmp_text);
-}
-
-
-// -----------------------------------------------------------------------------
-// EDITOR GUI DRAW LIST
-// -----------------------------------------------------------------------------
-
-// Simple draw list, supports only rectangles.
-struct DrawList
-{
-    struct Header
-    {
-        u16 glyph_count;
-        u8  color_index;
-        u8  clip_index;
+        // TODO : Estimate cap height from capital `H` bounding box?
+        ASSERT(cap_height, "Can't determine cap height.");
     };
 
-    union Data
-    {
-        u32 as_u32;
-        f32 as_f32;
-    };
+    int ascent, descent;
+    stbtt_GetFontVMetrics(&font_info, &ascent, &descent, nullptr);
 
-    union Item
-    {
-        Header header;
-        Data   data;
-    };
-
-    Item data[MAX_DRAW_LIST_SIZE]; // TODO : Dynamic memory ?
-    u32  size;
-    u32  offset;
-    u32  empty_glyph_index; // TODO : Set this when space not first in the atlas.
-};
-
-void add_rect(DrawList& list, const Rect& rect, u8 color_index, u8 clip_index)
-{
-    ASSERT(list.size + 5 < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
-
-    list.data[list.size++].header      = { 0, color_index, clip_index };
-    list.data[list.size++].data.as_f32 = rect.x0;
-    list.data[list.size++].data.as_f32 = rect.y0;
-    list.data[list.size++].data.as_f32 = rect.x1;
-    list.data[list.size++].data.as_f32 = rect.y1;
+    // TODO : Fix possible division by zero.
+    return (ascent - descent) * cap_pixel_size / cap_height;
 }
 
-void add_glyph(DrawList& list, u32 index)
+void ImGui_Impl_BeginFrame()
 {
-    ASSERT(list.size < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
+    ImGuiIO& io = ImGui::GetIO();
 
-    list.data[list.size++].data.as_u32 = index;
-}
-
-void start_string(DrawList& list, float x, float y, u8 color_index, u8 clip_index)
-{
-    ASSERT(list.size + 3 < MAX_DRAW_LIST_SIZE, "Text editor GUI draw list full.");
-
-    list.offset = list.size;
-
-    list.data[list.size++].header      = { 0, color_index, clip_index };
-    list.data[list.size++].data.as_f32 = x;
-    list.data[list.size++].data.as_f32 = y;
-}
-
-void end_string(DrawList& list)
-{
-    const u32 glyph_count = list.size - list.offset - 3;
-    ASSERT(glyph_count <= U16_MAX, "Text editor GUI string too long.");
-
-    if (glyph_count)
+    if (!io.BackendRendererUserData || dpi_changed())
     {
-        list.data[list.offset].header.glyph_count = u16(glyph_count);
+        unsigned char* data;
+        int            width, height;
+
+        io.FontGlobalScale         = 0.5f / dpi(); // TODO : Investigate behavior with DPI other than 2.0.
+        io.DisplayFramebufferScale = { 1.0f, 1.0f };
+
+        const float cap_size   = bx::round(18.0f * dpi()); // TODO : Allow user to specify size.
+
+        ImFontConfig font_cfg;
+        font_cfg.FontDataOwnedByAtlas = false;
+        font_cfg.OversampleH          = 2.0f;
+
+        io.Fonts->Clear();
+        io.Fonts->AddFontFromMemoryTTF(
+            const_cast<unsigned int*>(font_segoe_ui_data),
+            font_segoe_ui_size,
+            get_font_scale(font_segoe_ui_data, cap_size),
+            &font_cfg
+        );
+        io.Fonts->AddFontFromMemoryTTF(
+            const_cast<unsigned int*>(font_input_mono_data),
+            font_input_mono_size,
+            get_font_scale(font_input_mono_data, cap_size),
+            &font_cfg
+        );
+        io.Fonts->GetTexDataAsAlpha8(&data, &width, &height);
+
+        load_texture(IMGUI_FONT_TEXTURE_ID, TEXTURE_R8, width, height, width, data);
+
+        io.BackendRendererUserData = reinterpret_cast<void*>(true);
     }
-    else
+
+    io.DeltaTime   = float(dt());
+    io.DisplaySize = { ::width(), ::height() };
+
+    if (ImGui_ImplGlfw_GetBackendData()->WantUpdateMonitors)
     {
-        // NOTE : Empty strings (glyphs not in the cache).
-        list.size -= 3;
+        ImGui_ImplGlfw_UpdateMonitors();
     }
+
+    ImGui_ImplGlfw_UpdateMouseData  ();
+    ImGui_ImplGlfw_UpdateMouseCursor();
+    ImGui_ImplGlfw_UpdateGamepads   ();
 }
 
-float encode_base_vertex(u32 glyph_index, u8 color_index, u8 clip_index)
+void ImGui_Impl_EndFrame()
 {
-    return (
-        ((glyph_index  * MAX_COLOR_PALETTE_SIZE) +
-          color_index) * MAX_CLIP_STACK_SIZE +
-          clip_index ) * 4;
-}
+    const ImDrawData* draw_data = ImGui::GetDrawData();
 
-void submit
-(
-    const DrawList&  list,
-    const Resources& resources,
-    const Vec2&      glyph_size,
-    const void*      uniforms
-)
-{
-    if (list.size == 0)
+    if (!draw_data->CmdListsCount)
     {
         return;
     }
 
-    ASSERT(list.size >= 4, "Invalid list size %" PRIu32 ".", list.size);
+    ::push();
 
-    begin_mesh(
-        resources.mesh_gui_text,
-        MESH_TRANSIENT | PRIMITIVE_QUADS | NO_VERTEX_TRANSFORM
+    identity();
+    ortho(
+        draw_data->DisplayPos.x,
+        draw_data->DisplayPos.x + draw_data->DisplaySize.x,
+        draw_data->DisplayPos.y + draw_data->DisplaySize.y,
+        draw_data->DisplayPos.y,
+        -1.0f,
+        +1.0f
     );
+    projection();
 
-    const float width  = glyph_size.X;
-    const float height = glyph_size.Y;
+    identity();
 
-    for (u32 i = 0; i < list.size;)
+    for (int i = 0, mesh_id = IMGUI_BASE_MESH_ID; i < draw_data->CmdListsCount; i++)
     {
-        const DrawList::Header header = list.data[i++].header;
+        const ImDrawList* cmd_list = draw_data->CmdLists[i];
 
-        if (header.glyph_count)
+        for (int j = 0; j < cmd_list->CmdBuffer.Size; j++, mesh_id--)
         {
-            float        x0 = list.data[i++].data.as_f32;
-            const float  y0 = list.data[i++].data.as_f32;
-            float        x1 = x0 + width;
-            const float  y1 = y0 + height;
+            const ImDrawCmd* cmd = &cmd_list->CmdBuffer[j];
+            ASSERT(!cmd->UserCallback, "Custom ImGui render callback not supported.");
 
-            for (u32 j = 0; j < header.glyph_count; j++, i++)
+            const ImDrawVert* vertices = cmd_list->VtxBuffer.Data + cmd->VtxOffset;
+            const ImDrawIdx*  indices  = cmd_list->IdxBuffer.Data + cmd->IdxOffset;
+
+            begin_mesh(mesh_id, MESH_TRANSIENT | VERTEX_COLOR | VERTEX_TEXCOORD | NO_VERTEX_TRANSFORM);
+
+            for (unsigned int k = 0; k < cmd->ElemCount; k++)
             {
-                const float vtx = encode_base_vertex(
-                    list.data[i].data.as_u32,
-                    header.color_index,
-                    header.clip_index
-                );
+                const ImDrawVert& vertex = vertices[indices[k]];
 
-                vertex(x0, y0, vtx + 0.0f);
-                vertex(x0, y1, vtx + 1.0f);
-                vertex(x1, y1, vtx + 2.0f);
-                vertex(x1, y0, vtx + 3.0f);
-
-                x0  = x1;
-                x1 += width;
+                color   (bx::endianSwap(vertex.col));
+                texcoord(vertex.uv.x, vertex.uv.y);
+                ::vertex(vertex.pos.x, vertex.pos.y, 0.0f);
             }
-        }
-        else
-        {
-            const float x0  = list.data[i++].data.as_f32;
-            const float y0  = list.data[i++].data.as_f32;
-            const float x1  = list.data[i++].data.as_f32;
-            const float y1  = list.data[i++].data.as_f32;
 
-            const float vtx = encode_base_vertex(
-                list.empty_glyph_index,
-                header.color_index, 
-                header.clip_index
+            end_mesh();
+
+            // TODO : Check the DPI handling in this is OK.
+            scissor(
+                int(bx::round(dpi() *  cmd->ClipRect.x)),
+                int(bx::round(dpi() *  cmd->ClipRect.y)),
+                int(bx::round(dpi() * (cmd->ClipRect.z - cmd->ClipRect.x))),
+                int(bx::round(dpi() * (cmd->ClipRect.w - cmd->ClipRect.y)))
             );
 
-            vertex(x0, y0, vtx + 0.0f);
-            vertex(x0, y1, vtx + 1.0f);
-            vertex(x1, y1, vtx + 2.0f);
-            vertex(x1, y0, vtx + 3.0f);
+            // identity();
+            texture(IMGUI_FONT_TEXTURE_ID); // cmd->GetTexID()
+            state(STATE_WRITE_RGB | STATE_WRITE_A | STATE_BLEND_ALPHA);
+            mesh(mesh_id);
         }
     }
 
-    end_mesh();
+    ::pop();
+}
 
-    identity();
-    state   (STATE_BLEND_ALPHA | STATE_WRITE_RGB);
-    uniform (resources.uniform_text_info, uniforms);
-    texture (resources.texture_glyph_cache);
-    shader  (resources.program_gui_text);
-    mesh    (resources.mesh_gui_text);
 
-    // list.offset = 0;
+// -----------------------------------------------------------------------------
+// TCC SCRIPT CONTEXT
+// -----------------------------------------------------------------------------
+
+struct ScriptCallbacks
+{
+    void (* init   )(void);
+    void (* setup  )(void);
+    void (* update )(void);
+    void (* cleanup)(void);
+};
+
+struct ScriptContext
+{
+    TCCState*       tcc_state;
+    ScriptCallbacks callbacks;
+    int             viewport[4]; // x, y, w, h
+    bool            can_have_input;
+    bool            quit_requested;
+    char            last_error[512];
+    char            status_msg[512];
+};
+
+void destroy(ScriptContext& ctx)
+{
+    if (ctx.tcc_state)
+    {
+        tcc_delete(ctx.tcc_state);
+        ctx.tcc_state = nullptr;
+    }
+}
+
+ScriptCallbacks g_tmp_callbacks = {};
+
+ScriptContext g_script_ctx = {};
+
+
+// -----------------------------------------------------------------------------
+// INTERCEPTED MiNiMo API CALLS
+// -----------------------------------------------------------------------------
+
+// NOTE : This should only be run in an exclusive section.
+int mnm_run_intercepted(void (* init)(void), void (* setup)(void), void (* update)(void), void (* cleanup)(void))
+{
+    g_tmp_callbacks.init    = init;
+    g_tmp_callbacks.setup   = setup;
+    g_tmp_callbacks.update  = update;
+    g_tmp_callbacks.cleanup = cleanup;
+
+    return 0;
+}
+
+void title_intercepted(const char* title)
+{
+    char buf[128] = { 0 };
+
+    strcat(buf, title);
+    strcat(buf, " | MiNiMo Editor");
+
+    ::title(buf);
+}
+
+int pixel_width_intercepted(void)
+{
+    return g_script_ctx.viewport[2];
+}
+
+int pixel_height_intercepted(void)
+{
+    return g_script_ctx.viewport[3];
+}
+
+float aspect_intercepted(void)
+{
+    return float(pixel_width_intercepted()) / float(pixel_height_intercepted());
+}
+
+void quit_intercepted(void)
+{
+    g_script_ctx.quit_requested = true;
+}
+
+int key_down_intercepted(int key)
+{
+    return g_script_ctx.can_have_input ? key_down(key) : 0;
+}
+
+void viewport_intercepted(int x, int y, int width, int height)
+{
+    // TODO : We'll have to cache and handle the symbolic constants ourselves (also for textures).
+    viewport(x, y, width, height);
+}
+
+
+// -----------------------------------------------------------------------------
+// EXPOSED FUNCTIONS' TABLE
+// -----------------------------------------------------------------------------
+
+#define SCRIPT_FUNC(name) { #name, reinterpret_cast<const void*>(::name) }
+
+#define SCRIPT_FUNC_INTERCEPTED(name) { #name, reinterpret_cast<const void*>(name##_intercepted) }
+
+struct ScriptFunc
+{
+    const char* name;
+    const void* func;
+};
+
+const ScriptFunc s_script_funcs[] =
+{
+    SCRIPT_FUNC_INTERCEPTED(mnm_run),
+
+    SCRIPT_FUNC_INTERCEPTED(aspect),
+    SCRIPT_FUNC_INTERCEPTED(key_down),
+    SCRIPT_FUNC_INTERCEPTED(pixel_height),
+    SCRIPT_FUNC_INTERCEPTED(pixel_width),
+    SCRIPT_FUNC_INTERCEPTED(quit),
+    SCRIPT_FUNC_INTERCEPTED(title),
+    SCRIPT_FUNC_INTERCEPTED(viewport),
+
+    SCRIPT_FUNC(begin_mesh),
+    SCRIPT_FUNC(clear_color),
+    SCRIPT_FUNC(clear_depth),
+    SCRIPT_FUNC(color),
+    SCRIPT_FUNC(elapsed),
+    SCRIPT_FUNC(end_mesh),
+    SCRIPT_FUNC(identity),
+    SCRIPT_FUNC(look_at),
+    SCRIPT_FUNC(mesh),
+    SCRIPT_FUNC(ortho),
+    SCRIPT_FUNC(perspective),
+    SCRIPT_FUNC(pop),
+    SCRIPT_FUNC(projection),
+    SCRIPT_FUNC(push),
+    SCRIPT_FUNC(rotate),
+    SCRIPT_FUNC(rotate_x),
+    SCRIPT_FUNC(rotate_y),
+    SCRIPT_FUNC(rotate_z),
+    SCRIPT_FUNC(scale),
+    SCRIPT_FUNC(translate),
+    SCRIPT_FUNC(vertex),
+    SCRIPT_FUNC(view),
+};
+
+
+// -----------------------------------------------------------------------------
+// SCRIPT SOURCE UPDATE
+// -----------------------------------------------------------------------------
+
+const float  s_tcc__mzerosf = -0.0f;
+
+const double s_tcc__mzerodf = -0.0;
+
+TCCState* create_tcc_state(const char* source)
+{
+    ASSERT(source, "Invalid script source pointer.");
+
+    TCCState* state = tcc_new();
+
+    if (!state)
+    {
+        strcpy(g_script_ctx.last_error, "Could not create new 'TCCState'.");
+        return nullptr;
+    }
+
+    tcc_set_error_func(state, nullptr, [](void*, const char* message)
+    {
+        strncpy(g_script_ctx.last_error, message, sizeof(g_script_ctx.last_error));
+    });
+
+    tcc_set_options(state, "-nostdinc -nostdlib");
+
+    (void)tcc_add_include_path(state, MNM_INCLUDE_PATH);
+    (void)tcc_add_include_path(state, TCC_INCLUDE_PATH);
+
+    (void)tcc_add_symbol(state, "__mzerosf", &s_tcc__mzerosf);
+    (void)tcc_add_symbol(state, "__mzerodf", &s_tcc__mzerodf);
+
+    for (u32 i = 0; i < BX_COUNTOF(s_script_funcs); i++)
+    {
+        if (0 > tcc_add_symbol(state, s_script_funcs[i].name, s_script_funcs[i].func))
+        {
+            tcc_delete(state);
+            return nullptr;
+        }
+    }
+
+    if (0 > tcc_set_output_type(state, TCC_OUTPUT_MEMORY) ||
+        0 > tcc_compile_string (state, source) ||
+        0 > tcc_relocate       (state, TCC_RELOCATE_AUTO))
+    {
+        tcc_delete(state);
+        return nullptr;
+    }
+
+    return state;
+}
+
+ScriptCallbacks get_script_callbacks(TCCState* tcc_state)
+{
+    if (auto main_func = reinterpret_cast<int (*)(int, char**)>(tcc_get_symbol(tcc_state, "main")))
+    {
+        static bx::Mutex mutex;
+        bx::MutexScope   lock(mutex);
+
+        // TODO ? Maybe pass the arguments given to the editor?
+        const char* argv[] = { "MiNiMoEd" };
+        main_func(1, const_cast<char**>(argv));
+
+        return g_tmp_callbacks;
+    }
+
+    strcpy(g_script_ctx.last_error, "Could not find 'main' symbol.");
+
+    return {};
+}
+
+bool update_script_context(const char* source)
+{
+    bool success = false;
+
+    if (TCCState* tcc_state = create_tcc_state(source))
+    {
+        ScriptCallbacks callbacks = get_script_callbacks(tcc_state);
+
+        if (callbacks.update)
+        {
+            bx::swap(g_script_ctx.tcc_state, tcc_state);
+
+            g_script_ctx.callbacks      = callbacks;
+            g_script_ctx.quit_requested = false;
+            g_script_ctx.last_error[0]  = 0;
+
+            success = true;
+        }
+        else
+        {
+            strcpy(g_script_ctx.last_error, "Could not determine script's 'update' function.");
+        }
+
+        if (tcc_state)
+        {
+            tcc_delete(tcc_state);
+        }
+    }
+
+    return success;
+}
+
+
+// -----------------------------------------------------------------------------
+// EDITOR CONTEXT
+// -----------------------------------------------------------------------------
+
+struct EditorContext
+{
+    // ScriptContext runtime;
+    TextEditor    editor;
+    bool          changed;
+};
+
+void init(EditorContext& ctx, const char* file_path)
+{
+    ctx = {};
+
+    bx::FileReader reader;
+    if (!bx::open(&reader, file_path))
+    {
+        // TODO : Signal error.
+        return;
+    }
+
+    defer(bx::close(&reader));
+
+    const i64 size = bx::getSize(&reader);
+
+    // TODO : Use own allocator.
+    char* content = reinterpret_cast<char*>(malloc(size + 1));
+    defer(free(content));
+
+    bx::read(&reader, content, i32(size), {});
+    content[size] = 0;
+
+    ctx.editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+    ctx.editor.SetPalette(TextEditor::GetDarkPalette());
+    ctx.editor.SetText(content);
+}
+
+EditorContext g_ed_ctx;
+
+
+// -----------------------------------------------------------------------------
+// EDITOR GUI
+// -----------------------------------------------------------------------------
+
+void editor_gui()
+{
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    {
+        const float bar_height = bx::round(ImGui::GetFontSize() * 2.0f);
+
+        constexpr ImGuiWindowFlags bar_flags =
+            ImGuiWindowFlags_NoScrollbar       |
+            ImGuiWindowFlags_NoScrollWithMouse ;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
+
+        if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
+        {
+            ImGui::TextUnformatted(g_script_ctx.status_msg);
+        }
+        ImGui::End();
+
+        ImGui::PopStyleVar(2);
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0,0,0,0));
+
+    const ImGuiID dockspace_id   = ImGui::GetID("EditorDockSpace");
+    const bool    dockspace_init = ImGui::DockBuilderGetNode(dockspace_id);
+
+    // Like `ImGui::DockSpaceOverViewport`, but we need to know the ID upfront.
+    {
+        ImGui::SetNextWindowPos     (viewport->WorkPos );
+        ImGui::SetNextWindowSize    (viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        constexpr ImGuiWindowFlags window_flags =
+            ImGuiWindowFlags_NoBackground          |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | 
+            ImGuiWindowFlags_NoCollapse            |
+            ImGuiWindowFlags_NoDocking             |
+            ImGuiWindowFlags_NoMove                |
+            ImGuiWindowFlags_NoNavFocus            |
+            ImGuiWindowFlags_NoResize              |
+            ImGuiWindowFlags_NoTitleBar            ;
+
+        constexpr ImGuiDockNodeFlags dockspace_flags =
+            ImGuiDockNodeFlags_NoTabBar            |
+            ImGuiDockNodeFlags_PassthruCentralNode ;
+
+        char label[32];
+        bx::snprintf(label, sizeof(label), "Viewport_%016x", viewport->ID);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding  , 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding   , { 0.0f, 0.0f });
+
+        ImGui::Begin(label, nullptr, window_flags);
+
+        ImGui::PopStyleVar(3);
+
+        ImGui::DockSpace(dockspace_id, {}, dockspace_flags);
+
+        ImGui::End();
+    }
+
+    ImGui::PopStyleColor();
+
+    if (!dockspace_init)
+    {
+        ImGui::DockBuilderRemoveNode (dockspace_id);
+        ImGui::DockBuilderAddNode    (dockspace_id, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+
+        const ImGuiID dock_editor_id = ImGui::DockBuilderSplitNode(
+            dockspace_id, ImGuiDir_Right, 0.50f, nullptr, nullptr
+        );
+
+        ImGui::DockBuilderDockWindow("Editor", dock_editor_id);
+
+        ImGui::DockBuilderFinish(dockspace_id);
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
+    const bool editor_open = ImGui::Begin("Editor");
+    ImGui::PopStyleVar();
+
+    if (editor_open)
+    {
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        g_ed_ctx.editor.Render("##Editor", ImGui::GetContentRegionAvail(), false);
+        ImGui::PopFont();
+    }
+    ImGui::End();
+
+    if (const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id))
+    {
+        g_script_ctx.viewport[0] = int(bx::round(dpi() *  node->Pos .x));
+        g_script_ctx.viewport[1] = int(bx::round(dpi() *  node->Pos .y));
+        g_script_ctx.viewport[2] = int(bx::round(dpi() *  node->Size.x));
+        g_script_ctx.viewport[3] = int(bx::round(dpi() *  node->Size.y));
+    }
+
+    {
+        static bool show_metrics_window = false;
+
+        if (ImGui::IsKeyPressed(ImGuiKey_F11))
+        {
+            show_metrics_window = !show_metrics_window;
+        }
+
+        if (show_metrics_window)
+        {
+            ImGui::ShowMetricsWindow();
+        }
+    }
 }
 
 
@@ -579,21 +608,117 @@ void submit
 
 void init(void)
 {
+    IMGUI_CHECKVERSION();
+
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.IniFilename  = nullptr;
+
+    // TODO : Avoid extra copy.
+    const std::string& content = g_ed_ctx.editor.GetText();
+    if (!content.empty())
+    {
+        if (update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
+        {
+            bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", 0.0f);
+        }
+        else
+        {
+            bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", 0.0f, g_script_ctx.last_error);
+        }
+    }
+
+    if (g_script_ctx.callbacks.init)
+    {
+        g_script_ctx.callbacks.init();
+    }
+
     // ...
 }
 
 void setup(void)
 {
-    // ...
+    ImGui_ImplGlfw_InitForOther(g_ctx->window_handle, true);
+
+    vsync(1); // TODO : Leave this on the edited source code?
+
+    title("MiNiMo Source Code Editor");
+
+    if (g_script_ctx.callbacks.setup)
+    {
+        // TODO : Size should already be injected by now.
+
+        g_script_ctx.callbacks.setup();
+    }
 }
 
-void draw(void)
+void update(void)
 {
-    // ...
+    // GUI pass.
+    {
+        pass(IMGUI_PASS_ID);
+
+        ImGuiIO& io = ImGui::GetIO();
+
+        if (!io.WantCaptureKeyboard && !io.WantCaptureMouse && key_down(KEY_ESCAPE))
+        {
+            quit();
+        }
+
+        ImGui_Impl_BeginFrame();
+        ImGui::NewFrame();
+
+        editor_gui();
+
+        ImGui::Render();
+        ImGui_Impl_EndFrame();
+    }
+
+    // Content pass.
+    if (g_script_ctx.callbacks.update)
+    {
+        ScriptContext*ctx = &g_script_ctx;
+
+        // TODO : This needs to be whatever pass is left set by the script.
+        pass(0);
+
+        viewport(ctx->viewport[0], ctx->viewport[1], ctx->viewport[2], ctx->viewport[3]);
+
+        if (g_ed_ctx.editor.IsTextChanged())
+        {
+            g_ed_ctx.changed = true;
+        }
+
+        if (g_ed_ctx.changed && g_ed_ctx.editor.GetTimeSinceLastTextChange() > 0.75f)
+        {
+            g_ed_ctx.changed = false;
+
+            const std::string& content = g_ed_ctx.editor.GetText();
+
+            if (!content.empty() && update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
+            {
+                ctx->callbacks.setup();
+                bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", elapsed());
+            }
+            else
+            {
+                bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", elapsed(), g_script_ctx.last_error);
+            }
+        }
+
+        ctx->callbacks.update();
+    }
 }
 
 void cleanup(void)
 {
+    ImGui_ImplGlfw_Shutdown();
+
+    ImGui::DestroyContext();
+
     // ...
 }
 
@@ -614,10 +739,14 @@ int main(int, char**)
 {
     // TODO : Argument processing (file to open, etc.).
 
+    const char* file_path = "../src/test/hello_triangle.c";
+
+    init(mnm::rwr::ed::g_ed_ctx, file_path);
+
     return mnm_run(
         ed::init,
         ed::setup,
-        ed::draw,
+        ed::update,
         ed::cleanup
     );
 }

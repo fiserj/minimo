@@ -1072,7 +1072,7 @@ void text(const char* start, const char* end)
 void pass(int id)
 {
     ASSERT(
-        id > 0 && id < int(MAX_PASSES),
+        id >= 0 && id < int(MAX_PASSES),
         "Pass ID %i out of available range 1 ... %i.",
         id, int(MAX_PASSES - 1)
     );
