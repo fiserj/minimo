@@ -151,7 +151,7 @@ if(MNM_EDITOR)
     FetchContent_Declare(
         ImGuiColorTextEdit
         GIT_REPOSITORY https://github.com/fiserj/ImGuiColorTextEdit.git
-        GIT_TAG        dbacac2919d568745d3926a796c6fd5b3d308bff
+        GIT_TAG        d8602054d279a2fbb324c72aa42b297a03edaabd
     )
 
     FetchContent_Declare(

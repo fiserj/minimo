@@ -448,6 +448,7 @@ struct EditorContext
 {
     // ScriptContext runtime;
     TextEditor    editor;
+    bool          changed;
 };
 
 void init(EditorContext& ctx, const char* file_path)
@@ -500,27 +501,6 @@ void editor_gui()
 
         if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
         {
-            // static float changed_time = 0.0f;
-            // const  float current_time = elapsed();
-
-            // static char status[256] = {};
-            // static bool changed     = true;
-
-            // if (g_ed_ctx.editor.IsTextChanged())
-            // {
-            //     changed      = true;
-            //     changed_time = current_time;
-            // }
-
-            // // TODO : Should trigger immediately the first time.
-            // if (changed && current_time - changed_time > 0.75f)
-            // {
-            //     snprintf(status, sizeof(status), "Rebuilt at %.1f.\n", current_time);
-            //     changed = false;
-            // }
-
-            // ImGui::TextUnformatted(status);
-
             ImGui::TextUnformatted(g_script_ctx.status_msg);
         }
         ImGui::End();
@@ -643,11 +623,11 @@ void init(void)
     {
         if (update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
         {
-            snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", 0.0f);
+            bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", 0.0f);
         }
         else
         {
-            snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", 0.0f, g_script_ctx.last_error);
+            bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", 0.0f, g_script_ctx.last_error);
         }
     }
 
@@ -707,30 +687,25 @@ void update(void)
 
         viewport(ctx->viewport[0], ctx->viewport[1], ctx->viewport[2], ctx->viewport[3]);
 
-        static float changed_time = 0.0f;
-        const  float current_time = elapsed();
-        static bool  changed      = false;
-
         if (g_ed_ctx.editor.IsTextChanged())
         {
-            changed      = true;
-            changed_time = current_time;
+            g_ed_ctx.changed = true;
         }
 
-        if (changed && current_time - changed_time > 0.75f)
+        if (g_ed_ctx.changed && g_ed_ctx.editor.GetTimeSinceLastTextChange() > 0.75f)
         {
-            changed = false;
+            g_ed_ctx.changed = false;
 
             const std::string& content = g_ed_ctx.editor.GetText();
 
             if (!content.empty() && update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
             {
                 ctx->callbacks.setup();
-                snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", current_time);
+                bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", elapsed());
             }
             else
             {
-                snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", current_time, g_script_ctx.last_error);
+                bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f. | Failure | %s\n", elapsed(), g_script_ctx.last_error);
             }
         }
 
