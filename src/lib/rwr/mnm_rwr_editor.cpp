@@ -11,8 +11,8 @@
 
 #include <tinycc/libtcc.h>
 
-#include "font_segoe_ui.h"
 #include "font_input_mono.h"
+#include "font_segoe_ui.h"
 
 namespace mnm
 {
@@ -206,7 +206,7 @@ struct ScriptContext
 {
     TCCState*       tcc_state;
     ScriptCallbacks callbacks;
-    float           viewport[4]; // x, y, w, h
+    int             viewport[4]; // x, y, w, h
     bool            can_have_input;
     bool            quit_requested;
     char            last_error[512];
@@ -254,12 +254,12 @@ void title_intercepted(const char* title)
 
 int pixel_width_intercepted(void)
 {
-    return int(g_script_ctx.viewport[2]);
+    return g_script_ctx.viewport[2];
 }
 
 int pixel_height_intercepted(void)
 {
-    return int(g_script_ctx.viewport[3]);
+    return g_script_ctx.viewport[3];
 }
 
 float aspect_intercepted(void)
@@ -600,18 +600,10 @@ void editor_gui()
 
     if (const ImGuiDockNode* node = ImGui::DockBuilderGetCentralNode(dockspace_id))
     {
-        // TODO : Setup script viewport based on node's rectangle.
-        g_script_ctx.viewport[0] = bx::round(dpi() *  node->Pos .x);
-        g_script_ctx.viewport[1] = bx::round(dpi() *  node->Pos .y);
-        g_script_ctx.viewport[2] = bx::round(dpi() *  node->Size.x);
-        g_script_ctx.viewport[3] = bx::round(dpi() *  node->Size.y);
-
-        printf("VIEWPORT = (%f, %f, %f, %f)\n",
-            g_script_ctx.viewport[0],
-            g_script_ctx.viewport[1],
-            g_script_ctx.viewport[2],
-            g_script_ctx.viewport[3]
-        );
+        g_script_ctx.viewport[0] = int(bx::round(dpi() *  node->Pos .x));
+        g_script_ctx.viewport[1] = int(bx::round(dpi() *  node->Pos .y));
+        g_script_ctx.viewport[2] = int(bx::round(dpi() *  node->Size.x));
+        g_script_ctx.viewport[3] = int(bx::round(dpi() *  node->Size.y));
     }
 
     {
@@ -675,13 +667,6 @@ void setup(void)
 
     title("MiNiMo Source Code Editor");
 
-    // pass(IMGUI_PASS_ID);
-
-    // clear_color(0x333333ff);
-    // clear_depth(1.0f);
-
-    pass(0);
-
     if (g_script_ctx.callbacks.setup)
     {
         // TODO : Size should already be injected by now.
@@ -692,7 +677,7 @@ void setup(void)
 
 void update(void)
 {
-    // GUI logic "pass".
+    // GUI pass.
     {
         pass(IMGUI_PASS_ID);
 
@@ -717,20 +702,14 @@ void update(void)
     {
         ScriptContext*ctx = &g_script_ctx;
 
+        // TODO : This needs to be whatever pass is left set by the script.
         pass(0);
 
-        viewport(
-            int(ctx->viewport[0]),
-            int(ctx->viewport[1]),
-            int(ctx->viewport[2]),
-            int(ctx->viewport[3])
-        );
+        viewport(ctx->viewport[0], ctx->viewport[1], ctx->viewport[2], ctx->viewport[3]);
 
         static float changed_time = 0.0f;
         const  float current_time = elapsed();
-
-        // static char status[256] = {};
-        static bool changed = false;
+        static bool  changed      = false;
 
         if (g_ed_ctx.editor.IsTextChanged())
         {
@@ -756,12 +735,6 @@ void update(void)
         }
 
         ctx->callbacks.update();
-    }
-
-    // GUI render pass.
-    {
-        // ImGui::Render();
-        // ImGui_Impl_EndFrame();
     }
 }
 
