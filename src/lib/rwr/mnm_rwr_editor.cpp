@@ -228,6 +228,52 @@ ScriptContext g_script_ctx = {};
 
 
 // -----------------------------------------------------------------------------
+// EDITOR CONTEXT
+// -----------------------------------------------------------------------------
+
+struct EditorContext
+{
+    // ScriptContext runtime;
+    TextEditor    editor;
+    bool          changed;
+    bool          settings_open;
+    bool          restart_time_when_reloading;
+    f64           restart_time;
+
+    char          title[64];
+};
+
+void init(EditorContext& ctx, const char* file_path)
+{
+    ctx = {};
+
+    bx::FileReader reader;
+    if (!bx::open(&reader, file_path))
+    {
+        // TODO : Signal error.
+        return;
+    }
+
+    defer(bx::close(&reader));
+
+    const i64 size = bx::getSize(&reader);
+
+    // TODO : Use own allocator.
+    char* content = reinterpret_cast<char*>(malloc(size + 1));
+    defer(free(content));
+
+    bx::read(&reader, content, i32(size), {});
+    content[size] = 0;
+
+    ctx.editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+    ctx.editor.SetPalette(TextEditor::GetDarkPalette());
+    ctx.editor.SetText(content);
+}
+
+EditorContext g_ed_ctx;
+
+
+// -----------------------------------------------------------------------------
 // INTERCEPTED MiNiMo API CALLS
 // -----------------------------------------------------------------------------
 
@@ -283,6 +329,11 @@ void viewport_intercepted(int x, int y, int width, int height)
     viewport(x, y, width, height);
 }
 
+double elapsed_intercepted(void)
+{
+    return ::elapsed() - g_ed_ctx.restart_time;
+}
+
 
 // -----------------------------------------------------------------------------
 // EXPOSED FUNCTIONS' TABLE
@@ -303,6 +354,7 @@ const ScriptFunc s_script_funcs[] =
     SCRIPT_FUNC_INTERCEPTED(mnm_run),
 
     SCRIPT_FUNC_INTERCEPTED(aspect),
+    SCRIPT_FUNC_INTERCEPTED(elapsed),
     SCRIPT_FUNC_INTERCEPTED(key_down),
     SCRIPT_FUNC_INTERCEPTED(pixel_height),
     SCRIPT_FUNC_INTERCEPTED(pixel_width),
@@ -314,7 +366,6 @@ const ScriptFunc s_script_funcs[] =
     SCRIPT_FUNC(clear_color),
     SCRIPT_FUNC(clear_depth),
     SCRIPT_FUNC(color),
-    SCRIPT_FUNC(elapsed),
     SCRIPT_FUNC(end_mesh),
     SCRIPT_FUNC(identity),
     SCRIPT_FUNC(look_at),
@@ -441,47 +492,6 @@ bool update_script_context(const char* source)
 
 
 // -----------------------------------------------------------------------------
-// EDITOR CONTEXT
-// -----------------------------------------------------------------------------
-
-struct EditorContext
-{
-    // ScriptContext runtime;
-    TextEditor    editor;
-    bool          changed;
-};
-
-void init(EditorContext& ctx, const char* file_path)
-{
-    ctx = {};
-
-    bx::FileReader reader;
-    if (!bx::open(&reader, file_path))
-    {
-        // TODO : Signal error.
-        return;
-    }
-
-    defer(bx::close(&reader));
-
-    const i64 size = bx::getSize(&reader);
-
-    // TODO : Use own allocator.
-    char* content = reinterpret_cast<char*>(malloc(size + 1));
-    defer(free(content));
-
-    bx::read(&reader, content, i32(size), {});
-    content[size] = 0;
-
-    ctx.editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
-    ctx.editor.SetPalette(TextEditor::GetDarkPalette());
-    ctx.editor.SetText(content);
-}
-
-EditorContext g_ed_ctx;
-
-
-// -----------------------------------------------------------------------------
 // EDITOR GUI
 // -----------------------------------------------------------------------------
 
@@ -584,6 +594,15 @@ void editor_gui()
         g_script_ctx.viewport[1] = int(bx::round(dpi() *  node->Pos .y));
         g_script_ctx.viewport[2] = int(bx::round(dpi() *  node->Size.x));
         g_script_ctx.viewport[3] = int(bx::round(dpi() *  node->Size.y));
+    }
+
+    if (g_ed_ctx.settings_open)
+    {
+        if (ImGui::Begin("Settings", &g_ed_ctx.settings_open))
+        {
+            ImGui::Checkbox("Restart Time", &g_ed_ctx.restart_time_when_reloading);
+        }
+        ImGui::End();
     }
 
     {
@@ -700,7 +719,16 @@ void update(void)
 
             if (!content.empty() && update_script_context(content.c_str()) && g_script_ctx.callbacks.setup)
             {
+                if (g_ed_ctx.restart_time_when_reloading)
+                {
+                    // NOTE : Don't want to reset directly the timer as keys or
+                    //        mouse buttons might be held with the timestamp.
+                    g_ed_ctx.restart_time = ::elapsed();
+                }
+
+                // TODO : Also needs to call `init`.
                 ctx->callbacks.setup();
+
                 bx::snprintf(g_script_ctx.status_msg, sizeof(g_script_ctx.status_msg), "%.1f | Success\n", elapsed());
             }
             else
