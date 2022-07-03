@@ -243,7 +243,7 @@ struct EditorContext
     char          title[64];
 };
 
-void init(EditorContext& ctx, const char* file_path)
+void init(EditorContext& ctx, const bx::FilePath& file_path)
 {
     ctx = {};
 
@@ -268,6 +268,8 @@ void init(EditorContext& ctx, const char* file_path)
     ctx.editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
     ctx.editor.SetPalette(TextEditor::GetDarkPalette());
     ctx.editor.SetText(content);
+
+    bx::strCopy(ctx.title, sizeof(ctx.title), file_path.getFileName());
 }
 
 EditorContext g_ed_ctx;
@@ -512,6 +514,15 @@ void editor_gui()
         if (ImGui::BeginViewportSideBar("Status", viewport, ImGuiDir_Down, bar_height, bar_flags))
         {
             ImGui::TextUnformatted(g_script_ctx.status_msg);
+
+            ImGui::SameLine();
+
+            const float button_size = bx::round(ImGui::GetFontSize() * 1.5f);
+
+            if (ImGui::Button("S", { button_size, button_size }))
+            {
+                g_ed_ctx.settings_open = !g_ed_ctx.settings_open;
+            }
         }
         ImGui::End();
 
@@ -540,7 +551,7 @@ void editor_gui()
             ImGuiWindowFlags_NoTitleBar            ;
 
         constexpr ImGuiDockNodeFlags dockspace_flags =
-            ImGuiDockNodeFlags_NoTabBar            |
+            ImGuiDockNodeFlags_NoWindowMenuButton  |
             ImGuiDockNodeFlags_PassthruCentralNode ;
 
         char label[32];
@@ -571,13 +582,13 @@ void editor_gui()
             dockspace_id, ImGuiDir_Right, 0.50f, nullptr, nullptr
         );
 
-        ImGui::DockBuilderDockWindow("Editor", dock_editor_id);
+        ImGui::DockBuilderDockWindow(g_ed_ctx.title, dock_editor_id);
 
         ImGui::DockBuilderFinish(dockspace_id);
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
-    const bool editor_open = ImGui::Begin("Editor");
+    const bool editor_open = ImGui::Begin(g_ed_ctx.title);
     ImGui::PopStyleVar();
 
     if (editor_open)
